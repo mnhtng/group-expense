@@ -8,7 +8,8 @@ export const pool =
   cache.__groupExpensePool ??
   new Pool({
     connectionString: process.env.DATABASE_URL,
-    max: 10,
+    // Neon PgBouncer handles server-side pooling; keep client pools small per instance.
+    max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
   });

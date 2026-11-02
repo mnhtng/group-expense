@@ -12,7 +12,8 @@
     "test:unit": "node --experimental-strip-types --test tests/*.test.mjs",
     "db:migrate": "node --env-file-if-exists=.env.local db/migrate.mjs",
     "db:check": "node --env-file-if-exists=.env.local db/check.mjs",
-    "test:integration": "node --env-file-if-exists=.env.local --test tests/*.integration.mjs"
+    "test:integration": "node --env-file-if-exists=.env.local --test tests/*.integration.mjs",
+    "db:neon-check": "node --env-file-if-exists=.env.local db/neon-check.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

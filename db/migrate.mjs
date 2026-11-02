@@ -3,14 +3,11 @@ import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import pg from "pg";
+import { resolveDatabaseUrl } from "./connection.mjs";
 
 const root = fileURLToPath(new URL("./", import.meta.url));
 const directory = resolve(root, "migrations");
-if (!process.env.DATABASE_URL) {
-  console.error("DATABASE_URL is required; copy .env.example to .env.local");
-  process.exit(1);
-}
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new pg.Pool({ connectionString: resolveDatabaseUrl("migration"), max: 1 });
 const connection = await pool.connect();
 try {
   await connection.query("BEGIN");
