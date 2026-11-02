@@ -1,7 +1,14 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentSession } from "@/lib/auth/session";
 
-export default async function Home() {
+async function RouteBySession() {
   const session = await getCurrentSession();
   redirect(session?.user ? "/groups" : "/sign-in");
+}
+
+export default function Home() {
+  return <Suspense fallback={<main className="mx-auto max-w-lg p-6" role="status">Đang mở ứng dụng...</main>}>
+    <RouteBySession />
+  </Suspense>;
 }
