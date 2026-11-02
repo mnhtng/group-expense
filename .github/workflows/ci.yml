@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   verify:
@@ -22,3 +22,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test:unit
       - run: pnpm build
+        env:
+          BETTER_AUTH_SECRET: ci-placeholder-secret-only-for-build-00000000
+          BETTER_AUTH_URL: http://localhost:3000

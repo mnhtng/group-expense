@@ -1,0 +1,53 @@
+name: Sprint 1 Integration
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'db/**'
+      - 'lib/auth*'
+      - 'lib/db/**'
+      - 'lib/groups/**'
+      - 'tests/*.integration.mjs'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/sprint1-integration.yml'
+  pull_request:
+    paths:
+      - 'db/**'
+      - 'lib/auth*'
+      - 'lib/db/**'
+      - 'lib/groups/**'
+      - 'tests/*.integration.mjs'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/sprint1-integration.yml'
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        ports: ['5432:5432']
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: group_expense
+        options: >-
+          --health-cmd "pg_isready -U test" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/group_expense
+      BETTER_AUTH_SECRET: test-secret-for-ci-not-used-in-production-12345
+      BETTER_AUTH_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm db:migrate
+      - run: pnpm test:integration
