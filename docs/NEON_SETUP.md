@@ -67,7 +67,7 @@ The PR CI integration tests deliberately use an isolated PostgreSQL 17 service, 
 
 ## Verification and blockers
 
-The Neon integration is connected and the development database has been initialized. Vercel is connected to GitHub for production (main) and Preview (PR branches). The ChatGPT Vercel connection is installed, but project/env-management operations are not exposed in this session. Consequently, Vercel environment variables have not been inspected or written. Application runtime secrets (two Neon connection URLs, BETTER_AUTH_SECRET) still require setting in Vercel's protected Environment Variables settings. Do not publish these values in GitHub files.
+The Neon integration is connected and the development database has been initialized. Vercel is connected to GitHub; production is main and the long-lived Preview branch is develop. The Vercel project and environment-variable metadata were inspected through the connected Vercel service; no application secret variables were configured at inspection. Application runtime secrets (two Neon connection URLs, BETTER_AUTH_SECRET) still require setting in Vercel's protected Environment Variables settings. Do not publish these values in GitHub files.
 
 Official references:
 - https://neon.com/docs/connect/connection-pooling
@@ -103,3 +103,15 @@ Official references:
 - https://vercel.com/docs/environment-variables
 - https://vercel.com/docs/environment-variables/system-environment-variables
 - https://better-auth.com/docs/guides/dynamic-base-url
+
+## Git workflow: production and preview (2026-11-03)
+
+| GitHub branch | Vercel target | Neon target | Purpose |
+| --- | --- | --- | --- |
+| `main` | Production | `production` | Release only after review and production migration |
+| `develop` | Preview | `development` | Shared QA and integration testing |
+| `feat/*` | Preview deployments | Isolated / development only if explicitly scoped | Feature PRs target `develop` |
+
+The primary Sprint 1 PR targets `develop` (not `main`). CI runs for pushes to both branches, plus PRs. The PostgreSQL integration workflow also runs on `develop` pushes. Before a production release, open a separate PR from `develop` to `main`, run database migrations safely, and verify the production deployment.
+
+**Preview secrets must be scoped to the `develop` Git branch** where possible. Do not route another branch's Preview or any production deployment to Neon development by accident. Vercel environment variables must not be committed into Git.
