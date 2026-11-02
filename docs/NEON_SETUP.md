@@ -1,6 +1,25 @@
 # Neon Postgres + Better Auth configuration
 
-**Status:** Repository preparation only. No Neon workspace has been connected to ChatGPT yet and no live database migration or secret installation has been performed.
+**Status (2026-11-03):** Neon connected. Dedicated project created and development schema provisioned. Production branch remains untouched. Hosting environment secrets are not configured yet.
+
+## Provisioned environment (no credentials)
+
+| Setting | Value |
+| --- | --- |
+| Neon project | `group-expense` |
+| Project ID | `withered-salad-00928018` |
+| Region | `aws-ap-southeast-1` (Singapore) |
+| PostgreSQL | 17 |
+| Production branch | `br-round-salad-b39y4yce` (schema unchanged) |
+| Development branch | `br-dry-poetry-b31cudmb` |
+| Development database | `group_expense` |
+| Role | `group_expense_owner` |
+| Runtime pooled host | `ep-twilight-shadow-b3iwg7oz-pooler.c-4.ap-southeast-1.aws.neon.tech` |
+| Migration direct host | `ep-twilight-shadow-b3iwg7oz.c-4.ap-southeast-1.aws.neon.tech` |
+
+The development compute has PgBouncer pooling enabled. The migrations `001_auth.sql` and `002_groups.sql` were applied transactionally to **development**; eight expected tables exist. `schema_migrations` holds both SHA-256 checksums (64 characters), matching the migration files through PostgreSQL's SHA256 calculation. The PostgreSQL integration workflow continues testing separately against an ephemeral CI Postgres instance.
+
+Actual connection URLs, database passwords and Better Auth secrets are **not** stored in the repository. The GitHub integration here cannot write Actions secrets. Set development/runtime URLs through your app deployment provider's private environment settings; do not put them in GitHub source or in issues/PR descriptions.
 
 ## Architecture
 
@@ -48,7 +67,7 @@ The PR CI integration tests deliberately use an isolated PostgreSQL 17 service, 
 
 ## Verification and blockers
 
-The connection to a real Neon account requires the user to authorize the Neon integration inside ChatGPT. The GitHub connector used here cannot write GitHub repository secrets or Neon dashboard secrets, and currently has no verified access to the user's Neon workspace.
+The Neon integration is connected and the development database has been initialized. A deployment platform has not been connected, so application runtime secrets (two Neon connection URLs, BETTER_AUTH_SECRET, BETTER_AUTH_URL) still require a trusted destination. Do not publish these values in GitHub files.
 
 Official references:
 - https://neon.com/docs/connect/connection-pooling
