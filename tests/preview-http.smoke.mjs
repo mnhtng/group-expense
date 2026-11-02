@@ -116,6 +116,69 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.ok(groupScreen.ok, `authenticated /groups returned HTTP ${groupScreen.status}`);
     assert.match(await groupScreen.text(), /Nhóm của tôi/);
 
+
+    // The HTTP layer is exercised against disposable PostgreSQL, not Neon.
+    const groupId = randomUUID();
+    await pool.query("INSERT INTO groups(id, owner_id, name) VALUES ($1,$2,$3)",
+      [groupId, registered.user.id, "Integration group"]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
+      [groupId, registered.user.id]);
+    const endpoint = `${origin}/api/groups/${groupId}/expenses`;
+    async function expenseRequest(method, url, data, cookieJar = jar) {
+      const response = await fetch(url, {
+        method, headers: { "content-type": "application/json",
+          ...(cookieJar.size ? { cookie: cookieHeader(cookieJar) } : {}) },
+        ...(data === undefined ? {} : { body: JSON.stringify(data) }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      const body = await response.json();
+      return { response, body };
+    }
+    const draft = {
+      title: "Mua đồ dùng", notes: "2 dòng", occurredOn: "2026-11-03",
+      payerId: registered.user.id,
+      items: [
+        { name: "Gạo", quantity: 2, unitPriceMinor: "15000", participants: [registered.user.id] },
+        { name: "Trứng", quantity: 1, unitPriceMinor: "10000", participants: [registered.user.id] },
+      ],
+    };
+    const unauth = await expenseRequest("POST", endpoint, draft, new Map());
+    assert.equal(unauth.response.status, 401, "unauthenticated writes must fail");
+    const createdExpense = await expenseRequest("POST", endpoint, draft);
+    assert.equal(createdExpense.response.status, 201,
+      `expense POST returned ${createdExpense.response.status}: ${JSON.stringify(createdExpense.body)}`);
+    assert.equal(createdExpense.body.version, 1);
+    const expenseId = createdExpense.body.id;
+    const detailUrl = `${endpoint}/${expenseId}`;
+    const detailed = await expenseRequest("GET", detailUrl);
+    assert.equal(detailed.response.status, 200);
+    assert.equal(detailed.body.expense.totalMinor, "40000");
+    assert.equal(detailed.body.expense.items.length, 2);
+    assert.equal(detailed.body.expense.items[0].shares[0].amountMinor, "30000");
+    const duplicateWrongVersion = await expenseRequest("PATCH", detailUrl,
+      { expectedVersion: 999, expense: draft });
+    assert.equal(duplicateWrongVersion.response.status, 409);
+    const malformed = await expenseRequest("PATCH", detailUrl, {
+      expectedVersion: 1, expense: { ...draft,
+        items: [{ ...draft.items[0], participants: ["nonexistent-member"] }] }
+    });
+    assert.equal(malformed.response.status, 400);
+    const edited = await expenseRequest("PATCH", detailUrl,
+      { expectedVersion: 1, expense: { ...draft, title: "Đã sửa" } });
+    assert.equal(edited.response.status, 200);
+    assert.equal(edited.body.version, 2);
+    const revisions = await pool.query("SELECT operation, version FROM expense_events WHERE expense_id=$1 ORDER BY version", [expenseId]);
+    assert.deepEqual(revisions.rows, [
+      { operation: "created", version: 1 }, { operation: "updated", version: 2 }
+    ]);
+    const removed = await expenseRequest("DELETE", detailUrl, { expectedVersion: 2 });
+    assert.equal(removed.response.status, 200);
+    assert.equal((await expenseRequest("GET", detailUrl)).response.status, 404);
+    assert.equal((await expenseRequest("PATCH", detailUrl,
+      { expectedVersion: 2, expense: draft })).response.status, 404);
+    const retained = await pool.query("SELECT count(*)::int AS count FROM expense_events WHERE expense_id=$1", [expenseId]);
+    assert.equal(retained.rows[0].count, 3);
+
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
