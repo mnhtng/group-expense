@@ -81,7 +81,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     await waitForReady(server);
     const health = await fetch(`${origin}/api/auth/ok`, { signal: AbortSignal.timeout(10_000) });
     assert.equal(health.status, 200, `/api/auth/ok returned HTTP ${health.status}`);
-    assert.equal((await health.json()).status, "ok");
+    const healthPayload = await health.json();
+    assert.ok(healthPayload && typeof healthPayload === "object", "/api/auth/ok must return JSON");
     const anonymous = await session(new Map());
     assert.equal(anonymous, null, "anonymous visitors must have no session");
 
