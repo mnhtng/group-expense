@@ -144,6 +144,19 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     };
     const unauth = await expenseRequest("POST", endpoint, draft, new Map());
     assert.equal(unauth.response.status, 401, "unauthenticated writes must fail");
+    const otherJar = new Map();
+    const otherEmail = `other-${randomUUID()}@example.test`;
+    const otherSignup = await post("/api/auth/sign-up/email",
+      { name: "Other Tester", email: otherEmail, password }, otherJar);
+    assert.ok(otherSignup.ok, "second test user must sign up");
+    const otherUser = (await otherSignup.json()).user;
+    assert.equal((await expenseRequest("POST", endpoint, draft, otherJar)).response.status, 404,
+      "non-member must not create expenses in another group");
+    assert.equal((await expenseRequest("GET", endpoint, undefined, otherJar)).response.status, 404,
+      "non-member must not list expenses in another group");
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
+      [groupId, otherUser.id]);
+
     const createdExpense = await expenseRequest("POST", endpoint, draft);
     assert.equal(createdExpense.response.status, 201,
       `expense POST returned ${createdExpense.response.status}: ${JSON.stringify(createdExpense.body)}`);
@@ -155,6 +168,12 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(detailed.body.expense.totalMinor, "40000");
     assert.equal(detailed.body.expense.items.length, 2);
     assert.equal(detailed.body.expense.items[0].shares[0].amountMinor, "30000");
+    assert.equal((await expenseRequest("PATCH", detailUrl,
+      { expectedVersion: 1, expense: draft }, otherJar)).response.status, 403,
+      "non-creator member must not edit another member's expense");
+    assert.equal((await expenseRequest("DELETE", detailUrl,
+      { expectedVersion: 1 }, otherJar)).response.status, 403,
+      "non-creator member must not delete another member's expense");
     const duplicateWrongVersion = await expenseRequest("PATCH", detailUrl,
       { expectedVersion: 999, expense: draft });
     assert.equal(duplicateWrongVersion.response.status, 409);

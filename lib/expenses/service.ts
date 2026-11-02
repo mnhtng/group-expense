@@ -172,6 +172,12 @@ const groupMemberGate = `EXISTS(
 )`;
 
 export async function listExpenses(groupId: string, actorId: string): Promise<ExpenseSummary[]> {
+  const gate = await pool.query(
+    `SELECT 1 FROM group_members m JOIN groups g ON g.id=m.group_id
+     WHERE m.group_id=$1 AND m.user_id=$2 AND g.archived_at IS NULL`,
+    [groupId, actorId],
+  );
+  if (!gate.rowCount) throw new ExpenseAccessError(404, "Không tìm thấy nhóm.");
   const result = await pool.query<ExpenseSummary>(
     `SELECT e.id, e.title, e.total_minor::text AS "totalMinor",
       e.occurred_on::text AS "occurredOn", e.payer_id AS "payerId",
