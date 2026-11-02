@@ -67,9 +67,39 @@ The PR CI integration tests deliberately use an isolated PostgreSQL 17 service, 
 
 ## Verification and blockers
 
-The Neon integration is connected and the development database has been initialized. A deployment platform has not been connected, so application runtime secrets (two Neon connection URLs, BETTER_AUTH_SECRET, BETTER_AUTH_URL) still require a trusted destination. Do not publish these values in GitHub files.
+The Neon integration is connected and the development database has been initialized. Vercel is connected to GitHub for production (main) and Preview (PR branches). The ChatGPT Vercel connection is installed, but project/env-management operations are not exposed in this session. Consequently, Vercel environment variables have not been inspected or written. Application runtime secrets (two Neon connection URLs, BETTER_AUTH_SECRET) still require setting in Vercel's protected Environment Variables settings. Do not publish these values in GitHub files.
 
 Official references:
 - https://neon.com/docs/connect/connection-pooling
 - https://neon.com/docs/connect/connect-from-any-app
 - https://www.better-auth.com/docs/adapters/postgresql
+
+## Vercel deployment mapping (verified via GitHub, 2026-11-03)
+
+Vercel project: [group-expense](https://vercel.com/mnhtngs-projects/group-expense)
+(GitHub repository `mnhtng/group-expense`, Vercel project ID `prj_pBD9UtMAhNGFWh7Qmzskq90lVSC7`).
+
+The Vercel GitHub integration reports:
+- `main`: Production deployment succeeded, currently Sprint 0 (`af13caf`).
+- `feat/sprint-1-auth-groups-sql`: Preview deployment succeeded, Sprint 1 not merged.
+- GitHub status is evidence of a deployment, **not evidence the application can authenticate to Neon**.
+- Production branch setting has not been directly read from Vercel project settings. Before merge, confirm `Settings → Environments → Production → Branch = main` in the dashboard.
+
+### Private environment variables (Vercel Settings → Environment Variables)
+
+| Variable | Preview deployment(s) | Production deployment |
+| --- | --- | --- |
+| `DATABASE_URL` | Development branch pooled endpoint | Production branch pooled endpoint |
+| `DATABASE_URL_DIRECT` | Development branch direct endpoint | Production branch direct endpoint |
+| `BETTER_AUTH_SECRET` | Strong, stable, Preview-only random secret | Different strong, stable, Production-only random secret |
+| `BETTER_AUTH_URL` | Not required when Vercel's URL system variables are exposed; otherwise Preview canonical URL | HTTPS production domain if needed |
+| `VERCEL_URL` and `VERCEL_BRANCH_URL` | Enable Vercel system environment variables | `VERCEL_URL` and `VERCEL_PROJECT_PRODUCTION_URL` |
+
+The Better Auth server derives an exact Vercel-host allowlist from deployment environment variables when `VERCEL_URL` is present. This allows the immutable Preview deployment URL and stable branch alias **without allowing every other `*.vercel.app` domain**. During local development, it uses `BETTER_AUTH_URL` (`http://localhost:3000`).
+
+**Important:** Do not put `DATABASE_URL`, `DATABASE_URL_DIRECT`, `BETTER_AUTH_SECRET` in Git, PR text, or `NEXT_PUBLIC_*`. Set secrets on the Vercel project with separate environment scopes, and redeploy the relevant environment after changes. Keep Production pointing at Neon `production`, never the development branch. Do not merge PR #2 until production migrations are reviewed and applied, and Preview sign-up/sign-in/session restoration are tested. The URL strings are retrieved privately from Neon Console and pasted only into the trusted Vercel environment settings.
+
+Official references:
+- https://vercel.com/docs/environment-variables
+- https://vercel.com/docs/environment-variables/system-environment-variables
+- https://better-auth.com/docs/guides/dynamic-base-url
