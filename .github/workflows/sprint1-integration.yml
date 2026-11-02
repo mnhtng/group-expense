@@ -8,6 +8,7 @@ on:
       - 'lib/db/**'
       - 'lib/groups/**'
       - 'tests/*.integration.mjs'
+      - 'tests/*.smoke.mjs'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - '.github/workflows/sprint1-integration.yml'
@@ -37,7 +38,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/group_expense
       BETTER_AUTH_SECRET: test-secret-for-ci-not-used-in-production-12345
-      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_URL: http://localhost:3101
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -51,3 +52,5 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm db:migrate
       - run: pnpm test:integration
+      - run: pnpm build
+      - run: pnpm test:http
