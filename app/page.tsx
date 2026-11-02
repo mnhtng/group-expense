@@ -5,6 +5,7 @@ import { getCurrentSession } from "@/lib/auth/session";
 async function RouteBySession() {
   const session = await getCurrentSession();
   redirect(session?.user ? "/groups" : "/sign-in");
+  return null;
 }
 
 export default function Home() {
