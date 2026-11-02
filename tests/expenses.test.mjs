@@ -23,13 +23,14 @@ test("130k scenario: B owes 55k and C owes 65k, item shares traceable", () => {
   const e = draft({
     items: [
       { name: "B ăn", quantity: 1, unitPriceMinor: "55000", participants: ["B"] },
-      { name: "C ăn", quantity: 1, unitPriceMinor: "65000", participants: ["C"] }
+      { name: "C ăn", quantity: 1, unitPriceMinor: "65000", participants: ["C"] },
+      { name: "A ăn", quantity: 1, unitPriceMinor: "10000", participants: ["A"] }
     ]
   });
   const result = prepareExpense(e, members);
   assert.equal(result.totalMinor, "130000");
   assert.deepEqual(result.items.map(i => i.shares), [
-    [{userId:"B",amountMinor:"55000"}],[{userId:"C",amountMinor:"65000"}]
+    [{userId:"B",amountMinor:"55000"}],[{userId:"C",amountMinor:"65000"}],[{userId:"A",amountMinor:"10000"}]
   ]);
 });
 test("3-way odd remainder deterministic, even when participant order changes", () => {
