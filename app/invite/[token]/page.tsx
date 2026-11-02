@@ -1,8 +1,9 @@
+import { Suspense } from "react";
 import { acceptInviteAction } from "@/app/actions/groups";
 import { getCurrentSession } from "@/lib/auth/session";
 import Link from "next/link";
 
-export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
+async function InviteContent({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const session = await getCurrentSession();
   return <main className="mx-auto max-w-md space-y-5 px-5 py-12">
@@ -15,4 +16,12 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
       <Link className="underline" href={`/sign-in?returnTo=${encodeURIComponent(`/invite/${token}`)}`}>Đăng nhập</Link>
     </div>}
   </main>;
+}
+
+export default function InvitePage({ params }: { params: Promise<{ token: string }> }) {
+  return (
+    <Suspense fallback={<main className="mx-auto max-w-md p-6" role="status">Đang mở lời mời...</main>}>
+      <InviteContent params={params} />
+    </Suspense>
+  );
 }
