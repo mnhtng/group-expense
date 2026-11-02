@@ -5,29 +5,27 @@ import { spawn } from "node:child_process";
 import pg from "pg";
 
 const port = 3101;
-const origin = `http://localhost:${port}`;
+const origin = `http://127.0.0.1:${port}`;
 const pollIntervalMs = 600;
 
-async function waitForReady(server, timeoutMs = 55_000) {
+async function waitForReady(server, timeoutMs = 25_000) {
   const expires = Date.now() + timeoutMs;
+  let lastProbe = "not started";
   while (Date.now() < expires) {
-    if (server.exitCode !== null) throw new Error("Next.js server exited during startup");
+    if (server.exitCode !== null) throw new Error(`Next.js server exited during startup: ${server.exitCode}`);
     try {
-      const response = await fetch(`${origin}/api/auth/ok`, {
+      const response = await fetch(`${origin}/sign-in`, {
         redirect: "manual",
         signal: AbortSignal.timeout(2500),
       });
-      if (response.ok) {
-        const data = await response.json();
-        assert.equal(data.status, "ok");
-        return;
-      }
-    } catch {
-      // Server may still be starting; retry without surfacing connection errors.
+      lastProbe = `HTTP ${response.status}`;
+      if (response.ok) return;
+    } catch (error) {
+      lastProbe = error?.cause?.code ?? error?.code ?? error?.message ?? "unknown error";
     }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
-  throw new Error("Next.js auth endpoint did not become healthy within 55 seconds");
+  throw new Error(`Next.js /sign-in did not become healthy within 25 seconds; last probe: ${lastProbe}`);
 }
 
 function updateCookieJar(jar, response) {
@@ -81,6 +79,9 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
   try {
     await waitForReady(server);
+    const health = await fetch(`${origin}/api/auth/ok`, { signal: AbortSignal.timeout(10_000) });
+    assert.equal(health.status, 200, `/api/auth/ok returned HTTP ${health.status}`);
+    assert.equal((await health.json()).status, "ok");
     const anonymous = await session(new Map());
     assert.equal(anonymous, null, "anonymous visitors must have no session");
 
