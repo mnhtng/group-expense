@@ -43,6 +43,25 @@ export async function getMemberRole(groupId: string, userId: string): Promise<Me
   return result.rows[0]?.role ?? null;
 }
 
+export async function getGroupDetails(groupId: string, userId: string) {
+  const result = await pool.query<{ id: string; name: string; currency: string }>(
+    `SELECT g.id, g.name, g.currency FROM groups g
+     JOIN group_members m ON m.group_id = g.id
+     WHERE g.id = $1 AND m.user_id = $2 AND g.archived_at IS NULL`,
+    [groupId, userId],
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function archiveGroup(groupId: string, ownerId: string, confirmation: string) {
+  const result = await pool.query(
+    `UPDATE groups SET archived_at = now(), updated_at = now()
+     WHERE id = $1 AND owner_id = $2 AND name = $3 AND archived_at IS NULL`,
+    [groupId, ownerId, confirmation.trim()],
+  );
+  if (result.rowCount !== 1) throw new Error("Không có quyền lưu trữ hoặc tên xác nhận không đúng.");
+}
+
 export async function renameGroup(groupId: string, actorId: string, rawName: string) {
   const name = rawName.trim();
   if (name.length < 2 || name.length > 120) throw new Error("Tên nhóm không hợp lệ.");

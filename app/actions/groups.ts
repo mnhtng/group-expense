@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/session";
-import { acceptInvite, createGroup, createInvite, renameGroup, removeMember } from "@/lib/groups/service";
+import { acceptInvite, archiveGroup, createGroup, createInvite, renameGroup, removeMember } from "@/lib/groups/service";
 
 export async function createGroupAction(form: FormData) {
   const user = await requireUser();
@@ -15,6 +15,17 @@ export async function renameGroupAction(form: FormData) {
   const user = await requireUser();
   await renameGroup(String(form.get("groupId") ?? ""), user.id, String(form.get("name") ?? ""));
   revalidatePath("/groups");
+}
+
+export async function archiveGroupAction(form: FormData) {
+  const user = await requireUser();
+  await archiveGroup(
+    String(form.get("groupId") ?? ""),
+    user.id,
+    String(form.get("confirmation") ?? ""),
+  );
+  revalidatePath("/groups");
+  redirect("/groups");
 }
 
 export async function createInviteAction(form: FormData) {
