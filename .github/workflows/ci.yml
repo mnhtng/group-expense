@@ -18,12 +18,6 @@ jobs:
           node-version: "22"
           cache: pnpm
       - run: pnpm install --no-frozen-lockfile
-      - name: Export resolved public lockfile for review
-        run: |
-          echo '__LOCKFILE_B64_BEGIN__'
-          base64 -w0 pnpm-lock.yaml
-          echo
-          echo '__LOCKFILE_B64_END__'
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test:unit
