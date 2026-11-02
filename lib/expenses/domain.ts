@@ -1,4 +1,4 @@
-import { allocateEvenly } from "@/lib/money";
+import { allocateEvenly } from "../money.ts";
 
 export const MAX_VND = 9_223_372_036_854_775_807n;
 export type ShareInput = { userId: string; amountMinor: string };
