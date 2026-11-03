@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { getCurrentSession } from "@/lib/auth/session";
+import { withAuthenticatedApi } from "@/lib/security/api-guards";
 import { listPersonalDebts } from "@/lib/debts/service";
-export async function GET() {
-  const session = await getCurrentSession();
-  if (!session?.user) return NextResponse.json({ error: "Chưa đăng nhập." }, { status: 401 });
-  return NextResponse.json({ debts: await listPersonalDebts(session.user.id) },
-    { headers: { "Cache-Control": "private, no-store" } });
-}
+
+export const GET = withAuthenticatedApi(async (_request, _context, user) =>
+  NextResponse.json({ debts: await listPersonalDebts(user.id) }),
+);

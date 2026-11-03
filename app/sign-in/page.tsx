@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
+import { safeReturnTo } from "@/lib/security/route-policy";
 import { Suspense } from "react";
 
 function SignInForm() {
@@ -20,7 +21,7 @@ function SignInForm() {
     setLoading(false);
     if (result.error) { setError("Email hoặc mật khẩu không chính xác."); return; }
     const requested = search.get("returnTo") ?? "/groups";
-    router.replace(requested.startsWith("/") && !requested.startsWith("//") && !requested.includes("\\") ? requested : "/groups");
+    router.replace(safeReturnTo(requested));
     router.refresh();
   }
   return <main className="mx-auto max-w-md space-y-6 px-5 py-12">

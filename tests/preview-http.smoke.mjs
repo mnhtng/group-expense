@@ -83,6 +83,57 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(health.status, 200, `/api/auth/ok returned HTTP ${health.status}`);
     const healthPayload = await health.json();
     assert.ok(healthPayload && typeof healthPayload === "object", "/api/auth/ok must return JSON");
+    // Ingress policy: anonymous pages redirect, APIs return JSON 401.
+    const anonymousPage=await fetch(`${origin}/groups?tab=recent`,{
+      redirect:"manual",signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(anonymousPage.status,307);
+    assert.equal(new URL(anonymousPage.headers.get("location"), origin).pathname,"/sign-in");
+    assert.equal(new URL(anonymousPage.headers.get("location"), origin).searchParams.get("returnTo"),
+      "/groups?tab=recent");
+    assert.equal(anonymousPage.headers.get("x-frame-options"),"DENY");
+    assert.equal(anonymousPage.headers.get("cache-control"),"private, no-store");
+
+    const anonymousAPI=await fetch(`${origin}/api/debts`,{
+      redirect:"manual",signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(anonymousAPI.status,401);
+    assert.equal((await anonymousAPI.json()).code,"UNAUTHENTICATED");
+    assert.equal(anonymousAPI.headers.get("cache-control"),"private, no-store");
+
+    const cronWithoutBearer=await fetch(`${origin}/api/internal/push-drain`,{
+      redirect:"manual",signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(cronWithoutBearer.status,401,"cron relies on its separate Bearer secret");
+    assert.equal((await fetch(`${origin}/sw.js`)).status,200,
+      "public push worker must bypass authentication");
+    assert.equal((await fetch(`${origin}/offline.html`)).status,200,
+      "public offline fallback must bypass authentication");
+
+    const forgedCookie=await fetch(`${origin}/groups`,{
+      headers:{cookie:"better-auth.session_token=forged"},
+      redirect:"manual",signal:AbortSignal.timeout(10_000),
+    });
+    // With Partial Prerendering + Suspense, Next.js can emit HTTP 200 with a
+    // streaming redirect marker instead of an early 307. Both are safe only
+    // when no protected group data is rendered.
+    if (forgedCookie.status === 307) {
+      assert.equal(new URL(forgedCookie.headers.get("location"), origin).pathname,"/sign-in");
+    } else {
+      assert.equal(forgedCookie.status,200,"unexpected forged-cookie page status");
+      const html = await forgedCookie.text();
+      assert.match(html, /NEXT_REDIRECT|http-equiv=["']refresh|__next-page-redirect/,
+        "streamed page must contain a Next.js sign-in redirect marker");
+      assert.doesNotMatch(html, /Nhóm của tôi/,
+        "forged cookies must never render private group content");
+    }
+    const forgedApi=await fetch(`${origin}/api/debts`,{
+      headers:{cookie:"better-auth.session_token=forged"},
+      redirect:"manual",signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(forgedApi.status,401,
+      "a fake session cookie must fail the server-side Better Auth verification");
+
     const anonymous = await session(new Map());
     assert.equal(anonymous, null, "anonymous visitors must have no session");
 
@@ -124,9 +175,33 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
       [groupId, registered.user.id]);
     const endpoint = `${origin}/api/groups/${groupId}/expenses`;
+    const rejectedOrigin=await fetch(endpoint,{
+      method:"POST",redirect:"manual",
+      headers:{"content-type":"application/json",
+        cookie:cookieHeader(jar),origin:"https://evil.example"},
+      body:JSON.stringify({}),signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(rejectedOrigin.status,403,
+      "financial writes must reject cross-origin cookie requests");
+    assert.equal((await rejectedOrigin.json()).code,"INVALID_ORIGIN");
+    const missingOrigin=await fetch(endpoint,{
+      method:"POST",redirect:"manual",
+      headers:{"content-type":"application/json",cookie:cookieHeader(jar)},
+      body:JSON.stringify({}),signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(missingOrigin.status,403,"cookie API writes require Origin");
+    const crossSite=await fetch(endpoint,{
+      method:"POST",redirect:"manual",
+      headers:{"content-type":"application/json",cookie:cookieHeader(jar),
+        origin,"sec-fetch-site":"cross-site"},
+      body:JSON.stringify({}),signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(crossSite.status,403,"Fetch Metadata cross-site writes are blocked");
+
     async function expenseRequest(method, url, data, cookieJar = jar) {
       const response = await fetch(url, {
         method, headers: { "content-type": "application/json",
+          ...(method === "GET" ? {} : { origin }),
           ...(cookieJar.size ? { cookie: cookieHeader(cookieJar) } : {}) },
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),
         signal: AbortSignal.timeout(10_000),

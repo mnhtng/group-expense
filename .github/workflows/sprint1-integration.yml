@@ -5,6 +5,9 @@ on:
     paths:
       - 'db/**'
       - 'lib/auth*'
+      - 'lib/security/**'
+      - 'proxy.ts'
+      - 'app/sign-in/**'
       - 'lib/db/**'
       - 'lib/groups/**'
       - 'lib/expenses/**'
@@ -28,6 +31,9 @@ on:
     paths:
       - 'db/**'
       - 'lib/auth*'
+      - 'lib/security/**'
+      - 'proxy.ts'
+      - 'app/sign-in/**'
       - 'lib/db/**'
       - 'lib/groups/**'
       - 'lib/expenses/**'
