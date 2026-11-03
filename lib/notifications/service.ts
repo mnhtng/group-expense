@@ -33,7 +33,7 @@ export async function notifySettlement(
   );
   const settlement = result.rows[0];
   if (!settlement) throw new Error("Settlement notification target was not found");
-  const recipient = kind === "settlement_requested"
+  const recipient = (kind === "settlement_requested" || kind === "settlement_cancelled")
     ? (actorId === settlement.debtor_id ? settlement.creditor_id : settlement.debtor_id)
     : settlement.initiated_by;
   if (recipient === actorId) throw new Error("A notification cannot target its actor");
