@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { pool } from "@/lib/db/pool";
+import { departGroup, rejoinExistingMember } from "@/lib/groups/membership";
 
 export type GroupRow = { id: string; name: string; currency: string; role: string };
 type MemberRole = "owner" | "admin" | "member";
@@ -9,7 +10,7 @@ export async function listGroups(userId: string): Promise<GroupRow[]> {
   const result = await pool.query<GroupRow>(
     `SELECT g.id, g.name, g.currency, m.role
      FROM groups g JOIN group_members m ON m.group_id = g.id
-     WHERE m.user_id = $1 AND g.archived_at IS NULL ORDER BY g.created_at DESC`,
+     WHERE m.user_id = $1 AND m.status='active' AND g.archived_at IS NULL ORDER BY g.created_at DESC`,
     [userId],
   );
   return result.rows;
@@ -37,7 +38,7 @@ export async function createGroup(ownerId: string, rawName: string) {
 export async function getMemberRole(groupId: string, userId: string): Promise<MemberRole | null> {
   const result = await pool.query<{ role: MemberRole }>(
     `SELECT m.role FROM group_members m JOIN groups g ON g.id = m.group_id
-     WHERE g.id = $1 AND m.user_id = $2 AND g.archived_at IS NULL`,
+     WHERE g.id = $1 AND m.user_id = $2 AND m.status='active' AND g.archived_at IS NULL`,
     [groupId, userId],
   );
   return result.rows[0]?.role ?? null;
@@ -79,63 +80,74 @@ export async function renameGroup(groupId: string, actorId: string, rawName: str
     `UPDATE groups g SET name = $3, updated_at = now()
      WHERE g.id = $1 AND g.archived_at IS NULL
        AND EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id
-         AND m.user_id = $2 AND m.role IN ('owner', 'admin'))`,
+         AND m.user_id = $2 AND m.status='active' AND m.role IN ('owner', 'admin'))`,
     [groupId, actorId, name],
   );
   if (result.rowCount !== 1) throw new Error("Không có quyền sửa nhóm.");
 }
 
 export async function createInvite(groupId: string, actorId: string) {
-  const role = await getMemberRole(groupId, actorId);
-  if (role !== "owner" && role !== "admin") throw new Error("Không có quyền mời.");
-  const token = randomBytes(32).toString("base64url");
-  const hash = createHash("sha256").update(token).digest("hex");
-  await pool.query(
-    `INSERT INTO group_invites(id, group_id, token_hash, created_by, expires_at)
-     VALUES ($1, $2, $3, $4, now() + interval '7 days')`,
-    [randomUUID(), groupId, hash, actorId],
-  );
-  return token;
+  const client=await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const group=await client.query(
+      "SELECT id FROM groups WHERE id=$1 AND archived_at IS NULL FOR UPDATE",[groupId]);
+    if(!group.rowCount)throw new Error("Không tìm thấy nhóm.");
+    const role=await client.query<{role:string}>(
+      `SELECT role FROM group_members
+       WHERE group_id=$1 AND user_id=$2 AND status='active'
+       AND role IN ('owner','admin')`,[groupId,actorId]);
+    if(!role.rowCount)throw new Error("Không có quyền mời.");
+    const token=randomBytes(32).toString("base64url");
+    const hash=createHash("sha256").update(token).digest("hex");
+    await client.query(
+      `INSERT INTO group_invites(id,group_id,token_hash,created_by,expires_at)
+       VALUES($1,$2,$3,$4,now()+interval '7 days')`,
+      [randomUUID(),groupId,hash,actorId]);
+    await client.query("COMMIT");
+    return token;
+  }catch(error){await client.query("ROLLBACK");throw error}
+  finally{client.release()}
 }
 
 export async function acceptInvite(userId: string, token: string) {
-  if (!/^[A-Za-z0-9_-]{32,100}$/.test(token)) throw new Error("Liên kết không hợp lệ.");
-  const hash = createHash("sha256").update(token).digest("hex");
-  const client = await pool.connect();
+  if(!/^[A-Za-z0-9_-]{32,100}$/.test(token))
+    throw new Error("Liên kết không hợp lệ.");
+  const hash=createHash("sha256").update(token).digest("hex");
+  const client=await pool.connect();
   try {
     await client.query("BEGIN");
-    const found = await client.query<{ id: string; group_id: string }>(
-      `SELECT i.id, i.group_id FROM group_invites i
-       JOIN groups g ON g.id = i.group_id
-       WHERE i.token_hash = $1 AND i.expires_at > now() AND i.revoked_at IS NULL
-         AND i.uses_count < i.max_uses AND g.archived_at IS NULL FOR UPDATE OF i`,
-      [hash],
-    );
-    const invite = found.rows[0];
-    if (!invite) throw new Error("Lời mời đã hết hạn hoặc không còn hiệu lực.");
-    const inserted = await client.query(
-      `INSERT INTO group_members(group_id, user_id, role)
-       VALUES($1, $2, 'member') ON CONFLICT DO NOTHING`,
-      [invite.group_id, userId],
-    );
-    if (inserted.rowCount === 1) {
-      await client.query("UPDATE group_invites SET uses_count = uses_count + 1 WHERE id = $1", [invite.id]);
+    // Find the group first, then lock its row before checking invite usage.
+    // Same lock ordering as leave, expense and settlement transactions.
+    const preview=await client.query<{group_id:string}>(
+      "SELECT group_id FROM group_invites WHERE token_hash=$1",[hash]);
+    if(!preview.rows[0])throw new Error("Lời mời không hợp lệ.");
+    const g=await client.query(
+      "SELECT id FROM groups WHERE id=$1 AND archived_at IS NULL FOR UPDATE",
+      [preview.rows[0].group_id]);
+    if(!g.rowCount)throw new Error("Nhóm không còn hoạt động.");
+    const found=await client.query<{id:string;group_id:string}>(
+      `SELECT i.id,i.group_id FROM group_invites i
+       WHERE i.token_hash=$1 AND i.expires_at>now() AND i.revoked_at IS NULL
+         AND i.uses_count<i.max_uses FOR UPDATE OF i`,[hash]);
+    const invite=found.rows[0];
+    if(!invite)throw new Error("Lời mời đã hết hạn hoặc không còn hiệu lực.");
+    const joined=await rejoinExistingMember(client,invite.group_id,userId,userId);
+    if(joined){
+      await client.query("UPDATE group_invites SET uses_count=uses_count+1 WHERE id=$1",
+        [invite.id]);
     }
     await client.query("COMMIT");
     return invite.group_id;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  }catch(error){await client.query("ROLLBACK");throw error}
+  finally{client.release()}
 }
 
 export async function listMembers(groupId: string, userId: string) {
   if (!(await getMemberRole(groupId, userId))) throw new Error("Không thuộc nhóm.");
   const result = await pool.query<{ id: string; name: string; role: string }>(
     `SELECT u.id, u.name, m.role FROM group_members m
-     JOIN "user" u ON u.id = m.user_id WHERE m.group_id = $1
+     JOIN "user" u ON u.id = m.user_id WHERE m.group_id = $1 AND m.status='active'
      ORDER BY m.joined_at ASC`,
     [groupId],
   );
@@ -143,29 +155,6 @@ export async function listMembers(groupId: string, userId: string) {
 }
 
 export async function removeMember(groupId: string, actorId: string, memberId: string) {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const group = await client.query<{ owner_id: string }>(
-      "SELECT owner_id FROM groups WHERE id = $1 AND archived_at IS NULL FOR UPDATE",
-      [groupId],
-    );
-    if (!group.rows[0]) throw new Error("Không tìm thấy nhóm.");
-    const role = await client.query<{ role: string }>(
-      "SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2",
-      [groupId, actorId],
-    );
-    if (memberId === group.rows[0].owner_id) throw new Error("Không thể xóa chủ nhóm.");
-    if (actorId !== memberId && !["owner", "admin"].includes(role.rows[0]?.role ?? "")) {
-      throw new Error("Không có quyền.");
-    }
-    // Once money ledger exists, enforce unresolved-debt/settlement policy before removing.
-    await client.query("DELETE FROM group_members WHERE group_id = $1 AND user_id = $2", [groupId, memberId]);
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  // Preserve financial foreign keys and receipts instead of deleting membership.
+  return departGroup(groupId,actorId,memberId,actorId===memberId?"left":"removed");
 }
