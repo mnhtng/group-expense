@@ -157,6 +157,97 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
       [groupId, otherUser.id]);
 
+    // Sprint 3: source-traceable obligations for two distinct debtors.
+    const thirdJar = new Map();
+    const thirdEmail = `third-${randomUUID()}@example.test`;
+    const thirdSignup = await post("/api/auth/sign-up/email",
+      { name: "Third Tester", email: thirdEmail, password }, thirdJar);
+    assert.ok(thirdSignup.ok, "third test user must sign up");
+    const thirdUser = (await thirdSignup.json()).user;
+    const debtEndpoint = `${origin}/api/groups/${groupId}/debts`;
+    assert.equal((await expenseRequest("GET", debtEndpoint, undefined, thirdJar)).response.status, 404,
+      "group debts must be invisible to outsiders");
+    assert.equal((await expenseRequest("GET", debtEndpoint, undefined, new Map())).response.status, 401,
+      "group debts require auth");
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
+      [groupId, thirdUser.id]);
+
+    const debtDraft = {
+      title: "130k itemized receipt", notes: "two traceable debts",
+      occurredOn: "2026-11-03", payerId: registered.user.id,
+      items: [
+        { name: "B meal", quantity: 1, unitPriceMinor: "55000", participants: [otherUser.id] },
+        { name: "C meal", quantity: 1, unitPriceMinor: "65000", participants: [thirdUser.id] },
+        { name: "Payer own item", quantity: 1, unitPriceMinor: "10000", participants: [registered.user.id] },
+      ],
+    };
+    const receipt = await expenseRequest("POST", endpoint, debtDraft);
+    assert.equal(receipt.response.status, 201,
+      `debt receipt: ${JSON.stringify(receipt.body)}`);
+    const debtExpenseId = receipt.body.id;
+    const groupDebts = await expenseRequest("GET", debtEndpoint);
+    assert.equal(groupDebts.response.status, 200);
+    assert.equal(groupDebts.body.debts.length, 2);
+    assert.deepEqual(
+      groupDebts.body.debts.map(x => [x.debtorId, x.amountMinor])
+        .sort((a, b) => a[0].localeCompare(b[0])),
+      [[otherUser.id, "55000"], [thirdUser.id, "65000"]]
+        .sort((a, b) => a[0].localeCompare(b[0])),
+    );
+    const myDebts = await expenseRequest("GET", `${origin}/api/debts`);
+    assert.equal(myDebts.response.status, 200);
+    assert.equal(myDebts.body.debts.length, 2);
+    assert.deepEqual(myDebts.body.debts.map(x => x.amountMinor).sort(), ["55000", "65000"]);
+    const debtorDebts = await expenseRequest("GET", `${origin}/api/debts`, undefined, otherJar);
+    assert.equal(debtorDebts.body.debts.length, 1);
+    assert.equal(debtorDebts.body.debts[0].direction, "pay");
+    assert.equal(debtorDebts.body.debts[0].amountMinor, "55000");
+    const B = groupDebts.body.debts.find(x => x.debtorId === otherUser.id);
+    const traced = await expenseRequest("GET", `${debtEndpoint}/${B.id}`, undefined, otherJar);
+    assert.equal(traced.response.status, 200);
+    assert.equal(traced.body.sources.length, 1);
+    assert.equal(traced.body.sources[0].itemName, "B meal");
+    assert.equal(traced.body.sources[0].amountMinor, "55000");
+    assert.equal((await expenseRequest("GET", `${debtEndpoint}/${B.id}`, undefined,
+      new Map())).response.status, 401);
+
+    const revisedDraft = { ...debtDraft, items: [
+      { ...debtDraft.items[0], unitPriceMinor: "60000" },
+      ...debtDraft.items.slice(1)
+    ] };
+    const revised = await expenseRequest("PATCH", `${endpoint}/${debtExpenseId}`,
+      { expectedVersion: 1, expense: revisedDraft });
+    assert.equal(revised.response.status, 200);
+    const afterEdit = await expenseRequest("GET", debtEndpoint);
+    assert.deepEqual(afterEdit.body.debts.map(x => x.amountMinor).sort(), ["60000", "65000"],
+      "editing receipt must update active amounts, not double count old obligations");
+    const historic = await pool.query(
+      `SELECT expense_version AS version, (voided_at IS NOT NULL) AS voided,
+         count(*)::int AS count FROM obligations WHERE expense_id=$1
+         GROUP BY expense_version, voided_at IS NOT NULL ORDER BY expense_version`,
+      [debtExpenseId],
+    );
+    assert.deepEqual(historic.rows, [
+      { version: 1, voided: true, count: 2 },
+      { version: 2, voided: false, count: 2 },
+    ]);
+    const auditSources = await pool.query(
+      `SELECT count(*)::int AS count FROM obligation_sources s
+       JOIN obligations o ON o.id=s.obligation_id WHERE o.expense_id=$1`, [debtExpenseId]
+    );
+    assert.equal(auditSources.rows[0].count, 4,
+      "item snapshots must survive revision's item deletion");
+    const removingReceipt = await expenseRequest("DELETE", `${endpoint}/${debtExpenseId}`,
+      { expectedVersion: 2 });
+    assert.equal(removingReceipt.response.status, 200);
+    assert.equal((await expenseRequest("GET", debtEndpoint)).body.debts.length, 0,
+      "deleting expense must retire all current obligations");
+    const historicalRows = await pool.query(
+      "SELECT count(*)::int AS count FROM obligations WHERE expense_id=$1",
+      [debtExpenseId],
+    );
+    assert.equal(historicalRows.rows[0].count, 4, "historical obligations must remain");
+
     const createdExpense = await expenseRequest("POST", endpoint, draft);
     assert.equal(createdExpense.response.status, 201,
       `expense POST returned ${createdExpense.response.status}: ${JSON.stringify(createdExpense.body)}`);
