@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import pg from "pg";
 
@@ -568,6 +568,157 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       { expectedVersion: 2, expense: draft })).response.status, 404);
     const retained = await pool.query("SELECT count(*)::int AS count FROM expense_events WHERE expense_id=$1", [expenseId]);
     assert.equal(retained.rows[0].count, 3);
+
+
+    // Group lifecycle: blocked by debt/pending, soft leave, rejoin and ownership.
+    const bLeave=`${origin}/api/groups/${groupId}/membership/leave`;
+    const cLeave=bLeave;
+    const transferUrl=`${origin}/api/groups/${groupId}/membership/transfer`;
+    const memberUrl=id=>`${origin}/api/groups/${groupId}/membership/members/${id}`;
+    assert.equal((await expenseRequest("POST",bLeave,undefined,new Map())).response.status,401);
+    assert.equal((await expenseRequest("POST",bLeave,undefined,jar)).response.status,409,
+      "owner cannot leave before transferring ownership");
+    const bStatus=await expenseRequest("GET",bLeave,undefined,otherJar);
+    assert.equal(bStatus.response.status,200);
+    assert.equal(bStatus.body.eligibility.canLeave,false);
+    assert.equal(bStatus.body.eligibility.reason,"unsettled");
+    assert.ok(BigInt(bStatus.body.eligibility.toPayMinor)>0n);
+    assert.equal((await expenseRequest("POST",bLeave,undefined,otherJar)).response.status,409,
+      "debtor cannot leave with active obligations");
+    assert.equal((await expenseRequest("DELETE",memberUrl(otherUser.id),undefined,jar)).response.status,409,
+      "owner cannot remove member with unsettled debts");
+    assert.equal((await expenseRequest("POST",transferUrl,{targetId:thirdUser.id},otherJar)).response.status,403);
+
+    const cStatus=await expenseRequest("GET",cLeave,undefined,thirdJar);
+    assert.equal(cStatus.response.status,200);
+    assert.equal(cStatus.body.eligibility.canLeave,true,
+      "historical deleted/retired obligations must not block a fully settled member");
+    const oldCItems=await pool.query(
+      `SELECT count(*)::int AS total FROM expense_item_shares s
+       JOIN expense_items i ON i.id=s.item_id
+       WHERE i.expense_id=$1 AND s.user_id=$2`,[debtExpenseId,thirdUser.id]);
+    assert.ok(oldCItems.rows[0].total>0);
+    assert.equal((await expenseRequest("POST",cLeave,undefined,thirdJar)).response.status,200);
+    const afterC=await pool.query(
+      "SELECT status,left_at,role FROM group_members WHERE group_id=$1 AND user_id=$2",
+      [groupId,thirdUser.id]);
+    assert.equal(afterC.rows[0].status,"left");
+    assert.ok(afterC.rows[0].left_at);
+    assert.equal((await expenseRequest("GET",debtEndpoint,undefined,thirdJar)).response.status,404,
+      "former member cannot read private group debts");
+    assert.equal((await expenseRequest("GET",endpoint,undefined,thirdJar)).response.status,404,
+      "former member cannot access group bills");
+    const badMemberDraft={...draft,items:[
+      {name:"Former member food",quantity:1,unitPriceMinor:"10000",participants:[thirdUser.id]}]};
+    assert.equal((await expenseRequest("POST",endpoint,badMemberDraft)).response.status,400,
+      "former members cannot be added to new expense splits");
+    assert.equal((await expenseRequest("POST",endpoint,{...draft,payerId:thirdUser.id})).response.status,400,
+      "former members cannot pay new expenses");
+
+    const invitation=randomBytes(32).toString("base64url");
+    await pool.query(
+      `INSERT INTO group_invites(id,group_id,token_hash,created_by,expires_at)
+       VALUES($1,$2,$3,$4,now()+interval '7 days')`,
+      [randomUUID(),groupId,createHash("sha256").update(invitation).digest("hex"),registered.user.id]);
+    const rejoinUrl=`${origin}/api/invites/accept`;
+    const joined=await expenseRequest("POST",rejoinUrl,{token:invitation},thirdJar);
+    assert.equal(joined.response.status,200,JSON.stringify(joined.body));
+    assert.equal(joined.body.groupId,groupId);
+    assert.equal((await expenseRequest("POST",rejoinUrl,{token:invitation},thirdJar)).response.status,200,
+      "repeated invite acceptance must not create duplicate membership");
+    const restored=await pool.query(
+      "SELECT role,status,left_at,rejoined_at FROM group_members WHERE group_id=$1 AND user_id=$2",
+      [groupId,thirdUser.id]);
+    assert.equal(restored.rowCount,1);
+    assert.equal(restored.rows[0].status,"active");
+    assert.equal(restored.rows[0].role,"member");
+    assert.equal(restored.rows[0].left_at,null);
+    assert.ok(restored.rows[0].rejoined_at);
+    assert.equal((await expenseRequest("GET",debtEndpoint,undefined,thirdJar)).response.status,200);
+    assert.equal((await expenseRequest("POST",transferUrl,{targetId:thirdUser.id},jar)).response.status,200,
+      "only current owner can transfer to active member");
+    const ownerAfter=await pool.query(
+      `SELECT g.owner_id,m.role FROM groups g
+       JOIN group_members m ON m.group_id=g.id AND m.user_id=g.owner_id WHERE g.id=$1`,
+      [groupId]);
+    assert.equal(ownerAfter.rows[0].owner_id,thirdUser.id);
+    assert.equal(ownerAfter.rows[0].role,"owner");
+    assert.equal((await expenseRequest("POST",cLeave,undefined,thirdJar)).response.status,409,
+      "new owner must transfer first");
+    assert.equal((await expenseRequest("DELETE",memberUrl(otherUser.id),undefined,jar)).response.status,403,
+      "former owner with role member cannot remove others");
+    assert.equal((await expenseRequest("DELETE",memberUrl(otherUser.id),undefined,thirdJar)).response.status,409,
+      "new owner cannot bypass debtor balances");
+    const aReceivables=await expenseRequest("GET",bLeave,undefined,jar);
+    assert.equal(aReceivables.response.status,200);
+    assert.ok(BigInt(aReceivables.body.eligibility.toReceiveMinor)>0n,
+      "creditor cannot leave while money is still owed");
+
+    const bOwes=(await expenseRequest("GET",debtEndpoint)).body.debts
+      .filter(x=>x.debtorId===otherUser.id && BigInt(x.outstandingMinor)>0n);
+    assert.ok(bOwes.length>=1);
+    const finalize=await expenseRequest("POST",settlementUrl,{
+      requestKey:randomUUID(),
+      allocations:bOwes.map(x=>({obligationId:x.id,amountMinor:x.outstandingMinor})),
+      note:"finish financial clearance before group exit"
+    },otherJar);
+    assert.equal(finalize.response.status,201,JSON.stringify(finalize.body));
+    const finalizeUrl=`${settlementUrl}/${finalize.body.id}`;
+    const pendingB=await expenseRequest("GET",bLeave,undefined,otherJar);
+    assert.equal(pendingB.body.eligibility.reason,"pending");
+    assert.equal((await expenseRequest("POST",bLeave,undefined,otherJar)).response.status,409,
+      "pending settlement still blocks exit");
+    assert.equal((await expenseRequest("PATCH",finalizeUrl,{action:"confirm"},jar)).response.status,200);
+    assert.equal((await expenseRequest("GET",bLeave,undefined,otherJar)).body.eligibility.canLeave,true);
+    assert.equal((await expenseRequest("POST",bLeave,undefined,otherJar)).response.status,200);
+    assert.equal((await expenseRequest("GET",debtEndpoint,undefined,otherJar)).response.status,404);
+    const settledMembership=await pool.query(
+      "SELECT status FROM group_members WHERE group_id=$1 AND user_id=$2",
+      [groupId,otherUser.id]);
+    assert.equal(settledMembership.rows[0].status,"left");
+    const activeOwnerStatus=await expenseRequest("GET",bLeave,undefined,jar);
+    assert.equal(activeOwnerStatus.body.eligibility.canLeave,true,
+      "creditor must become eligible after all confirmed payments");
+    assert.equal((await expenseRequest("DELETE",memberUrl(registered.user.id),undefined,thirdJar)).response.status,200,
+      "owner may remove settled ordinary member without deleting history");
+    assert.equal((await expenseRequest("GET",endpoint,undefined,jar)).response.status,404,
+      "removed member cannot read old receipts");
+    const archiveHistory=await pool.query(
+      `SELECT count(*)::int AS events FROM group_membership_events WHERE group_id=$1`,
+      [groupId]);
+    assert.ok(archiveHistory.rows[0].events>=5);
+    const persistedFinancial=await pool.query(
+      `SELECT (SELECT count(*)::int FROM obligations WHERE group_id=$1) AS obligations,
+       (SELECT count(*)::int FROM settlements WHERE group_id=$1) AS settlements`,[groupId]);
+    assert.ok(persistedFinancial.rows[0].obligations>=4);
+    assert.ok(persistedFinancial.rows[0].settlements>=3);
+
+    // Concurrent leave versus new allocation: both must never succeed.
+    const raceGroup=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'Lifecycle race group')",
+      [raceGroup,registered.user.id]);
+    await pool.query(`INSERT INTO group_members(group_id,user_id,role)
+      VALUES($1,$2,'owner'),($1,$3,'member')`,
+      [raceGroup,registered.user.id,otherUser.id]);
+    const raceEndpoint=`${origin}/api/groups/${raceGroup}/expenses`;
+    const [raceLeave,raceExpense]=await Promise.all([
+      expenseRequest("POST",`${origin}/api/groups/${raceGroup}/membership/leave`,undefined,otherJar),
+      expenseRequest("POST",raceEndpoint,{...draft,items:[
+        {name:"Race meal",quantity:1,unitPriceMinor:"25000",participants:[otherUser.id]}]}),
+    ]);
+    const successCount=[raceLeave.response.status,raceExpense.response.status]
+      .filter(code=>code===200||code===201).length;
+    assert.equal(successCount,1,
+      `group-level locks must prevent leave/new-debt race: ${raceLeave.response.status}/${raceExpense.response.status}`);
+    const afterRace=await pool.query(
+      "SELECT status FROM group_members WHERE group_id=$1 AND user_id=$2",
+      [raceGroup,otherUser.id]);
+    const activeDebts=await pool.query(
+      `SELECT count(*)::int AS total FROM obligations
+       WHERE group_id=$1 AND debtor_id=$2 AND voided_at IS NULL`,
+      [raceGroup,otherUser.id]);
+    assert.ok(!(afterRace.rows[0].status==="left" && activeDebts.rows[0].total>0),
+      "departed member must never have newly-created outstanding debt");
 
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
