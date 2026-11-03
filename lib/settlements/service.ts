@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { pool } from "@/lib/db/pool";
 import type { PoolClient } from "pg";
+import { notifySettlement } from "@/lib/notifications/service";
 
 export type SettlementStatus = "pending" | "confirmed" | "rejected" | "cancelled";
 export type SettlementAllocationInput = { obligationId: string; amountMinor: string };
@@ -135,6 +136,7 @@ export async function createSettlement(groupId:string, actorId:string, raw:Creat
       `INSERT INTO settlement_events(id,settlement_id,actor_id,event_type,note)
        VALUES ($1,$2,$3,'created',$4)`,[randomUUID(),id,actorId,input.note],
     );
+    await notifySettlement(client,id,actorId,"settlement_requested");
     return {id,alreadyCreated:false};
   });
 }
@@ -170,6 +172,8 @@ export async function resolveSettlement(groupId:string,settlementId:string,actor
        VALUES ($1,$2,$3,$4,$5)`,
       [randomUUID(),settlementId,actorId,next,note?.trim()??""],
     );
+    await notifySettlement(client,settlementId,actorId,`settlement_${next}` as
+      "settlement_confirmed"|"settlement_rejected"|"settlement_cancelled");
     return {id:settlementId,status:next};
   });
 }

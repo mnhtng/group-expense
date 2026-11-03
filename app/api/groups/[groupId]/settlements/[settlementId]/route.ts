@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { drainPushQueue } from "@/lib/notifications/push-worker";
 import { getCurrentSession } from "@/lib/auth/session";
 import { getSettlementDetail, resolveSettlement } from "@/lib/settlements/service";
 import { settlementErrorResponse, settlementJson, settlementNoStore } from "@/lib/settlements/http";
@@ -23,6 +24,10 @@ export async function PATCH(req:Request,{params}:Context){
       return NextResponse.json({error:"Trạng thái không hợp lệ."},{status:400,headers:settlementNoStore});
     const result=await resolveSettlement(groupId,settlementId,session.user.id,
       body.action as "confirm"|"reject"|"cancel",body.note);
+    after(async()=>{
+      try { await drainPushQueue(settlementId,20); }
+      catch { console.error("Push delivery deferred; retry will handle it."); }
+    });
     return NextResponse.json(result,{headers:settlementNoStore});
   }catch(error){return settlementErrorResponse(error)}
 }
