@@ -60,6 +60,18 @@ function editable(role: string, creator: string, actor: string): boolean {
   return creator === actor || role === "owner" || role === "admin";
 }
 
+
+async function assertNoActiveSettlements(client: PoolClient, expenseId: string) {
+  const current=await client.query(
+    `SELECT 1 FROM obligations o JOIN settlement_allocations a ON a.obligation_id=o.id
+     JOIN settlements s ON s.id=a.settlement_id
+     WHERE o.expense_id=$1 AND s.status IN ('pending','confirmed') LIMIT 1`,
+    [expenseId],
+  );
+  if(current.rowCount) throw new ExpenseAccessError(409,
+    "Hóa đơn có thanh toán đang chờ hoặc đã xác nhận; cần điều chỉnh bằng nghiệp vụ riêng.");
+}
+
 async function writeItems(client: PoolClient, groupId: string, expenseId: string, prepared: PreparedExpense) {
   for (const [position, item] of prepared.items.entries()) {
     const itemId = randomUUID();
@@ -125,6 +137,7 @@ export async function updateExpense(groupId: string, expenseId: string, actorId:
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
       throw new ExpenseAccessError(409, "Hóa đơn đã được cập nhật; tải lại trước khi sửa.");
     }
+    await assertNoActiveSettlements(client, expenseId);
     const prepared = prepareExpense(data, members);
     const version = expense.version + 1;
     await client.query(
@@ -160,6 +173,7 @@ export async function deleteExpense(groupId: string, expenseId: string, actorId:
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
       throw new ExpenseAccessError(409, "Hóa đơn đã thay đổi; tải lại trước khi xóa.");
     }
+    await assertNoActiveSettlements(client, expenseId);
     const version = expense.version + 1;
     await client.query(
       "UPDATE expenses SET deleted_at=now(), updated_at=now(), version=$3 WHERE id=$1 AND group_id=$2",
