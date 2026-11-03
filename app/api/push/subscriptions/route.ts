@@ -3,7 +3,6 @@ import { getCurrentSession } from "@/lib/auth/session";
 import { NotificationInputError } from "@/lib/notifications/service";
 import { getPushPreference, subscribePush, unsubscribePush, updatePushPreference } from "@/lib/notifications/push-store";
 import { getVapidConfig } from "@/lib/notifications/push-worker";
-export const runtime="nodejs";
 const noStore={"Cache-Control":"private, no-store"};
 function fail(error:unknown) {
   if(error instanceof NotificationInputError)

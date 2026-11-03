@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth/session";
 import { notificationList, unreadNotificationCount, NotificationInputError } from "@/lib/notifications/service";
-export const runtime="nodejs";
 const noStore={"Cache-Control":"private, no-store"};
 export async function GET(request:Request) {
   const session=await getCurrentSession();

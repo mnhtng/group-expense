@@ -1,6 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
 import { drainPushQueue } from "@/lib/notifications/push-worker";
-export const runtime="nodejs";
 export async function GET(request:Request) {
   const secret=process.env.CRON_SECRET;
   const provided=request.headers.get("authorization")?.replace(/^Bearer /,"")??"";
