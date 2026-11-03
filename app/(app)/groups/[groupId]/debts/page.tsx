@@ -19,6 +19,10 @@ export default async function GroupDebtsPage({ params }: { params: Promise<{ gro
       <h1 className="text-2xl font-semibold">Sổ công nợ</h1>
       <p className="mt-1 text-sm text-muted-foreground">{debts.length} khoản từ các hóa đơn của nhóm</p>
     </header>
+    <Link href={`/groups/${groupId}/settlements/new`}
+      className="block rounded-2xl bg-primary p-4 text-center text-sm font-semibold text-primary-foreground">
+      + Ghi nhận thanh toán (một hoặc nhiều khoản nợ)
+    </Link>
     <Link href={`/groups/${groupId}/settlements`}
       className="block rounded-2xl border bg-secondary p-4 text-sm font-semibold">
       Xem yêu cầu thanh toán và xác nhận hai chiều →
