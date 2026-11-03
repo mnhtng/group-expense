@@ -176,6 +176,36 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.match(groupsHtml, /viewport-fit=cover/, "iOS installed PWA should use safe-area viewport");
 
 
+    // Create-group form uses a stable JSON endpoint, never a redirecting
+    // Server Action that destroys unsaved input on validation errors.
+    const createGroupUrl=`${origin}/api/groups`;
+    const createRequest=async(body,cookies=jar)=>fetch(createGroupUrl,{
+      method:"POST",redirect:"manual",
+      headers:{"Content-Type":"application/json",origin,
+        ...(cookies.size?{cookie:cookieHeader(cookies)}:{})},
+      body:JSON.stringify(body),signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal((await createRequest({name:"A test group"},new Map())).status,401);
+    assert.equal((await createRequest({name:"x"})).status,400);
+    const createdGroup=await createRequest({name:"A group created from JSON"});
+    assert.equal(createdGroup.status,201);
+    assert.equal(createdGroup.headers.get("location"),null);
+    const createdGroupId=(await createdGroup.json()).id;
+    assert.match(createdGroupId,/^[0-9a-f-]{36}$/);
+    const createdGroupRow=await pool.query(
+      "SELECT g.name,m.role FROM groups g JOIN group_members m ON m.group_id=g.id AND m.user_id=$2 WHERE g.id=$1",
+      [createdGroupId,registered.user.id]);
+    assert.equal(createdGroupRow.rows[0].name,"A group created from JSON");
+    assert.equal(createdGroupRow.rows[0].role,"owner");
+    const invalidInvite=await fetch(`${origin}/api/invites/accept`,{
+      method:"POST",redirect:"manual",
+      headers:{"Content-Type":"application/json",origin,cookie:cookieHeader(jar)},
+      body:JSON.stringify({token:"invalid"}),signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(invalidInvite.status,400);
+    assert.equal(invalidInvite.headers.get("location"),null,
+      "invalid invite must not navigate away from the invitation screen");
+
     // The HTTP layer is exercised against disposable PostgreSQL, not Neon.
     const groupId = randomUUID();
     await pool.query("INSERT INTO groups(id, owner_id, name) VALUES ($1,$2,$3)",
