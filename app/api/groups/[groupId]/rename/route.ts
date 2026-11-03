@@ -12,12 +12,13 @@ export const PATCH=withAuthenticatedApi<Context>(async(request,{params},user)=>{
     ? (payload as {name:unknown}).name : null;
   if(typeof name!=="string"||name.trim().length<2||name.trim().length>120)
     return NextResponse.json({error:"Tên nhóm phải có từ 2 đến 120 ký tự."},{status:400});
+  const noteIncluded=typeof payload==="object"&&payload!==null&&"note" in payload;
   let note: string | null | undefined;
-  try { note = optionalNote(typeof payload==="object"&&payload!==null&&"note" in payload ? (payload as {note:unknown}).note : undefined); }
+  try { note = noteIncluded ? optionalNote((payload as {note:unknown}).note) : undefined; }
   catch { return NextResponse.json({error:"Ghi chú tối đa 1000 ký tự."},{status:400}); }
   try {
     const {groupId}=await params;
-    await renameGroup(groupId,user.id,name,note??"");
+    await renameGroup(groupId,user.id,name,noteIncluded ? note??"" : undefined);
     return NextResponse.json({name:name.trim(),notes:note});
   }catch(error){
     const message=error instanceof Error?error.message:"Không thể đổi tên nhóm.";
