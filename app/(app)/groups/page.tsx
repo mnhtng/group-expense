@@ -27,10 +27,6 @@ export default async function GroupsPage() {
           </Link>
         ))}
       </div>
-      <nav className="flex justify-between border-t pt-4 text-sm">
-        <Link href="/groups">Nhóm</Link><Link href="/debts">Công nợ</Link>
-        <Link href="/activity">Hoạt động</Link><Link href="/settings">Cá nhân</Link>
-      </nav>
     </main>
   );
 }
