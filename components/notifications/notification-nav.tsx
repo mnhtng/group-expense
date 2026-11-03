@@ -46,11 +46,11 @@ export function NotificationNav(){
     return ()=>{cancelled=true;window.clearInterval(timer);window.removeEventListener("focus",focus);};
   },[path]);
 
-  return <nav aria-label="Điều hướng chính" className="fixed inset-x-0 bottom-0 z-40
+  return <nav aria-label="Điều hướng chính" className="app-bottom-nav fixed inset-x-0 bottom-0 z-40
     border-t border-border/70 bg-background/95 shadow-[0_-8px_30px_rgba(0,0,0,0.035)]
     backdrop-blur-xl supports-[backdrop-filter]:bg-background/85"
     style={{paddingBottom:"var(--app-tabbar-safe-bottom)"}}>
-    <div className="mx-auto grid max-w-2xl grid-cols-4 gap-2 px-4 pt-2 sm:px-8">
+    <div className="app-tabbar-inner mx-auto grid max-w-2xl grid-cols-4 gap-2 pt-2">
       {links.map(link=>{
         const active=path===link.href || (link.href==="/groups" && path.startsWith("/groups/"));
         return <Link key={link.href} href={link.href}
