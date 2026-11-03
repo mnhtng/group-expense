@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails, getMemberRole } from "@/lib/groups/service";
 import { getExpense } from "@/lib/expenses/service";
+import { listExpenseDebts } from "@/lib/debts/service";
 import { DeleteExpenseButton } from "@/components/expenses/delete-expense-button";
 
 const vnd = (amount: string) => new Intl.NumberFormat("vi-VN").format(BigInt(amount)) + " ₫";
@@ -16,6 +17,7 @@ export default async function ExpenseDetailPage({ params }: {
   if (!group) notFound();
   const expense = await getExpense(groupId, expenseId, user.id);
   if (!expense) notFound();
+  const debts = (await listExpenseDebts(groupId, expenseId, user.id)) ?? [];
   const role = await getMemberRole(groupId, user.id);
   const canEdit = expense.createdBy === user.id || role === "owner" || role === "admin";
   return <main className="mx-auto min-h-dvh max-w-lg space-y-5 px-5 py-8">
@@ -40,11 +42,21 @@ export default async function ExpenseDetailPage({ params }: {
         </div>)}
       </div>
     </section>)}
+    <section className="space-y-3">
+      <h2 className="text-lg font-semibold">Công nợ phát sinh ({debts.length})</h2>
+      {debts.length === 0 && <p className="text-sm text-muted-foreground">Không phát sinh nợ: người trả cũng là người sử dụng các phần chi phí.</p>}
+      {debts.map(debt => <Link key={debt.id}
+        href={`/groups/${groupId}/debts/${debt.id}`}
+        className="flex justify-between gap-4 rounded-xl border p-3 text-sm">
+        <span>{debt.debtorName} <span className="text-muted-foreground">→</span> {debt.creditorName}</span>
+        <strong className="tabular-nums">{vnd(debt.amountMinor)}</strong>
+      </Link>)}
+    </section>
     {canEdit && <div className="flex items-center gap-4">
       <Link href={`/groups/${groupId}/expenses/${expenseId}/edit`}
         className="rounded-xl bg-primary px-4 py-3 text-sm text-primary-foreground">Sửa hóa đơn</Link>
       <DeleteExpenseButton groupId={groupId} expenseId={expenseId} version={expense.version}/>
     </div>}
-    <p className="text-xs text-muted-foreground">Lịch sử phiên bản: {expense.version}. Công nợ và hoàn trả sẽ được bổ sung trong Sprint 3–4.</p>
+    <p className="text-xs text-muted-foreground">Lịch sử phiên bản: {expense.version}. Công nợ được tính từ từng món; xác nhận hoàn trả sẽ được bổ sung trong Sprint 4.</p>
   </main>;
 }
