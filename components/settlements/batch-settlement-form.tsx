@@ -43,22 +43,19 @@ export function BatchSettlementForm({groupId,pairs}:{
       if(!response.ok){setError(data.error??"Không thể tạo yêu cầu.");return;}
       router.push(`/groups/${groupId}/settlements/${data.id}`);
       router.refresh();
-    }catch{setError("Không có kết nối. Thử lại với cùng yêu cầu để tránh ghi trùng.");}
+    }catch{setError("Mất kết nối. Thử lại để kiểm tra trạng thái.");}
     finally{setSaving(false)}
   }
   if(!pairs.length)return <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-    Bạn không có khoản nợ khả dụng nào cần báo thanh toán.
+    Không có khoản nào có thể thanh toán.
   </p>;
   return <form onSubmit={submit} className="space-y-5 pb-20">
-    <label className="block text-sm font-medium">Cặp người trả/nhận
+    <label className="block text-sm font-medium">Người trả / người nhận
       <select value={pairKey} onChange={e=>{setPairKey(e.target.value);setSelected([]);invalidate();}}
         className="mt-2 w-full rounded-xl border bg-background p-3">
         {pairs.map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
       </select>
     </label>
-    <p className="text-sm text-muted-foreground">
-      Chọn các khoản phát sinh cùng cặp người, nhập số tiền cho từng khoản. Một lần chuyển tiền có thể phân bổ vào nhiều hóa đơn.
-    </p>
     <div className="space-y-3">
       {(pair?.debts??[]).map(debt=>{
         const checked=selected.includes(debt.id);
@@ -71,11 +68,11 @@ export function BatchSettlementForm({groupId,pairs}:{
             <span className="min-w-0 flex-1">
               <strong className="block text-sm">{debt.expenseTitle}</strong>
               <span className="block text-xs text-muted-foreground">
-                Có thể xác nhận: {vnd(debt.availableMinor)}
+                Có thể thanh toán: {vnd(debt.availableMinor)}
               </span>
             </span>
           </label>
-          {checked&&<label className="block text-xs">Số tiền phân bổ (VND)
+          {checked&&<label className="block text-xs">Số tiền (VND)
             <input required inputMode="numeric" pattern="[1-9][0-9]*"
               value={amounts[debt.id]??debt.availableMinor}
               onChange={e=>{setAmounts(old=>({...old,[debt.id]:e.target.value}));invalidate();}}
@@ -90,16 +87,16 @@ export function BatchSettlementForm({groupId,pairs}:{
         className="mt-2 w-full rounded-xl border bg-background p-3"/>
     </label>
     <div className="rounded-xl border bg-muted p-4">
-      <p className="text-xs text-muted-foreground">{chosen.length} khoản được chọn</p>
+      <p className="text-xs text-muted-foreground">{chosen.length} khoản</p>
       <p className="mt-1 text-xl font-bold tabular-nums">{vnd(total)}</p>
       <p className="mt-2 text-xs text-muted-foreground">
-        Chỉ bên còn lại mới có quyền xác nhận; tiền đang chờ không làm giảm công nợ.
+        Công nợ chỉ giảm sau khi bên kia xác nhận.
       </p>
     </div>
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
     <button type="submit" disabled={saving||!chosen.length}
       className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-      {saving?"Đang gửi...":"Gửi yêu cầu xác nhận"}
+      {saving?"Đang gửi...":"Gửi yêu cầu"}
     </button>
   </form>;
 }

@@ -36,8 +36,8 @@ export function DeleteExpenseButton({ groupId, expenseId, version }: {
       Xóa hóa đơn
     </button>}
     {confirming&&<InlineConfirmation title="Xóa hóa đơn này?"
-      description="Hành động sẽ được ghi vào lịch sử và không thể hoàn tác. Công nợ đã thanh toán không thể bị xóa."
-      confirmLabel="Xác nhận xóa hóa đơn" danger busy={busy}
+      description="Không thể hoàn tác. Hóa đơn đã thanh toán không thể xóa."
+      confirmLabel="Xóa hóa đơn" danger busy={busy}
       onCancel={()=>{setConfirming(false);setError("");}} onConfirm={()=>void remove()}/>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
   </div>;

@@ -62,14 +62,14 @@ export function NotificationInbox(){
   }
   return <section className="space-y-4">
     <div className="flex items-center justify-between gap-3">
-      <p className="text-sm text-muted-foreground">{unread} thông báo chưa đọc</p>
+      <p className="text-sm text-muted-foreground">{unread} chưa đọc</p>
       <button type="button" disabled={mutating||unread===0} onClick={markAll}
         className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50">Đọc tất cả</button>
     </div>
     {error&&<p role="alert" className="rounded-xl border p-3 text-sm text-destructive">{error}</p>}
     {busy&&<p role="status" className="text-sm text-muted-foreground">Đang tải thông báo...</p>}
     {!busy&&rows.length===0&&<p className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">
-      Chưa có thông báo. Khi có thanh toán chờ xác nhận hoặc được xử lý, thông báo sẽ xuất hiện ở đây.
+      Chưa có thông báo.
     </p>}
     <div className="space-y-3">
       {rows.map(row=><button type="button" key={row.id} onClick={()=>void open(row)}
@@ -89,7 +89,7 @@ export function NotificationInbox(){
     {nextCursor&&<button type="button" disabled={loadingMore}
       onClick={()=>{if(!loadingMore)void load(nextCursor);}}
       className="min-h-11 w-full rounded-xl border px-4 py-3 text-sm disabled:opacity-50">
-      {loadingMore?"Đang tải...":"Tải thêm thông báo"}
+      {loadingMore?"Đang tải...":"Tải thêm"}
     </button>}
   </section>;
 }

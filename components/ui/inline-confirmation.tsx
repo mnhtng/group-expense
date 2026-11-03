@@ -18,7 +18,7 @@ export function InlineConfirmation({
     <div className="flex flex-wrap gap-3">
       <button type="button" onClick={onCancel} disabled={busy}
         className="min-h-11 rounded-xl border bg-background px-4 py-2 text-sm font-medium disabled:opacity-50">
-        Quay lại
+        Hủy
       </button>
       <button type="button" onClick={onConfirm} disabled={busy}
         className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50

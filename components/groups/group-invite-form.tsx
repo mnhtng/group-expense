@@ -39,7 +39,7 @@ export function GroupInviteForm({
       await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
     } catch {
-      setError("Không thể sao chép tự động. Bạn có thể nhấn giữ liên kết để sao chép.");
+      setError("Không sao chép được. Hãy nhấn giữ link.");
     }
   }
 
@@ -49,7 +49,7 @@ export function GroupInviteForm({
       {pending ? "Đang tạo liên kết..." : "Tạo link mời"}
     </button>
     {inviteUrl && <div className="space-y-3 rounded-2xl border p-4 text-sm">
-      <p className="font-medium">Liên kết mời tham gia nhóm</p>
+      <p className="font-medium">Link mời</p>
       <a className="block break-all underline underline-offset-4" href={inviteUrl}>
         {inviteUrl}
       </a>
