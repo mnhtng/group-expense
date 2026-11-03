@@ -2,7 +2,8 @@ import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails, getMemberRole, listMembers } from "@/lib/groups/service";
 import { getExitEligibility } from "@/lib/groups/membership";
 import { GroupMembershipManager } from "@/components/groups/group-membership-manager";
-import { archiveGroupAction, renameGroupAction } from "@/app/actions/groups";
+import { GroupRenameForm } from "@/components/groups/group-rename-form";
+import { GroupArchiveForm } from "@/components/groups/group-archive-form";
 import { GroupInviteForm } from "@/components/groups/group-invite-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -44,15 +45,7 @@ export default async function ManageGroupPage({ params, searchParams }: {
 
     {canManage && <section aria-labelledby="rename-group" className="space-y-4 rounded-3xl border bg-card p-5">
       <h2 id="rename-group" className="text-lg font-semibold">Thông tin nhóm</h2>
-      <form action={renameGroupAction} className="grid gap-3">
-        <input type="hidden" name="groupId" value={groupId}/>
-        <label htmlFor="group-name" className="text-sm font-medium">Tên nhóm</label>
-        <input id="group-name" aria-label="Đổi tên nhóm" name="name" required minLength={2} maxLength={120}
-          defaultValue={group.name} className="min-w-0 rounded-2xl border bg-background px-4 py-3"/>
-        <button type="submit" className="min-h-12 rounded-2xl bg-secondary px-5 py-3 text-sm font-semibold">
-          Lưu tên nhóm
-        </button>
-      </form>
+      <GroupRenameForm groupId={groupId} initialName={group.name}/>
     </section>}
 
     <section aria-labelledby="members-heading" className="space-y-4">
@@ -73,15 +66,7 @@ export default async function ManageGroupPage({ params, searchParams }: {
       <p className="text-sm text-muted-foreground">
         Chỉ có thể lưu trữ khi toàn bộ công nợ đã được giải quyết.
       </p>
-      <form action={archiveGroupAction} className="space-y-3">
-        <input type="hidden" name="groupId" value={groupId}/>
-        <label htmlFor="archive-confirmation" className="block text-sm font-medium">Nhập đúng tên nhóm để xác nhận</label>
-        <input id="archive-confirmation" name="confirmation" required placeholder="Tên nhóm"
-          className="w-full rounded-2xl border bg-background px-4 py-3"/>
-        <button type="submit" className="min-h-12 rounded-2xl border border-destructive px-5 py-3 text-sm font-medium text-destructive">
-          Lưu trữ nhóm
-        </button>
-      </form>
+      <GroupArchiveForm groupId={groupId} groupName={group.name}/>
     </section>}
     <p className="text-xs leading-relaxed text-muted-foreground">
       Khi thành viên rời nhóm, các khoản công nợ và hóa đơn đã phát sinh vẫn được lưu lại.
