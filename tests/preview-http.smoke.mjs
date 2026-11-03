@@ -169,7 +169,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.match(groupsHtml, /Nhóm của tôi/);
     // Native-feeling PWA shell is rendered server-side, not added only after hydration.
     assert.match(groupsHtml, /Tạo nhóm mới/, "mobile create group section must be present");
-    assert.match(groupsHtml, /Nhóm đang tham gia/, "group list should be separately labelled");
+    assert.match(groupsHtml, /Nhóm của bạn/, "group list should be separately labelled");
     assert.match(groupsHtml, /Điều hướng chính/, "tab navigation should be accessible");
     assert.match(groupsHtml, /Công nợ/, "financial tab should remain available");
     assert.match(groupsHtml, /Thông báo/, "notifications tab should remain available");
