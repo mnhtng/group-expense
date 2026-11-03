@@ -10,6 +10,7 @@ export function DeleteExpenseButton({ groupId, expenseId, version }: {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [note,setNote]=useState("");
   async function remove() {
     if(busy) return;
     setBusy(true); setError("");
@@ -17,7 +18,7 @@ export function DeleteExpenseButton({ groupId, expenseId, version }: {
       const response = await fetch(`/api/groups/${groupId}/expenses/${expenseId}`, {
         method: "DELETE", headers: { "Content-Type": "application/json" },
         credentials: "same-origin", cache: "no-store",
-        body: JSON.stringify({ expectedVersion: version }),
+        body: JSON.stringify({ expectedVersion: version, note }),
       });
       if (!response.ok) {
         const data = await response.json();
@@ -38,7 +39,8 @@ export function DeleteExpenseButton({ groupId, expenseId, version }: {
     {confirming&&<InlineConfirmation title="Xóa hóa đơn này?"
       description="Không thể hoàn tác. Hóa đơn đã thanh toán không thể xóa."
       confirmLabel="Xóa hóa đơn" danger busy={busy}
-      onCancel={()=>{setConfirming(false);setError("");}} onConfirm={()=>void remove()}/>}
+      note={note} onNoteChange={setNote}
+      onCancel={()=>{setConfirming(false);setError("");setNote("");}} onConfirm={()=>void remove()}/>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
   </div>;
 }
