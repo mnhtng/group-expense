@@ -3,6 +3,7 @@ import { getCurrentSession } from "@/lib/auth/session";
 import { getExpense, updateExpense, deleteExpense } from "@/lib/expenses/service";
 import { expenseErrorResponse, noStoreHeaders, readJson } from "@/lib/expenses/http";
 import type { ExpenseInput } from "@/lib/expenses/domain";
+import { optionalNote } from "@/lib/notes";
 
 type Ctx = { params: Promise<{ groupId: string; expenseId: string }> };
 const unauthorized = () => NextResponse.json({ error: "Đăng nhập để tiếp tục." }, { status: 401, headers: noStoreHeaders });
@@ -34,8 +35,11 @@ export async function DELETE(request: Request, { params }: Ctx) {
   if (!session?.user) return unauthorized();
   const { groupId, expenseId } = await params;
   try {
-    const body = await readJson(request) as { expectedVersion: number };
-    const saved = await deleteExpense(groupId, expenseId, session.user.id, body?.expectedVersion);
+    const body = await readJson(request) as { expectedVersion: number; note?: string };
+    let note:string|null;
+    try {note=optionalNote(body?.note);}
+    catch {return NextResponse.json({error:"Ghi chú tối đa 1000 ký tự."},{status:400,headers:noStoreHeaders});}
+    const saved = await deleteExpense(groupId, expenseId, session.user.id, body?.expectedVersion,note??"");
     return NextResponse.json(saved, { headers: noStoreHeaders });
   } catch (error) { return expenseErrorResponse(error); }
 }
