@@ -1,11 +1,8 @@
 import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails, getMemberRole, listMembers } from "@/lib/groups/service";
-import { getExitEligibility } from "@/lib/groups/membership";
-import { GroupMembershipManager } from "@/components/groups/group-membership-manager";
 import { listExpenses } from "@/lib/expenses/service";
-import { archiveGroupAction, createInviteAction, renameGroupAction } from "@/app/actions/groups";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 const vnd = (minor: string) => new Intl.NumberFormat("vi-VN").format(BigInt(minor)) + " ₫";
 
@@ -20,12 +17,11 @@ export default async function GroupPage({ params, searchParams }: {
   if (!role) notFound();
   const group = await getGroupDetails(groupId, user.id);
   if (!group) notFound();
-  const [members, expenses, eligibility] = await Promise.all([
+  // Preserve links issued before group management moved to its own page.
+  if (invite) redirect(`/groups/${groupId}/manage?invite=${encodeURIComponent(invite)}`);
+  const [members, expenses] = await Promise.all([
     listMembers(groupId, user.id), listExpenses(groupId, user.id),
-    getExitEligibility(groupId, user.id),
   ]);
-  if(!eligibility)notFound();
-  const inviteUrl = invite ? `${process.env.BETTER_AUTH_URL ?? "http://localhost:3000"}/invite/${invite}` : null;
   return <main className="app-page space-y-6">
     <Link href="/groups" className="-ml-2 inline-flex min-h-11 items-center rounded-xl px-2 text-sm font-medium text-muted-foreground">
       <span aria-hidden="true" className="mr-2">←</span> Nhóm của tôi
@@ -55,33 +51,16 @@ export default async function GroupPage({ params, searchParams }: {
         <strong className="shrink-0 text-sm tabular-nums">{vnd(e.totalMinor)}</strong>
       </Link>)}
     </section>
-    <details className="rounded-3xl border p-5">
-      <summary className="cursor-pointer py-2 font-semibold">Quản lý nhóm & thành viên ({members.length})</summary>
-      <div className="mt-4 space-y-4">
-        {["owner", "admin"].includes(role) && <form action={renameGroupAction} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <input type="hidden" name="groupId" value={groupId}/>
-          <input aria-label="Đổi tên nhóm" required minLength={2} maxLength={120}
-            name="name" defaultValue={group.name} className="min-w-0 flex-1 rounded-xl border bg-background p-3"/>
-          <button className="min-h-12 rounded-xl bg-secondary px-5 font-medium">Đổi tên</button>
-        </form>}
-        <GroupMembershipManager groupId={groupId} userId={user.id} role={role}
-          members={members} eligibility={eligibility}/>
-        {["owner","admin"].includes(role) && <form action={createInviteAction}>
-          <input type="hidden" name="groupId" value={groupId}/>
-          <button className="min-h-12 rounded-xl bg-secondary px-5 py-3 text-sm font-medium">Tạo link mời (7 ngày)</button>
-        </form>}
-        {inviteUrl && <div className="break-all rounded-xl border p-3 text-sm">
-          Link mời: <a className="underline" href={inviteUrl}>{inviteUrl}</a>
-        </div>}
-        {role === "owner" && <form action={archiveGroupAction} className="space-y-2 border-t pt-4">
-          <p className="text-sm font-semibold">Lưu trữ nhóm</p>
-          <input type="hidden" name="groupId" value={groupId}/>
-          <input name="confirmation" required placeholder="Nhập đúng tên nhóm"
-            className="w-full rounded-xl border bg-background p-3"/>
-          <button className="rounded-xl border border-destructive px-4 py-2 text-sm text-destructive">Lưu trữ nhóm</button>
-        </form>}
-      </div>
-    </details>
+    <Link href={`/groups/${groupId}/manage`}
+      className="flex min-h-[88px] items-center justify-between gap-4 rounded-3xl border bg-card p-5 transition-colors hover:bg-secondary/40 active:bg-secondary/70">
+      <span className="min-w-0">
+        <strong className="block text-base">Quản lý nhóm &amp; thành viên ({members.length})</strong>
+        <span className="mt-1 block text-sm text-muted-foreground">
+          Thành viên, lời mời, quyền sở hữu và rời nhóm
+        </span>
+      </span>
+      <span aria-hidden="true" className="shrink-0 text-xl text-muted-foreground">→</span>
+    </Link>
     <p className="text-xs text-muted-foreground">Thành viên đã rời nhóm không thể tạo chi phí mới, nhưng toàn bộ lịch sử tài chính vẫn được bảo toàn.</p>
   </main>;
 }
