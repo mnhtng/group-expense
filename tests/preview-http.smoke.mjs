@@ -182,6 +182,48 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       [groupId, registered.user.id, "Integration group"]);
     await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
       [groupId, registered.user.id]);
+    // Group management is a standalone page, never a native <details> that
+    // gets closed/remounted by Server Actions or router.refresh().
+    const managePath=`/groups/${groupId}/manage`;
+    const groupDetailsResponse=await fetch(`${origin}/groups/${groupId}`,{
+      headers:{cookie:cookieHeader(jar)},signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(groupDetailsResponse.status,200);
+    const detailHtml=await groupDetailsResponse.text();
+    assert.match(detailHtml,new RegExp(`/groups/${groupId}/manage`),
+      "group details must link to the dedicated management page");
+    assert.doesNotMatch(detailHtml,/<details(?:\\s|>)/i,
+      "the old auto-collapsing management disclosure must be removed");
+    const manageResponse=await fetch(`${origin}${managePath}`,{
+      headers:{cookie:cookieHeader(jar)},signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(manageResponse.status,200);
+    const manageHtml=await manageResponse.text();
+    for(const heading of [
+      "Quản lý nhóm","Thông tin nhóm","Thành viên và quyền hạn",
+      "Chuyển quyền sở hữu","Rời nhóm","Mời thành viên","Lưu trữ nhóm",
+    ])assert.match(manageHtml,new RegExp(heading),"missing management action: "+heading);
+    assert.doesNotMatch(manageHtml,/<details(?:\\s|>)/i,
+      "interactive management controls must never be nested in a toggle");
+    const anonManage=await fetch(`${origin}${managePath}`,{
+      redirect:"manual",signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(anonManage.status,307,
+      "group management must require an authenticated session");
+
+    const inviteApi=`/api/groups/${groupId}/invites`;
+    assert.equal((await post(inviteApi,{},new Map())).status,401,
+      "anonymous users cannot generate invitation links");
+    const invited=await post(inviteApi,{},jar);
+    assert.equal(invited.status,201,"owner should generate links without page navigation");
+    const invitedBody=await invited.json();
+    assert.match(invitedBody.token,/^[A-Za-z0-9_-]{32,100}$/,
+      "new invitation token should be URL-safe");
+    const storedInvite=await pool.query(
+      "SELECT id FROM group_invites WHERE token_hash=$1 AND group_id=$2",
+      [createHash("sha256").update(invitedBody.token).digest("hex"),groupId],
+    );
+    assert.equal(storedInvite.rowCount,1,"invitation must persist in Postgres");
     const endpoint = `${origin}/api/groups/${groupId}/expenses`;
     const rejectedOrigin=await fetch(endpoint,{
       method:"POST",redirect:"manual",
@@ -233,6 +275,22 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       { name: "Other Tester", email: otherEmail, password }, otherJar);
     assert.ok(otherSignup.ok, "second test user must sign up");
     const otherUser = (await otherSignup.json()).user;
+    assert.equal((await post(inviteApi,{},otherJar)).status,403,
+      "non-members must not generate group invitations");
+    const otherManage=await fetch(`${origin}${managePath}`,{
+      headers:{cookie:cookieHeader(otherJar)},redirect:"manual",
+      signal:AbortSignal.timeout(10_000),
+    });
+    if(otherManage.status===200){
+      const html=await otherManage.text();
+      assert.match(html,/NEXT_HTTP_ERROR_FALLBACK|NEXT_NOT_FOUND|404/,
+        "non-member manage page must render not-found, never private controls");
+      assert.doesNotMatch(html, /Chuyển quyền sở hữu/,
+        "non-members may not see owner management controls");
+    }else{
+      assert.equal(otherManage.status,404);
+    }
+
     assert.equal((await expenseRequest("POST", endpoint, draft, otherJar)).response.status, 404,
       "non-member must not create expenses in another group");
     assert.equal((await expenseRequest("GET", endpoint, undefined, otherJar)).response.status, 404,

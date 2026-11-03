@@ -32,7 +32,7 @@ export async function createInviteAction(form: FormData) {
   const user = await requireUser();
   const groupId = String(form.get("groupId") ?? "");
   const token = await createInvite(groupId, user.id);
-  redirect(`/groups/${groupId}?invite=${encodeURIComponent(token)}`);
+  redirect(`/groups/${groupId}/manage?invite=${encodeURIComponent(token)}`);
 }
 
 export async function acceptInviteAction(form: FormData) {
