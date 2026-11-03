@@ -12,16 +12,16 @@ export default async function DebtsPage() {
   ]);
   const payable = debts.filter(d => d.direction === "pay");
   const receivable = debts.filter(d => d.direction === "receive");
-  return <main className="mx-auto min-h-dvh max-w-lg space-y-6 px-5 py-8">
+  return <main className="app-page space-y-6">
     <header>
       <p className="text-sm text-muted-foreground">Group Expense</p>
       <h1 className="text-2xl font-semibold">Công nợ của tôi</h1>
       <p className="mt-1 text-sm text-muted-foreground">Công nợ còn lại đã trừ những khoản được hai bên xác nhận.</p>
     </header>
     <div className="grid grid-cols-2 gap-3">
-      <div className="rounded-2xl border bg-card p-4">
+      <div className="min-w-0 rounded-3xl border bg-card p-4 sm:p-5">
         <p className="text-xs text-muted-foreground">Tôi cần trả</p>
-        <p className="mt-2 text-lg font-bold tabular-nums">{vnd(sumDebtAmounts(payable))}</p>
+        <p className="mt-2 break-words text-base font-bold tabular-nums sm:text-lg">{vnd(sumDebtAmounts(payable))}</p>
       </div>
       <div className="rounded-2xl border bg-card p-4">
         <p className="text-xs text-muted-foreground">Tôi được nhận</p>
@@ -32,7 +32,7 @@ export default async function DebtsPage() {
       <h2 className="text-lg font-semibold">Yêu cầu đang chờ ({settlements.length})</h2>
       {settlements.length===0&&<p className="rounded-xl border p-3 text-sm text-muted-foreground">Không có giao dịch chờ xác nhận.</p>}
       {settlements.map(s=><Link key={s.id} href={`/groups/${s.groupId}/settlements/${s.id}`}
-        className="flex justify-between gap-3 rounded-xl border p-4 text-sm">
+        className="flex min-h-[72px] justify-between gap-3 rounded-2xl border p-4 text-sm">
         <span><strong>{s.initiatedBy===user.id?"Bạn đã yêu cầu":"Cần bạn xem xét"}</strong>
           <span className="mt-1 block text-xs text-muted-foreground">{s.debtorName} → {s.creditorName} · {s.groupName}</span></span>
         <strong className="tabular-nums">{vnd(s.amountMinor)}</strong>
@@ -44,7 +44,7 @@ export default async function DebtsPage() {
         {rows.length === 0 && <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Không có khoản nợ nào.</p>}
         {rows.map((debt,i) => <Link key={`${debt.groupId}-${debt.counterpartyId}-${debt.direction}-${i}`}
           href={`/groups/${debt.groupId}/debts`}
-          className="block rounded-2xl border bg-card p-4">
+          className="block min-h-[88px] rounded-3xl border bg-card p-4 sm:p-5">
           <div className="flex items-center justify-between gap-3">
             <strong>{debt.counterpartyName}</strong>
             <strong className="tabular-nums">{vnd(debt.amountMinor)}</strong>

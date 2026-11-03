@@ -14,7 +14,7 @@ export default async function DebtDetailPage({ params }: {
   const detail = await getDebtDetails(groupId, debtId, user.id);
   if (!detail) notFound();
   const { debt, sources } = detail;
-  return <main className="mx-auto min-h-dvh max-w-lg space-y-5 px-5 py-8">
+  return <main className="app-page space-y-5">
     <Link href={`/groups/${groupId}/debts`} className="text-sm text-muted-foreground">← Sổ công nợ {debt.groupName}</Link>
     <header className="rounded-2xl border bg-card p-5">
       <p className="text-sm text-muted-foreground">Công nợ còn lại · {debt.occurredOn}</p>

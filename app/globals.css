@@ -135,3 +135,83 @@
     @apply font-sans;
   }
 }
+
+/* Shared native-feeling mobile layout. Safe area applies to installed PWAs.
+   Do not add a second px-* / py-* class on .app-page instances. */
+@layer components {
+  .app-shell {
+    --app-tabbar-content-height: 76px;
+    --app-tabbar-safe-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    min-height: 100dvh;
+    padding-bottom: calc(var(--app-tabbar-content-height) + var(--app-tabbar-safe-bottom) + 28px);
+  }
+
+  .app-page {
+    width: 100%;
+    max-width: 42rem;
+    margin-inline: auto;
+    padding-left: max(24px, env(safe-area-inset-left, 0px));
+    padding-right: max(24px, env(safe-area-inset-right, 0px));
+    padding-top: max(24px, calc(env(safe-area-inset-top, 0px) + 14px));
+    padding-bottom: 28px;
+  }
+
+  .app-shell button:not(:disabled),
+  .app-shell a {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .app-shell button {
+    min-height: 44px;
+  }
+
+  .app-shell input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  .app-shell select,
+  .app-shell textarea {
+    min-height: 48px;
+    font-size: 16px; /* avoids iOS Safari zooming the viewport on focus */
+  }
+
+  .app-shell :is(button, a, input, select, textarea):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+}
+
+@media (min-width: 640px) {
+  .app-page {
+    padding-left: max(32px, env(safe-area-inset-left, 0px));
+    padding-right: max(32px, env(safe-area-inset-right, 0px));
+    padding-top: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Keep the keyboard focused: native tab bars get out of the way when editing. */
+@supports selector(:has(*)) {
+  .app-shell:has(input:focus, textarea:focus, select:focus) .app-bottom-nav {
+    display: none;
+  }
+}
+
+@layer components {
+  .app-tabbar-inner {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+}
+
+@media (min-width: 640px) {
+  .app-tabbar-inner {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Outfit, Raleway } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,14 @@ export const metadata: Metadata = {
   description: "Quản lý chi tiêu nhóm, chia tiền và theo dõi công nợ minh bạch.",
   applicationName: "Group Expense",
   appleWebApp: { capable: true, title: "Group Expense", statusBarStyle: "default" },
+};
+
+// Safe-area CSS variables apply to standalone PWA on iOS and Android.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
