@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/pool";
 
 export class MembershipError extends Error {
-  constructor(public statusCode: 403 | 404 | 409, message: string) {
+  constructor(public statusCode: 400 | 403 | 404 | 409, message: string) {
     super(message);
     this.name = "MembershipError";
   }
@@ -136,7 +136,7 @@ export async function transferGroupOwnership(groupId:string,actorId:string,targe
     const group=await lockGroup(client,groupId);
     if(group.owner_id!==actorId || !(await activeRole(client,groupId,actorId)))
       throw new MembershipError(403,"Chỉ chủ nhóm hiện tại được chuyển quyền.");
-    if(actorId===targetId)throw new MembershipError(400 as 403,"Phải chọn một thành viên khác.");
+    if(actorId===targetId)throw new MembershipError(400,"Phải chọn một thành viên khác.");
     const role=await activeRole(client,groupId,targetId);
     if(!role || role==="owner")throw new MembershipError(404,"Chỉ được chuyển cho thành viên đang hoạt động.");
     // Downgrade first to satisfy unique active-owner index; transaction atomic.
