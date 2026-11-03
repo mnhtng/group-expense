@@ -58,7 +58,8 @@ export function GroupInviteForm({
       className="min-h-12 rounded-2xl bg-secondary px-5 py-3 text-sm font-semibold disabled:opacity-50">
       {pending ? "Đang tạo liên kết..." : "Tạo link mời"}
     </button>
-    {inviteUrl && <div className="space-y-3 rounded-2xl border p-4 text-sm">\n      <InviteQr key={inviteUrl} url={inviteUrl} groupName={groupName}/>
+    {inviteUrl && <div className="space-y-3 rounded-2xl border p-4 text-sm">
+      <InviteQr key={inviteUrl} url={inviteUrl} groupName={groupName}/>
       <p className="font-medium">Link mời</p>
       <a className="block break-all underline underline-offset-4" href={inviteUrl}>
         {inviteUrl}
