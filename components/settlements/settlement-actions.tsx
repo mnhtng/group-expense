@@ -70,7 +70,7 @@ export function SettlementActions({groupId,settlementId,canConfirm,canCancel}:{
       description={labels[confirmation].description}
       confirmLabel={labels[confirmation].confirm}
       danger={confirmation!=="confirm"} busy={busy}
-      note={note} onNoteChange={setNote}
+      note={note} onNoteChange={setNote} noteMaxLength={500}
       onCancel={()=>{setConfirmation(null);setError("");setNote("");}}
       onConfirm={()=>void decide(confirmation)}/>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
