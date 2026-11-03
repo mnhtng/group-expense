@@ -81,7 +81,7 @@ export function BatchSettlementForm({groupId,pairs}:{
         </div>;
       })}
     </div>
-    <label className="block text-sm font-medium">Ghi chú (tùy chọn)
+    <label className="block text-sm font-medium">Ghi chú (không bắt buộc)
       <textarea maxLength={500} value={note} rows={2}
         onChange={e=>{setNote(e.target.value);invalidate();}}
         className="mt-2 w-full rounded-xl border bg-background p-3"/>
