@@ -27,16 +27,18 @@ export default async function GroupPage({ params, searchParams }: {
   if(!eligibility)notFound();
   const inviteUrl = invite ? `${process.env.BETTER_AUTH_URL ?? "http://localhost:3000"}/invite/${invite}` : null;
   return <main className="app-page space-y-6">
-    <Link href="/groups" className="text-sm text-muted-foreground">← Nhóm của tôi</Link>
-    <div className="flex items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-semibold">{group.name}</h1>
+    <Link href="/groups" className="-ml-2 inline-flex min-h-11 items-center rounded-xl px-2 text-sm font-medium text-muted-foreground">
+      <span aria-hidden="true" className="mr-2">←</span> Nhóm của tôi
+    </Link>
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="min-w-0 flex-1"><h1 className="break-words text-2xl font-semibold">{group.name}</h1>
         <p className="text-xs text-muted-foreground">Đơn vị tiền: {group.currency}</p></div>
-      <Link href={`/groups/${groupId}/expenses/new`} className="rounded-xl bg-primary px-3 py-3 text-sm font-semibold text-primary-foreground">
+      <Link href={`/groups/${groupId}/expenses/new`} className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">
         + Hóa đơn
       </Link>
     </div>
     <Link href={`/groups/${groupId}/debts`}
-      className="flex items-center justify-between rounded-2xl border bg-secondary p-4">
+      className="flex min-h-[88px] items-center justify-between gap-4 rounded-3xl border bg-secondary p-5">
       <span><strong className="block">Sổ công nợ của nhóm</strong>
         <small className="text-muted-foreground">Ai cần trả ai, theo từng món và hóa đơn</small></span>
       <span aria-hidden="true">→</span>
@@ -47,26 +49,26 @@ export default async function GroupPage({ params, searchParams }: {
         Nhóm chưa có hóa đơn. Chọn + Hóa đơn để thêm từng món và phân chia chi phí.
       </p>}
       {expenses.map(e => <Link key={e.id} href={`/groups/${groupId}/expenses/${e.id}`}
-        className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-4">
+        className="flex min-h-[80px] items-center justify-between gap-3 rounded-3xl border bg-card p-4 sm:p-5">
         <div className="min-w-0"><h3 className="truncate font-semibold">{e.title}</h3>
           <p className="mt-1 text-xs text-muted-foreground">{e.occurredOn} · {e.itemCount} món · {e.payerName} đã trả</p></div>
         <strong className="shrink-0 text-sm tabular-nums">{vnd(e.totalMinor)}</strong>
       </Link>)}
     </section>
-    <details className="rounded-2xl border p-4">
-      <summary className="cursor-pointer font-semibold">Quản lý nhóm & thành viên ({members.length})</summary>
+    <details className="rounded-3xl border p-5">
+      <summary className="cursor-pointer py-2 font-semibold">Quản lý nhóm & thành viên ({members.length})</summary>
       <div className="mt-4 space-y-4">
-        {["owner", "admin"].includes(role) && <form action={renameGroupAction} className="flex gap-2">
+        {["owner", "admin"].includes(role) && <form action={renameGroupAction} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
           <input type="hidden" name="groupId" value={groupId}/>
           <input aria-label="Đổi tên nhóm" required minLength={2} maxLength={120}
             name="name" defaultValue={group.name} className="min-w-0 flex-1 rounded-xl border bg-background p-3"/>
-          <button className="rounded-xl bg-secondary px-3">Đổi tên</button>
+          <button className="min-h-12 rounded-xl bg-secondary px-5 font-medium">Đổi tên</button>
         </form>}
         <GroupMembershipManager groupId={groupId} userId={user.id} role={role}
           members={members} eligibility={eligibility}/>
         {["owner","admin"].includes(role) && <form action={createInviteAction}>
           <input type="hidden" name="groupId" value={groupId}/>
-          <button className="rounded-xl bg-secondary px-4 py-3 text-sm">Tạo link mời (7 ngày)</button>
+          <button className="min-h-12 rounded-xl bg-secondary px-5 py-3 text-sm font-medium">Tạo link mời (7 ngày)</button>
         </form>}
         {inviteUrl && <div className="break-all rounded-xl border p-3 text-sm">
           Link mời: <a className="underline" href={inviteUrl}>{inviteUrl}</a>

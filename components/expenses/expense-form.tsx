@@ -86,13 +86,13 @@ export function ExpenseForm({ groupId, members, expense }: {
     } finally { setSaving(false); }
   }
 
-  return <form onSubmit={onSubmit} className="space-y-5 pb-28">
-    <div className="space-y-3 rounded-2xl border bg-card p-4">
+  return <form onSubmit={onSubmit} className="space-y-5 pb-8">
+    <div className="space-y-4 rounded-3xl border bg-card p-5">
       <label className="block text-sm font-medium">Tên hóa đơn
         <input required maxLength={160} value={title} onChange={e => setTitle(e.target.value)}
           placeholder="Ví dụ: Mua đồ ăn tối" className="mt-1 w-full rounded-xl border bg-background p-3"/>
       </label>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="text-sm font-medium">Ngày chi tiêu
           <input required type="date" value={occurredOn} onChange={e => setOccurredOn(e.target.value)}
             className="mt-1 w-full min-w-0 rounded-xl border bg-background p-3"/>
@@ -118,7 +118,7 @@ export function ExpenseForm({ groupId, members, expense }: {
       {rows.map((row, index) => {
         const amount = /^\d+$/.test(row.quantity) && /^\d+$/.test(row.unitPriceMinor)
           ? BigInt(row.quantity) * BigInt(row.unitPriceMinor) : 0n;
-        return <section key={row.key} className="space-y-3 rounded-2xl border bg-card p-4">
+        return <section key={row.key} className="space-y-4 rounded-3xl border bg-card p-5">
           <div className="flex items-center justify-between">
             <strong className="text-sm">Món {index + 1}</strong>
             <button type="button" disabled={rows.length === 1} className="text-sm text-destructive"
