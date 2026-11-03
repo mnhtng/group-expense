@@ -4,9 +4,14 @@ import { pool } from "@/lib/db/pool";
 export type DebtRow = {
   id: string; groupId: string; groupName: string;
   expenseId: string; expenseTitle: string; expenseVersion: number;
-  occurredOn: string; debtorId: string; debtorName: string;
+  occurredOn: string; expenseTotalMinor: string; sourceCount: number; sourcePreview: string; debtorId: string; debtorName: string;
   creditorId: string; creditorName: string; amountMinor: string;
   confirmedMinor: string; pendingMinor: string; outstandingMinor: string; availableMinor: string;
+};
+export type DebtPayment = {
+  id: string; status: "pending" | "confirmed" | "rejected" | "cancelled";
+  amountMinor: string; initiatedBy: string; resolvedBy: string | null;
+  note: string | null; createdAt: string; resolvedAt: string | null;
 };
 export type DebtSource = {
   itemId: string; itemName: string; amountMinor: string;
@@ -36,6 +41,10 @@ const debtQuery = `
   SELECT o.id, o.group_id AS "groupId", g.name AS "groupName",
     o.expense_id AS "expenseId", e.title AS "expenseTitle",
     o.expense_version AS "expenseVersion", e.occurred_on::text AS "occurredOn",
+    e.total_minor::text AS "expenseTotalMinor",
+    (SELECT count(*)::int FROM obligation_sources src WHERE src.obligation_id=o.id) AS "sourceCount",
+    COALESCE((SELECT string_agg(src.item_name, ', ' ORDER BY src.item_name)
+      FROM obligation_sources src WHERE src.obligation_id=o.id),'') AS "sourcePreview",
     o.debtor_id AS "debtorId", debtor.name AS "debtorName",
     o.creditor_id AS "creditorId", creditor.name AS "creditorName",
     o.amount_minor::text AS "amountMinor",
@@ -80,7 +89,7 @@ export async function listExpenseDebts(groupId: string, expenseId: string, actor
 }
 
 export async function getDebtDetails(groupId: string, debtId: string, actorId: string):
-  Promise<{ debt: DebtRow; sources: DebtSource[] } | null> {
+  Promise<{ debt: DebtRow; sources: DebtSource[]; payments: DebtPayment[] } | null> {
   if (!(await assertGroupMember(groupId, actorId)) || !validUUID(debtId)) return null;
   const result = await pool.query<DebtRow>(
     debtQuery + " AND o.group_id=$1 AND o.id=$2", [groupId, debtId],
@@ -92,7 +101,18 @@ export async function getDebtDetails(groupId: string, debtId: string, actorId: s
             amount_minor::text AS "amountMinor"
      FROM obligation_sources WHERE obligation_id=$1 ORDER BY item_name, id`, [debtId],
   );
-  return { debt, sources: sources.rows };
+  const payments = await pool.query<DebtPayment>(
+    `SELECT s.id, s.status, a.amount_minor::text AS "amountMinor",
+            s.initiated_by AS "initiatedBy", s.resolved_by AS "resolvedBy",
+            s.note, s.created_at::text AS "createdAt",
+            s.resolved_at::text AS "resolvedAt"
+     FROM settlement_allocations a
+     JOIN settlements s ON s.id=a.settlement_id
+     WHERE a.obligation_id=$1 AND s.group_id=$2
+     ORDER BY s.created_at DESC, s.id DESC LIMIT 100`,
+    [debtId, groupId],
+  );
+  return { debt, sources: sources.rows, payments: payments.rows };
 }
 
 export async function listPersonalDebts(userId: string): Promise<PersonalDebt[]> {
@@ -123,6 +143,21 @@ export async function listPersonalDebts(userId: string): Promise<PersonalDebt[]>
      GROUP BY direction,"counterpartyId",u.name,o.group_id,g.name
      HAVING sum(o.amount_minor-o.confirmed)>0
      ORDER BY g.name,u.name,direction`, [userId]
+  );
+  return result.rows;
+}
+
+/** Each card maps to one source-traceable obligation, not a collapsed net balance. */
+export async function listPersonalDebtItems(userId: string): Promise<DebtRow[]> {
+  const result = await pool.query<DebtRow>(
+    debtQuery + ` AND (o.debtor_id=$1 OR o.creditor_id=$1)
+      AND EXISTS (SELECT 1 FROM group_members m
+        WHERE m.group_id=o.group_id AND m.user_id=$1 AND m.status='active')
+      AND o.amount_minor > COALESCE((SELECT sum(a.amount_minor)
+        FROM settlement_allocations a JOIN settlements st ON st.id=a.settlement_id
+        WHERE a.obligation_id=o.id AND st.status='confirmed'),0)
+      ORDER BY e.occurred_on DESC, e.created_at DESC, o.id DESC LIMIT 250`,
+    [userId],
   );
   return result.rows;
 }
