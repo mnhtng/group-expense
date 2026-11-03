@@ -20,7 +20,7 @@ export class SettlementError extends Error {
 type SettlementRow = {
   id: string; groupId: string; debtorId: string; creditorId: string;
   initiatedBy: string; status: SettlementStatus; amountMinor: string;
-  note: string | null; createdAt: string; resolvedAt: string | null;
+  note: string | null; groupName: string; createdAt: string; resolvedAt: string | null;
   resolvedBy: string | null; debtorName: string; creditorName: string;
 };
 type AllocationRow = { obligationId: string; amountMinor: string; expenseId: string; expenseTitle: string };
@@ -179,12 +179,12 @@ const selectSettlement=`
     d.name AS "debtorName",s.creditor_id AS "creditorId",c.name AS "creditorName",
     s.initiated_by AS "initiatedBy",s.status,s.amount_minor::text AS "amountMinor",
     s.note,s.created_at::text AS "createdAt",s.resolved_at::text AS "resolvedAt",
-    s.resolved_by AS "resolvedBy"
+    s.resolved_by AS "resolvedBy",g.name AS "groupName"
   FROM settlements s
   JOIN "user" d ON d.id=s.debtor_id JOIN "user" c ON c.id=s.creditor_id
   JOIN groups g ON g.id=s.group_id AND g.archived_at IS NULL
   WHERE EXISTS(SELECT 1 FROM group_members m
-    WHERE m.group_id=s.group_id AND m.user_id=$2)
+    WHERE m.group_id=s.group_id AND m.user_id=$1)
 `;
 export async function listGroupSettlements(groupId:string,actorId:string):Promise<SettlementRow[]|null> {
   if(!validUUID(groupId)) return null;
@@ -193,16 +193,16 @@ export async function listGroupSettlements(groupId:string,actorId:string):Promis
      WHERE g.id=$1 AND m.user_id=$2 AND g.archived_at IS NULL`,[groupId,actorId]);
   if(!gate.rowCount)return null;
   const rows=await pool.query<SettlementRow>(
-    selectSettlement+" AND s.group_id=$1 ORDER BY (s.status='pending') DESC,s.created_at DESC LIMIT 150",
-    [groupId,actorId],
+    selectSettlement+" AND s.group_id=$2 ORDER BY (s.status='pending') DESC,s.created_at DESC LIMIT 150",
+    [actorId,groupId],
   );
   return rows.rows;
 }
 export async function listPersonalSettlements(actorId:string):Promise<(SettlementRow & {groupName:string})[]>{
   const rows=await pool.query<SettlementRow & {groupName:string}>(
-    selectSettlement+` AND (s.debtor_id=$2 OR s.creditor_id=$2)
+    selectSettlement+` AND (s.debtor_id=$1 OR s.creditor_id=$1)
       AND s.status='pending' ORDER BY s.created_at DESC LIMIT 150`
-      .replace('s.status,','s.status,'),[null,actorId],
+      ,[actorId],
   );
   return rows.rows;
 }
@@ -210,8 +210,8 @@ export async function getSettlementDetail(groupId:string,settlementId:string,act
   Promise<SettlementDetail|null> {
   if(!validUUID(groupId)||!validUUID(settlementId))return null;
   const row=await pool.query<SettlementRow>(
-    selectSettlement+" AND s.group_id=$1 AND s.id=$3",
-    [groupId,actorId,settlementId],
+    selectSettlement+" AND s.group_id=$2 AND s.id=$3",
+    [actorId,groupId,settlementId],
   );
   if(!row.rows[0])return null;
   const allocations=await pool.query<AllocationRow>(

@@ -30,6 +30,10 @@ CREATE INDEX settlements_initiator_idx ON settlements(initiated_by, created_at D
 CREATE INDEX settlements_pending_created_idx ON settlements(group_id, created_at DESC)
   WHERE status='pending';
 
+-- Composite identity required for allocation FKs.
+ALTER TABLE obligations ADD CONSTRAINT obligations_pair_identity_unique
+  UNIQUE (id, group_id, debtor_id, creditor_id);
+
 -- Record precise source allocations; composite foreign keys prevent cross-group
 -- and cross-debtor payments even if callers bypass application validation.
 CREATE TABLE settlement_allocations (
