@@ -59,30 +59,30 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
     }else if(confirmation.kind==="remove"){
       if(await call("DELETE",base+"/members/"+encodeURIComponent(confirmation.memberId))){
         setConfirmation(null);
-        setSuccess("Đã cập nhật thành viên. Lịch sử hóa đơn vẫn được bảo toàn.");
+        setSuccess("Đã xóa thành viên khỏi nhóm.");
         router.refresh();
       }
     }else {
       if(await call("POST",base+"/transfer",{targetId:confirmation.memberId})){
         setConfirmation(null);
-        setSuccess("Đã chuyển quyền chủ nhóm. Bạn có thể rời sau khi tất toán.");
+        setSuccess("Đã chuyển chủ nhóm.");
         router.refresh();
       }
     }
   }
 
   const reasons:Record<ExitEligibility["reason"],string>={
-    ready:"Có thể rời nhóm: không còn nghĩa vụ tài chính chưa xử lý.",
-    owner:"Bạn đang là chủ nhóm. Hãy chuyển quyền sở hữu cho thành viên khác trước.",
-    pending:"Có giao dịch đang chờ xác nhận hoặc hủy.",
-    unsettled:"Cần hoàn tất cả khoản phải trả và khoản được nhận trước khi rời nhóm.",
+    ready:"Đã tất toán. Bạn có thể rời nhóm.",
+    owner:"Hãy chuyển quyền chủ nhóm trước.",
+    pending:"Còn giao dịch chờ xác nhận.",
+    unsettled:"Cần tất toán công nợ trước khi rời.",
   };
   return <div className="space-y-4">
     <div className="space-y-2">
-      <h3 className="text-sm font-semibold">Thành viên đang hoạt động ({members.length})</h3>
+      <h3 className="text-sm font-semibold">Thành viên ({members.length})</h3>
       {members.map(m=><div key={m.id} className="space-y-2">
         <div className="flex min-h-16 items-center justify-between gap-3 rounded-xl border p-3 text-sm">
-          <span className="min-w-0">{m.name} <small className="text-muted-foreground">({m.role})</small></span>
+          <span className="min-w-0">{m.name} <small className="text-muted-foreground">({({owner:"Chủ nhóm",admin:"Quản trị",member:"Thành viên"} as Record<string,string>)[m.role]??m.role})</small></span>
           {m.id!==userId && m.role!=="owner" &&
             (role==="owner" ||(role==="admin"&&m.role==="member")) &&
             <button type="button" disabled={pending}
@@ -93,17 +93,14 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
         </div>
         {confirmation?.kind==="remove"&&confirmation.memberId===m.id&&
           <InlineConfirmation title={`Xóa ${m.name} khỏi nhóm?`}
-            description="Chỉ có thể xóa thành viên đã tất toán toàn bộ công nợ. Hóa đơn và lịch sử vẫn được lưu."
-            confirmLabel="Xác nhận xóa" danger busy={pending}
+            description="Chỉ xóa khi đã tất toán. Lịch sử giao dịch được giữ lại."
+            confirmLabel="Xóa thành viên" danger busy={pending}
             onCancel={()=>setConfirmation(null)} onConfirm={()=>void proceed()}/>}
       </div>)}
     </div>
 
     {role==="owner"&&<section className="space-y-3 rounded-2xl border p-4">
       <h3 className="font-semibold">Chuyển quyền sở hữu</h3>
-      <p className="text-sm text-muted-foreground">
-        Chỉ chuyển cho thành viên đang hoạt động. Chủ nhóm mới được quản lý và mời thành viên.
-      </p>
       <select value={targetId} onChange={e=>{setTarget(e.target.value);setConfirmation(null);}}
         className="w-full rounded-xl border bg-background p-3">
         {activeMembers.length===0&&<option value="">Không có thành viên để chuyển</option>}
@@ -119,8 +116,8 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
       </button>
       {confirmation?.kind==="transfer"&&
         <InlineConfirmation title={`Chuyển quyền cho ${confirmation.name}?`}
-          description="Người này sẽ có toàn quyền quản lý nhóm. Bạn sẽ trở thành thành viên thông thường."
-          confirmLabel="Xác nhận chuyển quyền" busy={pending}
+          description="Người này sẽ là chủ nhóm mới. Bạn trở thành thành viên."
+          confirmLabel="Chuyển quyền" busy={pending}
           onCancel={()=>setConfirmation(null)} onConfirm={()=>void proceed()}/>}
     </section>}
 
@@ -132,7 +129,7 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
         <div><p className="text-xs text-muted-foreground">Tôi cần nhận</p><strong>{formatVnd(eligibility.toReceiveMinor)}</strong></div>
       </div>
       {eligibility.pendingCount>0&&
-        <p className="text-sm">{eligibility.pendingCount} giao dịch đang chờ xử lý.</p>}
+        <p className="text-sm">{eligibility.pendingCount} giao dịch đang chờ.</p>}
       {!eligibility.canLeave&&<div className="flex flex-wrap gap-4 text-sm">
         <a className="underline" href={`/groups/${groupId}/debts`}>Xem công nợ</a>
         <a className="underline" href={`/groups/${groupId}/settlements`}>Xem thanh toán</a>
@@ -144,8 +141,8 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
       </button>
       {confirmation?.kind==="leave"&&eligibility.canLeave&&
         <InlineConfirmation title="Xác nhận rời nhóm?"
-          description="Bạn sẽ không còn quyền xem hoặc quản lý nhóm. Các hóa đơn và lịch sử tài chính vẫn được giữ lại."
-          confirmLabel="Xác nhận rời nhóm" danger busy={pending}
+          description="Bạn sẽ mất quyền truy cập nhóm. Lịch sử giao dịch vẫn được lưu."
+          confirmLabel="Rời nhóm" danger busy={pending}
           onCancel={()=>setConfirmation(null)} onConfirm={()=>void proceed()}/>}
     </section>
     {error&&<p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
