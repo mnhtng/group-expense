@@ -26,10 +26,10 @@ export default async function ExpenseDetailPage({ params }: {
       <p className="text-sm text-muted-foreground">{expense.occurredOn} · {expense.items.length} món</p>
       <h1 className="mt-2 text-2xl font-semibold">{expense.title}</h1>
       <p className="mt-3 text-3xl font-bold tabular-nums">{vnd(expense.totalMinor)}</p>
-      <p className="mt-2 text-sm text-muted-foreground">Thanh toán: {expense.payerName}</p>
+      <p className="mt-2 text-sm text-muted-foreground">Người trả: {expense.payerName}</p>
       {expense.notes && <p className="mt-3 text-sm">{expense.notes}</p>}
     </header>
-    <h2 className="text-lg font-semibold">Chi tiết món & phần chia</h2>
+    <h2 className="text-lg font-semibold">Các món</h2>
     {expense.items.map(item => <section key={item.id} className="space-y-3 rounded-2xl border p-4">
       <div className="flex items-center justify-between gap-3">
         <strong>{item.name}</strong><span className="font-semibold tabular-nums">{vnd(item.amountMinor)}</span>
@@ -44,7 +44,7 @@ export default async function ExpenseDetailPage({ params }: {
     </section>)}
     <section className="space-y-3">
       <h2 className="text-lg font-semibold">Công nợ phát sinh ({debts.length})</h2>
-      {debts.length === 0 && <p className="text-sm text-muted-foreground">Không phát sinh nợ: người trả cũng là người sử dụng các phần chi phí.</p>}
+      {debts.length === 0 && <p className="text-sm text-muted-foreground">Không có công nợ.</p>}
       {debts.map(debt => <Link key={debt.id}
         href={`/groups/${groupId}/debts/${debt.id}`}
         className="flex justify-between gap-4 rounded-xl border p-3 text-sm">
@@ -57,6 +57,5 @@ export default async function ExpenseDetailPage({ params }: {
         className="rounded-xl bg-primary px-4 py-3 text-sm text-primary-foreground">Sửa hóa đơn</Link>
       <DeleteExpenseButton groupId={groupId} expenseId={expenseId} version={expense.version}/>
     </div>}
-    <p className="text-xs text-muted-foreground">Lịch sử phiên bản: {expense.version}. Công nợ được tính từ từng món; xác nhận hoàn trả sẽ được bổ sung trong Sprint 4.</p>
   </main>;
 }

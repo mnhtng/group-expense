@@ -27,12 +27,12 @@ export default async function SettlementPage({params}:{
       {result.note&&<p className="mt-2 text-sm">{result.note}</p>}
     </header>
     {result.status==="pending"&&<p className="rounded-xl bg-muted p-3 text-sm">
-      Khoản này đang được giữ chỗ. Công nợ chỉ giảm sau khi bên đối ứng xác nhận.
+      Chờ bên kia xác nhận. Công nợ chưa thay đổi.
     </p>}
     {(canConfirm||canCancel)&&<SettlementActions groupId={groupId} settlementId={settlementId}
       canConfirm={canConfirm} canCancel={canCancel}/>}
     <section className="space-y-3">
-      <h2 className="font-semibold">Các khoản nợ được phân bổ</h2>
+      <h2 className="font-semibold">Các khoản thanh toán</h2>
       {result.allocations.map(a=><Link key={a.obligationId} href={`/groups/${groupId}/debts/${a.obligationId}`}
         className="flex items-center justify-between rounded-xl border p-3 text-sm">
         <span>{a.expenseTitle}</span><strong className="tabular-nums">{vnd(a.amountMinor)}</strong>

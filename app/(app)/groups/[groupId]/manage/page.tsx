@@ -38,9 +38,8 @@ export default async function ManageGroupPage({ params, searchParams }: {
       <span className="mr-2" aria-hidden="true">←</span> Quay lại nhóm
     </Link>
     <header className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Group Expense</p>
       <h1 className="text-2xl font-semibold">Quản lý nhóm</h1>
-      <p className="break-words text-sm text-muted-foreground">{group.name} · {members.length} thành viên đang hoạt động</p>
+      <p className="break-words text-sm text-muted-foreground">{group.name} · {members.length} thành viên</p>
     </header>
 
     {canManage && <section aria-labelledby="rename-group" className="space-y-4 rounded-3xl border bg-card p-5">
@@ -56,7 +55,7 @@ export default async function ManageGroupPage({ params, searchParams }: {
 
     {canManage && <section aria-labelledby="invite-heading" className="space-y-3 rounded-3xl border bg-card p-5">
       <h2 id="invite-heading" className="text-lg font-semibold">Mời thành viên</h2>
-      <p className="text-sm text-muted-foreground">Tạo liên kết tham gia nhóm có hiệu lực trong 7 ngày.</p>
+      <p className="text-sm text-muted-foreground">Link mời có hiệu lực 7 ngày.</p>
       <GroupInviteForm groupId={groupId} initialInviteUrl={inviteUrl ?? undefined}/>
     </section>}
 
@@ -64,12 +63,9 @@ export default async function ManageGroupPage({ params, searchParams }: {
       className="space-y-3 rounded-3xl border border-destructive/30 p-5">
       <h2 id="archive-heading" className="text-lg font-semibold">Lưu trữ nhóm</h2>
       <p className="text-sm text-muted-foreground">
-        Chỉ có thể lưu trữ khi toàn bộ công nợ đã được giải quyết.
+        Cần tất toán công nợ trước.
       </p>
       <GroupArchiveForm groupId={groupId} groupName={group.name}/>
     </section>}
-    <p className="text-xs leading-relaxed text-muted-foreground">
-      Khi thành viên rời nhóm, các khoản công nợ và hóa đơn đã phát sinh vẫn được lưu lại.
-    </p>
   </main>;
 }

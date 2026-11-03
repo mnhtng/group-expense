@@ -12,13 +12,11 @@ const roleLabels: Record<string, string> = {
 export default async function GroupsPage() {
   const user = await requireUser();
   const groups = await listGroups(user.id);
-  return <main className="app-page space-y-8">
+  return <main className="app-page space-y-6">
     <header className="space-y-2">
-      <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">Group Expense</p>
       <h1 className="font-heading text-[clamp(1.75rem,7vw,2.125rem)] font-semibold leading-tight tracking-tight">
         Nhóm của tôi
       </h1>
-      <p className="text-sm text-muted-foreground">Xin chào, {user.name}</p>
     </header>
 
     <section aria-labelledby="new-group-heading" className="space-y-3">
@@ -30,7 +28,7 @@ export default async function GroupsPage() {
 
     <section aria-labelledby="my-groups-heading" className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 id="my-groups-heading" className="text-base font-semibold">Nhóm đang tham gia</h2>
+        <h2 id="my-groups-heading" className="text-base font-semibold">Nhóm của bạn</h2>
         <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold tabular-nums"
           aria-label={`${groups.length} nhóm`}>{groups.length}</span>
       </div>
@@ -38,7 +36,7 @@ export default async function GroupsPage() {
         <div className="rounded-3xl border border-dashed bg-card px-5 py-8 text-center">
           <p className="font-medium">Bạn chưa có nhóm nào</p>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Tạo nhóm đầu tiên để chia tiền và theo dõi công nợ với mọi người.
+            Tạo nhóm để bắt đầu chia chi phí.
           </p>
         </div>}
       <div className="space-y-3">

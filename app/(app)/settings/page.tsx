@@ -9,9 +9,5 @@ export default async function SettingsPage(){
     <p className="text-sm text-muted-foreground">{user.email}</p>
     <PushSettings/>
     <SignOutButton/>
-    <p className="text-sm text-muted-foreground">
-      Phiên đăng nhập được gia hạn khi sử dụng. Đăng xuất sẽ ngắt đăng ký Web Push của thiết bị này;
-      thông báo in-app vẫn giữ lại trong tài khoản.
-    </p>
   </main>;
 }

@@ -27,7 +27,7 @@ export default async function NewSettlementPage({params}:{params:Promise<{groupI
     <Link href={`/groups/${groupId}/settlements`} className="text-sm text-muted-foreground">
       ← Thanh toán trong {group.name}
     </Link>
-    <h1 className="text-2xl font-semibold">Ghi nhận hoàn trả</h1>
+    <h1 className="text-2xl font-semibold">Ghi nhận thanh toán</h1>
     <BatchSettlementForm groupId={groupId} pairs={[...pairs.values()]}/>
   </main>;
 }
