@@ -1,19 +1,22 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { listPersonalDebts, sumDebtAmounts } from "@/lib/debts/service";
+import { listPersonalSettlements } from "@/lib/settlements/service";
 
 const vnd = (amount: string) => new Intl.NumberFormat("vi-VN").format(BigInt(amount)) + " ₫";
 
 export default async function DebtsPage() {
   const user = await requireUser();
-  const debts = await listPersonalDebts(user.id);
+  const [debts,settlements] = await Promise.all([
+    listPersonalDebts(user.id),listPersonalSettlements(user.id),
+  ]);
   const payable = debts.filter(d => d.direction === "pay");
   const receivable = debts.filter(d => d.direction === "receive");
   return <main className="mx-auto min-h-dvh max-w-lg space-y-6 px-5 py-8">
     <header>
       <p className="text-sm text-muted-foreground">Group Expense</p>
       <h1 className="text-2xl font-semibold">Công nợ của tôi</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Các khoản đang ghi nhận từ hóa đơn, chưa trừ thanh toán.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Công nợ còn lại đã trừ những khoản được hai bên xác nhận.</p>
     </header>
     <div className="grid grid-cols-2 gap-3">
       <div className="rounded-2xl border bg-card p-4">
@@ -25,6 +28,16 @@ export default async function DebtsPage() {
         <p className="mt-2 text-lg font-bold tabular-nums">{vnd(sumDebtAmounts(receivable))}</p>
       </div>
     </div>
+    <section className="space-y-3">
+      <h2 className="text-lg font-semibold">Yêu cầu đang chờ ({settlements.length})</h2>
+      {settlements.length===0&&<p className="rounded-xl border p-3 text-sm text-muted-foreground">Không có giao dịch chờ xác nhận.</p>}
+      {settlements.map(s=><Link key={s.id} href={`/groups/${s.groupId}/settlements/${s.id}`}
+        className="flex justify-between gap-3 rounded-xl border p-4 text-sm">
+        <span><strong>{s.initiatedBy===user.id?"Bạn đã yêu cầu":"Cần bạn xem xét"}</strong>
+          <span className="mt-1 block text-xs text-muted-foreground">{s.debtorName} → {s.creditorName} · {s.groupName}</span></span>
+        <strong className="tabular-nums">{vnd(s.amountMinor)}</strong>
+      </Link>)}
+    </section>
     {([["Tôi cần trả",payable],["Người khác cần trả tôi",receivable]] as const).map(([heading,rows]) =>
       <section key={heading} className="space-y-3">
         <h2 className="text-lg font-semibold">{heading} ({rows.length})</h2>
@@ -37,10 +50,13 @@ export default async function DebtsPage() {
             <strong className="tabular-nums">{vnd(debt.amountMinor)}</strong>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">{debt.groupName} · {debt.obligationCount} khoản theo hóa đơn</p>
+          {BigInt(debt.pendingMinor)>0n&&<p className="mt-1 text-xs text-muted-foreground">
+            Đang chờ xác nhận: {vnd(debt.pendingMinor)} · Có thể xử lý: {vnd(debt.availableMinor)}
+          </p>}
         </Link>)}
       </section>
     )}
-    <p className="text-xs text-muted-foreground">Các khoản đối ứng chưa được cấn trừ; hệ thống giữ nguyên từng khoản để truy vết. Đánh dấu đã trả/đã nhận và xác nhận hai bên sẽ có trong Sprint 4.</p>
+    <p className="text-xs text-muted-foreground">Các khoản đối ứng chưa được cấn trừ. Chỉ giao dịch đã được người còn lại xác nhận mới giảm công nợ.</p>
     <Link href="/groups" className="block text-sm underline">← Nhóm của tôi</Link>
   </main>;
 }
