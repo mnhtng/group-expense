@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { drainPushQueue } from "@/lib/notifications/push-worker";
 import { getCurrentSession } from "@/lib/auth/session";
 import { createSettlement, listGroupSettlements, type CreateSettlementInput } from "@/lib/settlements/service";
 import { settlementErrorResponse, settlementJson, settlementNoStore } from "@/lib/settlements/http";
@@ -18,6 +19,10 @@ export async function POST(req:Request,{params}:Context){
   try{
     const result=await createSettlement((await params).groupId,session.user.id,
       await settlementJson(req) as CreateSettlementInput);
+    if(!result.alreadyCreated) after(async()=>{
+      try { await drainPushQueue(result.id,20); }
+      catch { console.error("Push delivery deferred; retry will handle it."); }
+    });
     return NextResponse.json(result,{status:result.alreadyCreated?200:201,headers:settlementNoStore});
   }catch(error){return settlementErrorResponse(error)}
 }
