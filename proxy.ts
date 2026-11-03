@@ -65,6 +65,8 @@ export function proxy(request: NextRequest) {
 // untouched. Keep this literal: Next.js requires a compile-time matcher.
 export const config = {
   matcher: [
-    "/((?!_next/|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest|sw.js|offline.html|robots.txt|sitemap.xml|.*\\.[a-zA-Z0-9]{2,8}$).*)",
+    // All APIs are matched explicitly, including paths containing a dot.
+    "/api/:path*",
+    "/((?!api(?:/|$)|_next/|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest|sw.js|offline.html|robots.txt|sitemap.xml|.*\\.[a-zA-Z0-9]{2,8}$).*)",
   ],
 };
