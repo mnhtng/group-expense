@@ -28,13 +28,14 @@ export function SettlementActions({groupId,settlementId,canConfirm,canCancel}:{
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const [confirmation,setConfirmation]=useState<Action|null>(null);
+  const [note,setNote]=useState("");
   async function decide(action:Action){
     if(busy)return;
     setBusy(true);setError("");
     try{
       const res=await fetch(`/api/groups/${groupId}/settlements/${settlementId}`,{
         method:"PATCH",headers:{"Content-Type":"application/json"},
-        credentials:"same-origin",cache:"no-store",body:JSON.stringify({action}),
+        credentials:"same-origin",cache:"no-store",body:JSON.stringify({action,note}),
       });
       if(!res.ok){
         const data=await res.json();
@@ -42,7 +43,7 @@ export function SettlementActions({groupId,settlementId,canConfirm,canCancel}:{
         router.refresh(); // Reconcile a possibly stale financial state.
         return;
       }
-      setConfirmation(null);
+      setConfirmation(null);setNote("");
       router.refresh(); // Intentional update after server-confirmed state change.
     }catch{setError("Không có kết nối. Vui lòng tải lại và kiểm tra trạng thái.");}
     finally{setBusy(false)}
@@ -69,7 +70,8 @@ export function SettlementActions({groupId,settlementId,canConfirm,canCancel}:{
       description={labels[confirmation].description}
       confirmLabel={labels[confirmation].confirm}
       danger={confirmation!=="confirm"} busy={busy}
-      onCancel={()=>{setConfirmation(null);setError("");}}
+      note={note} onNoteChange={setNote}
+      onCancel={()=>{setConfirmation(null);setError("");setNote("");}}
       onConfirm={()=>void decide(confirmation)}/>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
   </section>;
