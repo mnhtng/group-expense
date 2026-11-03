@@ -4,6 +4,7 @@ import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/pool";
 import { createExpenseObligations, voidExpenseObligations } from "@/lib/debts/ledger";
 import { prepareExpense, type ExpenseInput, type PreparedExpense } from "@/lib/expenses/domain";
+import { optionalNote } from "@/lib/notes";
 
 export class ExpenseAccessError extends Error {
   constructor(public readonly status: 403 | 404 | 409, message: string) {
@@ -157,7 +158,8 @@ export async function updateExpense(groupId: string, expenseId: string, actorId:
   });
 }
 
-export async function deleteExpense(groupId: string, expenseId: string, actorId: string, expectedVersion: number) {
+export async function deleteExpense(groupId: string, expenseId: string, actorId: string, expectedVersion: number, rawNote?: string) {
+  const note=optionalNote(rawNote);
   return withTransaction(async client => {
     const { role } = await lockGroupMembers(client, groupId, actorId);
     const current = await client.query<{ version: number; created_by: string }>(
@@ -180,7 +182,7 @@ export async function deleteExpense(groupId: string, expenseId: string, actorId:
       [expenseId, groupId, version],
     );
     await voidExpenseObligations(client, expenseId);
-    await recordEvent(client, groupId, expenseId, actorId, "deleted", version, { previousVersion: expense.version });
+    await recordEvent(client, groupId, expenseId, actorId, "deleted", version, { previousVersion: expense.version, note });
     return { id: expenseId, version };
   });
 }
