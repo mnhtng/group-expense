@@ -11,7 +11,8 @@ export const POST = withAuthenticatedApi<Ctx>(async (request, { params }, user) 
   }
   let note: string | null;
   try {
-    const body:unknown = await request.json();
+    const raw=await request.text();
+    const body:unknown=raw?JSON.parse(raw):{}; // Legacy clients without a note remain valid.
     note = optionalNote(typeof body==="object"&&body!==null&&"note" in body ? (body as {note:unknown}).note : undefined);
   } catch {return NextResponse.json({error:"Dữ liệu hoặc ghi chú không hợp lệ."},{status:400});}
   try {
