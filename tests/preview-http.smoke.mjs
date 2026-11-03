@@ -267,8 +267,38 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(unauthorizedPay.response.status,401);
     assert.equal((await expenseRequest("POST",settlementUrl,firstPayload,thirdJar)).response.status,403,
       "only the debtor or creditor can report a payment");
+    const inboxUrl=`${origin}/api/notifications`;
+    assert.equal((await expenseRequest("GET",inboxUrl,undefined,new Map())).response.status,401,
+      "notification inbox must require authentication");
+    const pushConfiguration=await expenseRequest("GET",`${origin}/api/push/subscriptions`,undefined,otherJar);
+    assert.equal(pushConfiguration.response.status,200);
+    assert.equal(pushConfiguration.body.configured,false,
+      "CI does not configure VAPID; in-app must still work");
+    assert.equal((await expenseRequest("POST",`${origin}/api/push/subscriptions`,{},otherJar)).response.status,503,
+      "push opt-in must be disabled until VAPID configured");
+    const beforeNotify=(await expenseRequest("GET",inboxUrl,undefined,jar)).body;
+    assert.equal(beforeNotify.unreadCount,0);
+
     const made=await expenseRequest("POST",settlementUrl,firstPayload,otherJar);
     assert.equal(made.response.status,201,JSON.stringify(made.body));
+
+    const ownerInbox=(await expenseRequest("GET",inboxUrl,undefined,jar)).body;
+    assert.equal(ownerInbox.unreadCount,1);
+    assert.equal(ownerInbox.notifications.length,1);
+    assert.equal(ownerInbox.notifications[0].kind,"settlement_requested");
+    assert.equal(ownerInbox.notifications[0].readAt,null);
+    assert.equal(ownerInbox.notifications[0].href,
+      `/groups/${groupId}/settlements/${made.body.id}`);
+    assert.equal((await expenseRequest("GET",inboxUrl,undefined,otherJar)).body.unreadCount,0,
+      "initiator does not receive their own request notification");
+    const firstNotice=ownerInbox.notifications[0].id;
+    assert.equal((await expenseRequest("PATCH",`${inboxUrl}/${firstNotice}`,{},otherJar)).response.status,404,
+      "notifications are private to their recipient");
+    assert.equal((await expenseRequest("PATCH",`${inboxUrl}/${firstNotice}`,{},jar)).response.status,200);
+    assert.equal((await expenseRequest("GET",inboxUrl,undefined,jar)).body.unreadCount,0);
+    assert.equal((await expenseRequest("PATCH",`${inboxUrl}/${firstNotice}`,{},jar)).response.status,200,
+      "mark read must be idempotent");
+
     assert.equal((await expenseRequest("POST",settlementUrl,firstPayload,otherJar)).response.status,200,
       "same request key is idempotent");
     const alteredKey=await expenseRequest("POST",settlementUrl,{
@@ -294,6 +324,11 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const rejected=await expenseRequest("PATCH",settlementDetailUrl,{action:"reject"},jar);
     assert.equal(rejected.response.status,200);
     assert.equal(rejected.body.status,"rejected");
+
+    const rejectedInbox=(await expenseRequest("GET",inboxUrl,undefined,otherJar)).body;
+    assert.equal(rejectedInbox.unreadCount,1);
+    assert.equal(rejectedInbox.notifications[0].kind,"settlement_rejected");
+
     assert.equal((await expenseRequest("PATCH",settlementDetailUrl,{action:"confirm"},jar)).response.status,409,
       "terminal settlement can't be processed twice");
     const afterReject=(await expenseRequest("GET",debtEndpoint)).body.debts.find(x=>x.id===source35);
@@ -309,6 +344,12 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal((await expenseRequest("PATCH",cancelUrl,{action:"cancel"},otherJar)).response.status,403,
       "counterparty cannot cancel");
     assert.equal((await expenseRequest("PATCH",cancelUrl,{action:"cancel"},jar)).response.status,200);
+
+    const cancelledInbox=(await expenseRequest("GET",inboxUrl,undefined,otherJar)).body;
+    assert.equal(cancelledInbox.unreadCount,2);
+    assert.equal(cancelledInbox.notifications[0].kind,"settlement_cancelled",
+      "cancel must notify the counterpart, not the initiator");
+
     assert.equal((await expenseRequest("GET",debtEndpoint)).body.debts
       .find(x=>x.id===source35).availableMinor,"35000");
 
@@ -337,6 +378,20 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const confirmed=await expenseRequest("PATCH",multiUrl,{action:"confirm"},jar);
     assert.equal(confirmed.response.status,200);
     assert.equal(confirmed.body.status,"confirmed");
+
+    const confirmedInbox=(await expenseRequest("GET",inboxUrl,undefined,otherJar)).body;
+    assert.equal(confirmedInbox.notifications[0].kind,"settlement_confirmed");
+    assert.equal(confirmedInbox.unreadCount,3);
+    assert.equal((await expenseRequest("POST",`${inboxUrl}/read-all`,{},otherJar)).response.status,200);
+    assert.equal((await expenseRequest("GET",inboxUrl,undefined,otherJar)).body.unreadCount,0);
+    const pageOne=(await expenseRequest("GET",`${inboxUrl}?limit=1`,undefined,otherJar)).body;
+    assert.equal(pageOne.notifications.length,1);
+    assert.ok(pageOne.nextCursor);
+    const pageTwo=(await expenseRequest("GET",
+      `${inboxUrl}?limit=1&cursor=${pageOne.nextCursor}`,undefined,otherJar)).body;
+    assert.equal(pageTwo.notifications.length,1);
+    assert.notEqual(pageTwo.notifications[0].id,pageOne.notifications[0].id);
+
     assert.equal((await expenseRequest("PATCH",multiUrl,{action:"confirm"},jar)).response.status,409);
     const balances=(await expenseRequest("GET",debtEndpoint)).body.debts;
     assert.equal(balances.find(x=>x.id===source35).outstandingMinor,"15000");
@@ -381,6 +436,16 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(terminalEvents.rows.length,2);
     assert.equal(terminalEvents.rows[0].event_type,"created");
     assert.ok(["confirmed","rejected"].includes(terminalEvents.rows[1].event_type));
+
+
+    // Every successful settlement transition has exactly one persisted notification.
+    const noticeStats=await pool.query(
+      `SELECT kind,count(*)::int AS total FROM notifications WHERE group_id=$1
+       GROUP BY kind ORDER BY kind`,[groupId]);
+    assert.ok(noticeStats.rows.some(x=>x.kind==="settlement_requested"&&x.total>=3));
+    assert.ok(noticeStats.rows.some(x=>x.kind==="settlement_confirmed"&&x.total>=1));
+    assert.ok(noticeStats.rows.some(x=>x.kind==="settlement_rejected"&&x.total>=1));
+    assert.ok(noticeStats.rows.some(x=>x.kind==="settlement_cancelled"&&x.total>=1));
 
     const integrity=await pool.query(
       `SELECT count(*)::int AS total, sum(amount_minor)::text AS allocated
