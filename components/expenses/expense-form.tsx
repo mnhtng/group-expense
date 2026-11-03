@@ -106,7 +106,7 @@ export function ExpenseForm({ groupId, members, expense }: {
           </select>
         </label>
       </div>
-      <label className="block text-sm font-medium">Ghi chú (tùy chọn)
+      <label className="block text-sm font-medium">Ghi chú (không bắt buộc)
         <textarea maxLength={1000} rows={2} value={notes} onChange={e => setNotes(e.target.value)}
           className="mt-1 w-full rounded-xl border bg-background p-3"/>
       </label>
