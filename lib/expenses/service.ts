@@ -48,7 +48,7 @@ async function lockGroupMembers(client: PoolClient, groupId: string, actorId: st
   );
   if (!group.rowCount) throw new ExpenseAccessError(404, "Không tìm thấy nhóm.");
   const members = await client.query<{ user_id: string; role: string }>(
-    "SELECT user_id, role FROM group_members WHERE group_id = $1",
+    "SELECT user_id, role FROM group_members WHERE group_id = $1 AND status='active'",
     [groupId],
   );
   const role = members.rows.find(m => m.user_id === actorId)?.role;
@@ -187,13 +187,13 @@ export async function deleteExpense(groupId: string, expenseId: string, actorId:
 
 const groupMemberGate = `EXISTS(
   SELECT 1 FROM group_members gm JOIN groups gg ON gg.id=gm.group_id
-  WHERE gm.group_id=e.group_id AND gm.user_id=$2 AND gg.archived_at IS NULL
+  WHERE gm.group_id=e.group_id AND gm.user_id=$2 AND gm.status='active' AND gg.archived_at IS NULL
 )`;
 
 export async function listExpenses(groupId: string, actorId: string): Promise<ExpenseSummary[]> {
   const gate = await pool.query(
     `SELECT 1 FROM group_members m JOIN groups g ON g.id=m.group_id
-     WHERE m.group_id=$1 AND m.user_id=$2 AND g.archived_at IS NULL`,
+     WHERE m.group_id=$1 AND m.user_id=$2 AND m.status='active' AND g.archived_at IS NULL`,
     [groupId, actorId],
   );
   if (!gate.rowCount) throw new ExpenseAccessError(404, "Không tìm thấy nhóm.");

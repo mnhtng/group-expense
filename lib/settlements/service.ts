@@ -74,7 +74,7 @@ async function memberGate(client:PoolClient, groupId:string, actorId:string) {
   );
   if (!g.rowCount) throw new SettlementError(404, "Không tìm thấy nhóm.");
   const m = await client.query(
-    "SELECT 1 FROM group_members WHERE group_id=$1 AND user_id=$2", [groupId,actorId],
+    "SELECT 1 FROM group_members WHERE group_id=$1 AND user_id=$2 AND status='active'", [groupId,actorId],
   );
   if (!m.rowCount) throw new SettlementError(404, "Không tìm thấy nhóm.");
 }
@@ -188,13 +188,13 @@ const selectSettlement=`
   JOIN "user" d ON d.id=s.debtor_id JOIN "user" c ON c.id=s.creditor_id
   JOIN groups g ON g.id=s.group_id AND g.archived_at IS NULL
   WHERE EXISTS(SELECT 1 FROM group_members m
-    WHERE m.group_id=s.group_id AND m.user_id=$1)
+    WHERE m.group_id=s.group_id AND m.user_id=$1 AND m.status='active')
 `;
 export async function listGroupSettlements(groupId:string,actorId:string):Promise<SettlementRow[]|null> {
   if(!validUUID(groupId)) return null;
   const gate=await pool.query(
     `SELECT 1 FROM group_members m JOIN groups g ON g.id=m.group_id
-     WHERE g.id=$1 AND m.user_id=$2 AND g.archived_at IS NULL`,[groupId,actorId]);
+     WHERE g.id=$1 AND m.user_id=$2 AND m.status='active' AND g.archived_at IS NULL`,[groupId,actorId]);
   if(!gate.rowCount)return null;
   const rows=await pool.query<SettlementRow>(
     selectSettlement+" AND s.group_id=$2 ORDER BY (s.status='pending') DESC,s.created_at DESC LIMIT 150",

@@ -48,7 +48,7 @@ export async function getGroupDetails(groupId: string, userId: string) {
   const result = await pool.query<{ id: string; name: string; currency: string }>(
     `SELECT g.id, g.name, g.currency FROM groups g
      JOIN group_members m ON m.group_id = g.id
-     WHERE g.id = $1 AND m.user_id = $2 AND g.archived_at IS NULL`,
+     WHERE g.id = $1 AND m.user_id = $2 AND m.status='active' AND g.archived_at IS NULL`,
     [groupId, userId],
   );
   return result.rows[0] ?? null;
