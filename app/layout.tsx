@@ -20,6 +20,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Group Expense",
   description: "Quản lý chi tiêu nhóm, chia tiền và theo dõi công nợ minh bạch.",
+  applicationName: "Group Expense",
+  appleWebApp: { capable: true, title: "Group Expense", statusBarStyle: "default" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
