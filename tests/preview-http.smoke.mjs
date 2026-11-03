@@ -346,7 +346,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal((await expenseRequest("PATCH",cancelUrl,{action:"cancel"},jar)).response.status,200);
 
     const cancelledInbox=(await expenseRequest("GET",inboxUrl,undefined,otherJar)).body;
-    assert.equal(cancelledInbox.unreadCount,2);
+    assert.equal(cancelledInbox.unreadCount,3); // reject + request + cancel
     assert.equal(cancelledInbox.notifications[0].kind,"settlement_cancelled",
       "cancel must notify the counterpart, not the initiator");
 
@@ -381,7 +381,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
 
     const confirmedInbox=(await expenseRequest("GET",inboxUrl,undefined,otherJar)).body;
     assert.equal(confirmedInbox.notifications[0].kind,"settlement_confirmed");
-    assert.equal(confirmedInbox.unreadCount,3);
+    assert.equal(confirmedInbox.unreadCount,4); // confirmed plus the previous three
     assert.equal((await expenseRequest("POST",`${inboxUrl}/read-all`,{},otherJar)).response.status,200);
     assert.equal((await expenseRequest("GET",inboxUrl,undefined,otherJar)).body.unreadCount,0);
     const pageOne=(await expenseRequest("GET",`${inboxUrl}?limit=1`,undefined,otherJar)).body;
