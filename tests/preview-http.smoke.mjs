@@ -88,8 +88,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       redirect:"manual",signal:AbortSignal.timeout(10_000),
     });
     assert.equal(anonymousPage.status,307);
-    assert.equal(new URL(anonymousPage.headers.get("location")).pathname,"/sign-in");
-    assert.equal(new URL(anonymousPage.headers.get("location")).searchParams.get("returnTo"),
+    assert.equal(new URL(anonymousPage.headers.get("location"), origin).pathname,"/sign-in");
+    assert.equal(new URL(anonymousPage.headers.get("location"), origin).searchParams.get("returnTo"),
       "/groups?tab=recent");
     assert.equal(anonymousPage.headers.get("x-frame-options"),"DENY");
     assert.equal(anonymousPage.headers.get("cache-control"),"private, no-store");
@@ -116,7 +116,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     });
     assert.equal(forgedCookie.status,307,
       "cookie presence alone must never grant page access");
-    assert.equal(new URL(forgedCookie.headers.get("location")).pathname,"/sign-in");
+    assert.equal(new URL(forgedCookie.headers.get("location"), origin).pathname,"/sign-in");
     const forgedApi=await fetch(`${origin}/api/debts`,{
       headers:{cookie:"better-auth.session_token=forged"},
       redirect:"manual",signal:AbortSignal.timeout(10_000),
