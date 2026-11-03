@@ -22,7 +22,7 @@ Browser → Next Proxy (routing, cookie presence, Origin/Fetch Metadata, headers
 - Protected: other pages and `/api/:path*`. New app paths default to protected.
 - Anonymous page requests receive HTTP 307 to `/sign-in?returnTo=...` (local only).
 - Anonymous API requests receive JSON HTTP 401, never an HTML login redirect.
-- Authenticated cookie API writes require exact same-origin `Origin` and reject
+- Authenticated cookie API writes require exact same-origin `Origin` (matching the\n  incoming HTTP Host authority, not a normalized localhost URL) and reject
   `Sec-Fetch-Site: cross-site`. This intentionally rejects non-browser
   mutation requests that omit `Origin`, even if they send a cookie.
   Add `Origin: <same API origin>` when using curl or integration-test clients.

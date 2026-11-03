@@ -47,7 +47,9 @@ export function proxy(request: NextRequest) {
 
   if (kind === "private-api" && !isAllowedApiMutation(
     request.method,
-    request.nextUrl.origin,
+    // Next.js can normalize nextUrl.host to localhost in local server mode.
+    // Host reflects the authority the browser actually requested.
+    `${request.nextUrl.protocol}//${request.headers.get("host") ?? request.nextUrl.host}`,
     request.headers.get("origin"),
     request.headers.get("sec-fetch-site"),
   )) {
