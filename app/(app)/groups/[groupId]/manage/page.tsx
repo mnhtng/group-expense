@@ -2,7 +2,8 @@ import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails, getMemberRole, listMembers } from "@/lib/groups/service";
 import { getExitEligibility } from "@/lib/groups/membership";
 import { GroupMembershipManager } from "@/components/groups/group-membership-manager";
-import { archiveGroupAction, createInviteAction, renameGroupAction } from "@/app/actions/groups";
+import { archiveGroupAction, renameGroupAction } from "@/app/actions/groups";
+import { GroupInviteForm } from "@/components/groups/group-invite-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -63,18 +64,7 @@ export default async function ManageGroupPage({ params, searchParams }: {
     {canManage && <section aria-labelledby="invite-heading" className="space-y-3 rounded-3xl border bg-card p-5">
       <h2 id="invite-heading" className="text-lg font-semibold">Mời thành viên</h2>
       <p className="text-sm text-muted-foreground">Tạo liên kết tham gia nhóm có hiệu lực trong 7 ngày.</p>
-      <form action={createInviteAction}>
-        <input type="hidden" name="groupId" value={groupId}/>
-        <button type="submit" className="min-h-12 rounded-2xl bg-secondary px-5 py-3 text-sm font-semibold">
-          Tạo link mời
-        </button>
-      </form>
-      {inviteUrl && <div className="space-y-2 rounded-2xl border p-4 text-sm">
-        <p className="font-medium">Link mời mới</p>
-        <a className="block break-all underline underline-offset-4" href={inviteUrl}>
-          {inviteUrl}
-        </a>
-      </div>}
+      <GroupInviteForm groupId={groupId} initialInviteUrl={inviteUrl ?? undefined}/>
     </section>}
 
     {role === "owner" && <section aria-labelledby="archive-heading"
