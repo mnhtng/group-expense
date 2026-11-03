@@ -248,6 +248,124 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     );
     assert.equal(historicalRows.rows[0].count, 4, "historical obligations must remain");
 
+
+    // Sprint 4: directional, partial, multi-obligation payment confirmations.
+    const receipt2 = await expenseRequest("POST", endpoint, {
+      ...debtDraft, title: "Second receipt",
+      items:[{name:"B other item",quantity:1,unitPriceMinor:"35000",
+        participants:[otherUser.id]}],
+    });
+    assert.equal(receipt2.response.status,201);
+    const sprint4Rows=(await expenseRequest("GET",debtEndpoint)).body.debts;
+    const bDebts=sprint4Rows.filter(x=>x.debtorId===otherUser.id);
+    assert.equal(bDebts.length,1, "first receipt was deleted; only 35k B debt should remain");
+    const source35=bDebts[0].id;
+    const settlementUrl=`${origin}/api/groups/${groupId}/settlements`;
+    const firstPayload={requestKey:randomUUID(),
+      allocations:[{obligationId:source35,amountMinor:"15000"}],note:"reported by debtor"};
+    const unauthorizedPay=await expenseRequest("POST",settlementUrl,firstPayload,new Map());
+    assert.equal(unauthorizedPay.response.status,401);
+    assert.equal((await expenseRequest("POST",settlementUrl,firstPayload,thirdJar)).response.status,403,
+      "only the debtor or creditor can report a payment");
+    const made=await expenseRequest("POST",settlementUrl,firstPayload,otherJar);
+    assert.equal(made.response.status,201,JSON.stringify(made.body));
+    assert.equal((await expenseRequest("POST",settlementUrl,firstPayload,otherJar)).response.status,200,
+      "same request key is idempotent");
+    const alteredKey=await expenseRequest("POST",settlementUrl,{
+      ...firstPayload,allocations:[{obligationId:source35,amountMinor:"10000"}]},otherJar);
+    assert.equal(alteredKey.response.status,409,"request-key payload mismatch");
+    const settlementId=made.body.id, settlementDetailUrl=`${settlementUrl}/${settlementId}`;
+    const before=(await expenseRequest("GET",debtEndpoint)).body.debts
+      .find(x=>x.id===source35);
+    assert.equal(before.outstandingMinor,"35000","pending must NOT reduce principal");
+    assert.equal(before.pendingMinor,"15000","pending must reserve available balance");
+    assert.equal(before.availableMinor,"20000");
+    assert.equal((await expenseRequest("PATCH",`${endpoint}/${receipt2.body.id}`,
+      {expectedVersion:1,expense:{...debtDraft,title:"can't edit",items:[
+        {name:"B",quantity:1,unitPriceMinor:"35000",participants:[otherUser.id]}]}})).response.status,409,
+      "expense with pending payments must be immutable");
+    assert.equal((await expenseRequest("POST",settlementUrl,{
+      requestKey:randomUUID(),allocations:[{obligationId:source35,amountMinor:"21000"}],
+    },otherJar)).response.status,409,"pending reservation must avoid over-allocation");
+    assert.equal((await expenseRequest("PATCH",settlementDetailUrl,{action:"confirm"},otherJar)).response.status,403,
+      "initiator must never confirm");
+    assert.equal((await expenseRequest("PATCH",settlementDetailUrl,{action:"reject"},thirdJar)).response.status,403,
+      "unrelated member must never resolve");
+    const rejected=await expenseRequest("PATCH",settlementDetailUrl,{action:"reject"},jar);
+    assert.equal(rejected.response.status,200);
+    assert.equal(rejected.body.status,"rejected");
+    assert.equal((await expenseRequest("PATCH",settlementDetailUrl,{action:"confirm"},jar)).response.status,409,
+      "terminal settlement can't be processed twice");
+    const afterReject=(await expenseRequest("GET",debtEndpoint)).body.debts.find(x=>x.id===source35);
+    assert.equal(afterReject.pendingMinor,"0");
+    assert.equal(afterReject.availableMinor,"35000");
+
+    const cancelReq=await expenseRequest("POST",settlementUrl,{
+      requestKey:randomUUID(),allocations:[{obligationId:source35,amountMinor:"10000"}],
+      note:"creditor reported receiving money"
+    },jar);
+    assert.equal(cancelReq.response.status,201);
+    const cancelUrl=`${settlementUrl}/${cancelReq.body.id}`;
+    assert.equal((await expenseRequest("PATCH",cancelUrl,{action:"cancel"},otherJar)).response.status,403,
+      "counterparty cannot cancel");
+    assert.equal((await expenseRequest("PATCH",cancelUrl,{action:"cancel"},jar)).response.status,200);
+    assert.equal((await expenseRequest("GET",debtEndpoint)).body.debts
+      .find(x=>x.id===source35).availableMinor,"35000");
+
+    // Create two live obligations for the SAME debtor/creditor and settle both in one request.
+    const receipt3=await expenseRequest("POST",endpoint,{
+      ...debtDraft,title:"Third receipt",items:[
+        {name:"B item 2",quantity:1,unitPriceMinor:"40000",participants:[otherUser.id]}],
+    });
+    assert.equal(receipt3.response.status,201);
+    const bPair=(await expenseRequest("GET",debtEndpoint)).body.debts
+      .filter(x=>x.debtorId===otherUser.id);
+    assert.equal(bPair.length,2);
+    const source40=bPair.find(x=>x.id!==source35).id;
+    const multiReq=await expenseRequest("POST",settlementUrl,{
+      requestKey:randomUUID(),
+      allocations:[{obligationId:source35,amountMinor:"20000"},
+        {obligationId:source40,amountMinor:"25000"}],
+      note:"one transfer for two original receipts"
+    },otherJar);
+    assert.equal(multiReq.response.status,201,JSON.stringify(multiReq.body));
+    const multiUrl=`${settlementUrl}/${multiReq.body.id}`;
+    const detailPayment=await expenseRequest("GET",multiUrl);
+    assert.equal(detailPayment.response.status,200);
+    assert.equal(detailPayment.body.settlement.allocations.length,2);
+    assert.equal(detailPayment.body.settlement.amountMinor,"45000");
+    const confirmed=await expenseRequest("PATCH",multiUrl,{action:"confirm"},jar);
+    assert.equal(confirmed.response.status,200);
+    assert.equal(confirmed.body.status,"confirmed");
+    assert.equal((await expenseRequest("PATCH",multiUrl,{action:"confirm"},jar)).response.status,409);
+    const balances=(await expenseRequest("GET",debtEndpoint)).body.debts;
+    assert.equal(balances.find(x=>x.id===source35).outstandingMinor,"15000");
+    assert.equal(balances.find(x=>x.id===source40).outstandingMinor,"15000");
+    assert.equal((await expenseRequest("GET",`${origin}/api/debts`,undefined,otherJar)).body.debts
+      .find(x=>x.direction==="pay").amountMinor,"30000");
+    assert.equal((await expenseRequest("DELETE",`${endpoint}/${receipt3.body.id}`,
+      {expectedVersion:1})).response.status,409,"confirmed source cannot be deleted");
+    const events=await pool.query(
+      "SELECT event_type FROM settlement_events WHERE settlement_id=$1 ORDER BY recorded_at",
+      [multiReq.body.id]);
+    assert.deepEqual(events.rows.map(x=>x.event_type),["created","confirmed"]);
+    const [raceA,raceB]=await Promise.all([
+      expenseRequest("POST",settlementUrl,{requestKey:randomUUID(),
+        allocations:[{obligationId:source35,amountMinor:"12000"}]},otherJar),
+      expenseRequest("POST",settlementUrl,{requestKey:randomUUID(),
+        allocations:[{obligationId:source35,amountMinor:"12000"}]},otherJar),
+    ]);
+    assert.deepEqual([raceA.response.status,raceB.response.status].sort(),[201,409],
+      "serialized concurrent requests cannot reserve more than available");
+    const winner=raceA.response.status===201?raceA:raceB;
+    assert.equal((await expenseRequest("PATCH",
+      `${settlementUrl}/${winner.body.id}`,{action:"cancel"},otherJar)).response.status,200);
+    const integrity=await pool.query(
+      `SELECT count(*)::int AS total, sum(amount_minor)::text AS allocated
+       FROM settlement_allocations WHERE settlement_id=$1`,[multiReq.body.id]);
+    assert.equal(integrity.rows[0].total,2);
+    assert.equal(integrity.rows[0].allocated,"45000");
+
     const createdExpense = await expenseRequest("POST", endpoint, draft);
     assert.equal(createdExpense.response.status, 201,
       `expense POST returned ${createdExpense.response.status}: ${JSON.stringify(createdExpense.body)}`);
