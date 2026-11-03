@@ -215,3 +215,10 @@
     padding-right: 32px;
   }
 }
+
+/* Keep expense submit controls above fixed mobile tabs without obscuring fields. */
+@supports selector(:has(*)) {
+  .app-shell:has(input:focus, textarea:focus, select:focus) .expense-save-footer {
+    bottom: 0 !important;
+  }
+}
