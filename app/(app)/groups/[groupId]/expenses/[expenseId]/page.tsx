@@ -20,7 +20,7 @@ export default async function ExpenseDetailPage({ params }: {
   const debts = (await listExpenseDebts(groupId, expenseId, user.id)) ?? [];
   const role = await getMemberRole(groupId, user.id);
   const canEdit = expense.createdBy === user.id || role === "owner" || role === "admin";
-  return <main className="mx-auto min-h-dvh max-w-lg space-y-5 px-5 py-8">
+  return <main className="app-page space-y-5">
     <Link href={`/groups/${groupId}`} className="text-sm text-muted-foreground">← {group.name}</Link>
     <header className="rounded-2xl border bg-card p-5">
       <p className="text-sm text-muted-foreground">{expense.occurredOn} · {expense.items.length} món</p>

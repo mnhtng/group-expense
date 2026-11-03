@@ -26,7 +26,7 @@ export default async function GroupPage({ params, searchParams }: {
   ]);
   if(!eligibility)notFound();
   const inviteUrl = invite ? `${process.env.BETTER_AUTH_URL ?? "http://localhost:3000"}/invite/${invite}` : null;
-  return <main className="mx-auto min-h-dvh max-w-lg space-y-6 px-5 py-8">
+  return <main className="app-page space-y-6">
     <Link href="/groups" className="text-sm text-muted-foreground">← Nhóm của tôi</Link>
     <div className="flex items-center justify-between gap-3">
       <div><h1 className="text-2xl font-semibold">{group.name}</h1>

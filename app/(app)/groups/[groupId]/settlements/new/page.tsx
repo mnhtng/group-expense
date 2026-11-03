@@ -23,7 +23,7 @@ export default async function NewSettlementPage({params}:{params:Promise<{groupI
     }
     pair.debts.push(debt);
   }
-  return <main className="mx-auto min-h-dvh max-w-lg space-y-5 px-5 py-8">
+  return <main className="app-page space-y-5">
     <Link href={`/groups/${groupId}/settlements`} className="text-sm text-muted-foreground">
       ← Thanh toán trong {group.name}
     </Link>

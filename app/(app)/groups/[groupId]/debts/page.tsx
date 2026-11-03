@@ -13,7 +13,7 @@ export default async function GroupDebtsPage({ params }: { params: Promise<{ gro
     getGroupDetails(groupId, user.id), listGroupDebts(groupId, user.id)
   ]);
   if (!group || !debts) notFound();
-  return <main className="mx-auto min-h-dvh max-w-lg space-y-5 px-5 py-8">
+  return <main className="app-page space-y-5">
     <Link href={`/groups/${groupId}`} className="text-sm text-muted-foreground">← {group.name}</Link>
     <header>
       <h1 className="text-2xl font-semibold">Sổ công nợ</h1>

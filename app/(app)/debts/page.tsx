@@ -12,7 +12,7 @@ export default async function DebtsPage() {
   ]);
   const payable = debts.filter(d => d.direction === "pay");
   const receivable = debts.filter(d => d.direction === "receive");
-  return <main className="mx-auto min-h-dvh max-w-lg space-y-6 px-5 py-8">
+  return <main className="app-page space-y-6">
     <header>
       <p className="text-sm text-muted-foreground">Group Expense</p>
       <h1 className="text-2xl font-semibold">Công nợ của tôi</h1>

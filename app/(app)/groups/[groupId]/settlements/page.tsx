@@ -11,7 +11,7 @@ export default async function SettlementsPage({params}:{params:Promise<{groupId:
     getGroupDetails(groupId,user.id),listGroupSettlements(groupId,user.id),
   ]);
   if(!group||!settlements)notFound();
-  return <main className="mx-auto min-h-dvh max-w-lg space-y-4 px-5 py-8">
+  return <main className="app-page space-y-4">
     <Link href={`/groups/${groupId}/debts`} className="text-sm text-muted-foreground">← Sổ công nợ {group.name}</Link>
     <h1 className="text-2xl font-semibold">Xác nhận thanh toán</h1>
     <p className="text-sm text-muted-foreground">Cả hai bên đều có thể báo đã trả/đã nhận. Chỉ người còn lại xác nhận.</p>

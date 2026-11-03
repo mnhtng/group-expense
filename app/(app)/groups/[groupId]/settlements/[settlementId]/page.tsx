@@ -15,7 +15,7 @@ export default async function SettlementPage({params}:{
   const canConfirm=result.status==="pending" && result.initiatedBy!==user.id &&
     [result.debtorId,result.creditorId].includes(user.id);
   const canCancel=result.status==="pending" && result.initiatedBy===user.id;
-  return <main className="mx-auto min-h-dvh max-w-lg space-y-5 px-5 py-8">
+  return <main className="app-page space-y-5">
     <Link href={`/groups/${groupId}/settlements`} className="text-sm text-muted-foreground">
       ← Giao dịch của nhóm
     </Link>
