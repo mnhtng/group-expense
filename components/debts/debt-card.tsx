@@ -60,7 +60,7 @@ export function DebtCard({
       </div>
       <div>
         <dt className="text-muted-foreground">Đã xác nhận</dt>
-        <dd className="mt-1 font-semibold tabular-nums text-money-in">{vnd(debt.confirmedMinor)}</dd>
+        <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.confirmedMinor)}</dd>
       </div>
       <div>
         <dt className="text-muted-foreground">Chờ xác nhận</dt>
