@@ -1,4 +1,4 @@
-/* Web Push only. Never cache auth/financial responses or private pages. */
+/* Financial data is network-only; cache a public offline fallback only. */
 self.addEventListener("push", event => {
   if (!event.data) return;
   event.waitUntil((async () => {
@@ -32,4 +32,22 @@ self.addEventListener("notificationclick", event => {
     }
     if(clients.openWindow) await clients.openWindow(url);
   })());
+});
+
+/* Safe offline fallback: cache ONLY the public offline shell, never financial pages. */
+const offlineCache="group-expense-offline-v1";
+self.addEventListener("install",event=>{
+  event.waitUntil(caches.open(offlineCache)
+    .then(cache=>cache.add("/offline.html"))
+    .then(()=>self.skipWaiting()));
+});
+self.addEventListener("activate",event=>{
+  event.waitUntil(clients.claim());
+});
+self.addEventListener("fetch",event=>{
+  if(event.request.mode!=="navigate")return;
+  const url=new URL(event.request.url);
+  if(url.origin!==self.location.origin)return;
+  event.respondWith(fetch(event.request).catch(async()=>
+    (await caches.open(offlineCache)).match("/offline.html") || Response.error()));
 });
