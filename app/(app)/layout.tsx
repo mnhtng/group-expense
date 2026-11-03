@@ -5,7 +5,7 @@ import { NotificationNav } from "@/components/notifications/notification-nav";
 
 async function AuthenticatedContent({ children }: { children: React.ReactNode }) {
   await requireUser();
-  return <div className="pb-20">
+  return <div className="app-shell min-h-dvh">
     <NotificationBootstrap/>
     {children}
     <NotificationNav/>
@@ -13,7 +13,7 @@ async function AuthenticatedContent({ children }: { children: React.ReactNode })
 }
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={
-    <main className="mx-auto max-w-lg p-6" role="status">Đang xác thực phiên đăng nhập...</main>
+    <main className="app-page" role="status">Đang xác thực phiên đăng nhập...</main>
   }>
     <AuthenticatedContent>{children}</AuthenticatedContent>
   </Suspense>;
