@@ -20,6 +20,7 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
   // snapshot would strand former owners in a stale "owner" state.
   const [target,setTarget]=useState(members.find(m=>m.id!==userId)?.id??"");
   const [confirmation,setConfirmation]=useState<Confirmation|null>(null);
+  const [note,setNote]=useState("");
   const [pending,setPending]=useState(false);
   const [error,setError]=useState("");
   const [success,setSuccess]=useState("");
@@ -51,20 +52,20 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
   async function proceed(){
     if(!confirmation||pending)return;
     if(confirmation.kind==="leave"){
-      if(await call("POST",base+"/leave")){
-        setConfirmation(null);
+      if(await call("POST",base+"/leave",{note})){
+        setConfirmation(null);setNote("");
         router.replace("/groups");
         router.refresh();
       }
     }else if(confirmation.kind==="remove"){
-      if(await call("DELETE",base+"/members/"+encodeURIComponent(confirmation.memberId))){
-        setConfirmation(null);
+      if(await call("DELETE",base+"/members/"+encodeURIComponent(confirmation.memberId),{note})){
+        setConfirmation(null);setNote("");
         setSuccess("Đã xóa thành viên khỏi nhóm.");
         router.refresh();
       }
     }else {
-      if(await call("POST",base+"/transfer",{targetId:confirmation.memberId})){
-        setConfirmation(null);
+      if(await call("POST",base+"/transfer",{targetId:confirmation.memberId,note})){
+        setConfirmation(null);setNote("");
         setSuccess("Đã chuyển chủ nhóm.");
         router.refresh();
       }
@@ -87,7 +88,7 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
             (role==="owner" ||(role==="admin"&&m.role==="member")) &&
             <button type="button" disabled={pending}
               className="min-h-11 shrink-0 rounded-xl px-3 text-destructive disabled:opacity-50"
-              onClick={()=>{setError("");setConfirmation({kind:"remove",memberId:m.id,name:m.name});}}>
+              onClick={()=>{setError("");setNote("");setConfirmation({kind:"remove",memberId:m.id,name:m.name});}}>
               Xóa
             </button>}
         </div>
@@ -95,7 +96,8 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
           <InlineConfirmation title={`Xóa ${m.name} khỏi nhóm?`}
             description="Chỉ xóa khi đã tất toán. Lịch sử giao dịch được giữ lại."
             confirmLabel="Xóa thành viên" danger busy={pending}
-            onCancel={()=>setConfirmation(null)} onConfirm={()=>void proceed()}/>}
+            note={note} onNoteChange={setNote}
+            onCancel={()=>{setConfirmation(null);setNote("");}} onConfirm={()=>void proceed()}/>}
       </div>)}
     </div>
 
@@ -109,7 +111,7 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
       <button type="button" disabled={pending||!targetId}
         onClick={()=>{
           const member=activeMembers.find(m=>m.id===targetId);
-          if(member){setError("");setConfirmation({kind:"transfer",memberId:member.id,name:member.name});}
+          if(member){setError("");setNote("");setConfirmation({kind:"transfer",memberId:member.id,name:member.name});}
         }}
         className="min-h-12 rounded-xl border px-4 py-3 text-sm disabled:opacity-50">
         Chuyển quyền chủ nhóm
@@ -118,7 +120,8 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
         <InlineConfirmation title={`Chuyển quyền cho ${confirmation.name}?`}
           description="Người này sẽ là chủ nhóm mới. Bạn trở thành thành viên."
           confirmLabel="Chuyển quyền" busy={pending}
-          onCancel={()=>setConfirmation(null)} onConfirm={()=>void proceed()}/>}
+          note={note} onNoteChange={setNote}
+          onCancel={()=>{setConfirmation(null);setNote("");}} onConfirm={()=>void proceed()}/>}
     </section>}
 
     <section className="space-y-3 rounded-2xl border border-destructive/30 p-4">
@@ -135,7 +138,7 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
         <a className="underline" href={`/groups/${groupId}/settlements`}>Xem thanh toán</a>
       </div>}
       <button type="button" disabled={pending||!eligibility.canLeave}
-        onClick={()=>{setError("");setConfirmation({kind:"leave"});}}
+        onClick={()=>{setError("");setNote("");setConfirmation({kind:"leave"});}}
         className="min-h-12 rounded-xl border border-destructive px-4 py-3 text-sm text-destructive disabled:opacity-50">
         Rời nhóm
       </button>
@@ -143,7 +146,8 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
         <InlineConfirmation title="Xác nhận rời nhóm?"
           description="Bạn sẽ mất quyền truy cập nhóm. Lịch sử giao dịch vẫn được lưu."
           confirmLabel="Rời nhóm" danger busy={pending}
-          onCancel={()=>setConfirmation(null)} onConfirm={()=>void proceed()}/>}
+          note={note} onNoteChange={setNote}
+          onCancel={()=>{setConfirmation(null);setNote("");}} onConfirm={()=>void proceed()}/>}
     </section>
     {error&&<p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
     {success&&<p role="status" className="rounded-xl bg-secondary p-3 text-sm">{success}</p>}
