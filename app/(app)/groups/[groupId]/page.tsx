@@ -48,7 +48,7 @@ export default async function GroupPage({ params, searchParams }: {
         className="flex min-h-[80px] items-center justify-between gap-3 rounded-3xl border bg-card p-4 sm:p-5">
         <div className="min-w-0"><h3 className="truncate font-semibold">{e.title}</h3>
           <p className="mt-1 text-xs text-muted-foreground">{e.occurredOn} · {e.itemCount} món · {e.payerName} đã trả</p></div>
-        <strong className="shrink-0 text-sm tabular-nums">{vnd(e.totalMinor)}</strong>
+        <strong className="shrink-0 text-sm tabular-nums text-money-out">−{vnd(e.totalMinor)}</strong>
       </Link>)}
     </section>
     <Link href={`/groups/${groupId}/manage`}
