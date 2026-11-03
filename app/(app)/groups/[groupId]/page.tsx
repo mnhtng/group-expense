@@ -1,7 +1,9 @@
 import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails, getMemberRole, listMembers } from "@/lib/groups/service";
+import { getExitEligibility } from "@/lib/groups/membership";
+import { GroupMembershipManager } from "@/components/groups/group-membership-manager";
 import { listExpenses } from "@/lib/expenses/service";
-import { archiveGroupAction, createInviteAction, removeMemberAction, renameGroupAction } from "@/app/actions/groups";
+import { archiveGroupAction, createInviteAction, renameGroupAction } from "@/app/actions/groups";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -18,9 +20,11 @@ export default async function GroupPage({ params, searchParams }: {
   if (!role) notFound();
   const group = await getGroupDetails(groupId, user.id);
   if (!group) notFound();
-  const [members, expenses] = await Promise.all([
-    listMembers(groupId, user.id), listExpenses(groupId, user.id)
+  const [members, expenses, eligibility] = await Promise.all([
+    listMembers(groupId, user.id), listExpenses(groupId, user.id),
+    getExitEligibility(groupId, user.id),
   ]);
+  if(!eligibility)notFound();
   const inviteUrl = invite ? `${process.env.BETTER_AUTH_URL ?? "http://localhost:3000"}/invite/${invite}` : null;
   return <main className="mx-auto min-h-dvh max-w-lg space-y-6 px-5 py-8">
     <Link href="/groups" className="text-sm text-muted-foreground">← Nhóm của tôi</Link>
@@ -58,15 +62,8 @@ export default async function GroupPage({ params, searchParams }: {
             name="name" defaultValue={group.name} className="min-w-0 flex-1 rounded-xl border bg-background p-3"/>
           <button className="rounded-xl bg-secondary px-3">Đổi tên</button>
         </form>}
-        {members.map(member => <div key={member.id} className="flex items-center justify-between gap-2 text-sm">
-          <span>{member.name} <small className="text-muted-foreground">({member.role})</small></span>
-          {member.id !== user.id && member.role !== "owner" && ["owner", "admin"].includes(role) &&
-            <form action={removeMemberAction}>
-              <input type="hidden" name="groupId" value={groupId}/>
-              <input type="hidden" name="memberId" value={member.id}/>
-              <button className="text-destructive">Xóa</button>
-            </form>}
-        </div>)}
+        <GroupMembershipManager groupId={groupId} userId={user.id} role={role}
+          members={members} eligibility={eligibility}/>
         {["owner","admin"].includes(role) && <form action={createInviteAction}>
           <input type="hidden" name="groupId" value={groupId}/>
           <button className="rounded-xl bg-secondary px-4 py-3 text-sm">Tạo link mời (7 ngày)</button>
@@ -83,6 +80,6 @@ export default async function GroupPage({ params, searchParams }: {
         </form>}
       </div>
     </details>
-    <p className="text-xs text-muted-foreground">Công nợ truy vết từ từng món. Xác nhận hoàn trả hai chiều sẽ ra mắt trong Sprint 4.</p>
+    <p className="text-xs text-muted-foreground">Thành viên đã rời nhóm không thể tạo chi phí mới, nhưng toàn bộ lịch sử tài chính vẫn được bảo toàn.</p>
   </main>;
 }

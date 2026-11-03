@@ -26,7 +26,7 @@ async function assertGroupMember(groupId: string, userId: string) {
   if (!validUUID(groupId)) return false;
   const gate = await pool.query(
     `SELECT 1 FROM group_members m JOIN groups g ON g.id=m.group_id
-     WHERE m.group_id=$1 AND m.user_id=$2 AND g.archived_at IS NULL`,
+     WHERE m.group_id=$1 AND m.user_id=$2 AND m.status='active' AND g.archived_at IS NULL`,
     [groupId, userId],
   );
   return Boolean(gate.rowCount);
@@ -108,7 +108,7 @@ export async function listPersonalDebts(userId: string): Promise<PersonalDebt[]>
        FROM obligations o
        JOIN expenses e ON e.id=o.expense_id AND e.deleted_at IS NULL
        JOIN groups g ON g.id=o.group_id AND g.archived_at IS NULL
-       JOIN group_members m ON m.group_id=o.group_id AND m.user_id=$1
+       JOIN group_members m ON m.group_id=o.group_id AND m.user_id=$1 AND m.status='active'
        WHERE o.voided_at IS NULL AND (o.debtor_id=$1 OR o.creditor_id=$1)
      )
      SELECT CASE WHEN o.debtor_id=$1 THEN 'pay' ELSE 'receive' END AS direction,
