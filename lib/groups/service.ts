@@ -55,11 +55,21 @@ export async function getGroupDetails(groupId: string, userId: string) {
 
 export async function archiveGroup(groupId: string, ownerId: string, confirmation: string) {
   const result = await pool.query(
-    `UPDATE groups SET archived_at = now(), updated_at = now()
-     WHERE id = $1 AND owner_id = $2 AND name = $3 AND archived_at IS NULL`,
+    `UPDATE groups g SET archived_at=now(), updated_at=now()
+     WHERE g.id=$1 AND g.owner_id=$2 AND g.name=$3 AND g.archived_at IS NULL
+       AND NOT EXISTS(SELECT 1 FROM settlements s
+         WHERE s.group_id=g.id AND s.status='pending')
+       AND NOT EXISTS(
+         SELECT 1 FROM obligations o
+         WHERE o.group_id=g.id AND o.voided_at IS NULL
+           AND o.amount_minor >
+             COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
+               JOIN settlements s ON s.id=a.settlement_id
+               WHERE a.obligation_id=o.id AND s.status='confirmed'),0)
+       )`,
     [groupId, ownerId, confirmation.trim()],
   );
-  if (result.rowCount !== 1) throw new Error("Không có quyền lưu trữ hoặc tên xác nhận không đúng.");
+  if (result.rowCount !== 1) throw new Error("Không thể lưu trữ: sai quyền/tên xác nhận hoặc nhóm còn công nợ chưa thanh toán.");
 }
 
 export async function renameGroup(groupId: string, actorId: string, rawName: string) {

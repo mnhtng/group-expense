@@ -360,6 +360,28 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const winner=raceA.response.status===201?raceA:raceB;
     assert.equal((await expenseRequest("PATCH",
       `${settlementUrl}/${winner.body.id}`,{action:"cancel"},otherJar)).response.status,200);
+
+    // Racy confirm vs reject: exactly one terminal transition may win.
+    const terminalRaceReq=await expenseRequest("POST",settlementUrl,{
+      requestKey:randomUUID(),
+      allocations:[{obligationId:source35,amountMinor:"5000"}],
+    },otherJar);
+    assert.equal(terminalRaceReq.response.status,201);
+    const terminalUrl=`${settlementUrl}/${terminalRaceReq.body.id}`;
+    const [confirmRace,rejectRace]=await Promise.all([
+      expenseRequest("PATCH",terminalUrl,{action:"confirm"},jar),
+      expenseRequest("PATCH",terminalUrl,{action:"reject"},jar),
+    ]);
+    assert.deepEqual([confirmRace.response.status,rejectRace.response.status].sort(),[200,409],
+      "only one terminal settlement action can succeed");
+    const terminalEvents=await pool.query(
+      "SELECT event_type FROM settlement_events WHERE settlement_id=$1 ORDER BY recorded_at",
+      [terminalRaceReq.body.id],
+    );
+    assert.equal(terminalEvents.rows.length,2);
+    assert.equal(terminalEvents.rows[0].event_type,"created");
+    assert.ok(["confirmed","rejected"].includes(terminalEvents.rows[1].event_type));
+
     const integrity=await pool.query(
       `SELECT count(*)::int AS total, sum(amount_minor)::text AS allocated
        FROM settlement_allocations WHERE settlement_id=$1`,[multiReq.body.id]);
