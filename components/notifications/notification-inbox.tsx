@@ -27,7 +27,7 @@ export function NotificationInbox(){
     finally{setBusy(false)}
   },[]);
   useEffect(()=>{
-    void load();
+    queueMicrotask(()=>{void load();});
     const interval=window.setInterval(()=>{if(document.visibilityState==="visible")void load();},30_000);
     const onFocus=()=>{void load();};
     window.addEventListener("focus",onFocus);

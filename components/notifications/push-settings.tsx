@@ -27,7 +27,7 @@ export function PushSettings(){
       }
     }catch{setError("Không tải được cấu hình thông báo.");}
   },[]);
-  useEffect(()=>{void refresh()},[refresh]);
+  useEffect(()=>{queueMicrotask(()=>{void refresh();});},[refresh]);
   async function enable(){
     if(!supported||!config?.configured||!config.publicKey)return;
     setBusy(true);setError("");
