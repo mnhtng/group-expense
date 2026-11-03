@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { mergeNotificationFeed } from "@/lib/notifications/merge-feed";
 import { useRouter } from "next/navigation";
 type Notification={
   id:string;kind:string;title:string;body:string;href:string;
@@ -13,18 +14,23 @@ export function NotificationInbox(){
   const [busy,setBusy]=useState(true);
   const [error,setError]=useState("");
   const [mutating,setMutating]=useState(false);
+  const [loadingMore,setLoadingMore]=useState(false);
+  const loadedOlder=useRef(false);
   const load=useCallback(async(cursor?:string)=>{
+    if(cursor){loadedOlder.current=true;setLoadingMore(true);}
     try{
       const response=await fetch(`/api/notifications?limit=20${cursor?`&cursor=${cursor}`:""}`,
         {cache:"no-store",credentials:"same-origin"});
       if(!response.ok)throw Error("Không thể tải thông báo.");
       const data=await response.json();
-      setRows(previous=>cursor?[...previous,...data.notifications]:data.notifications);
-      setNextCursor(data.nextCursor??null);
+      setRows(previous=>mergeNotificationFeed(previous,data.notifications,Boolean(cursor)));
+      // Background refresh must not reset a cursor after the user loaded
+      // older pages. The list stays mounted and the scroll remains stable.
+      if(cursor || !loadedOlder.current)setNextCursor(data.nextCursor??null);
       setUnread(data.unreadCount??0);
       setError("");
     }catch(e){setError(e instanceof Error?e.message:"Không thể tải thông báo.");}
-    finally{setBusy(false)}
+    finally{setBusy(false);if(cursor)setLoadingMore(false)}
   },[]);
   useEffect(()=>{
     queueMicrotask(()=>{void load();});
@@ -36,7 +42,8 @@ export function NotificationInbox(){
   async function open(row:Notification){
     if(!row.readAt) {
       try{
-        await fetch(`/api/notifications/${row.id}`,{method:"PATCH",credentials:"same-origin"});
+        const res=await fetch(`/api/notifications/${row.id}`,{method:"PATCH",credentials:"same-origin"});
+        if(!res.ok)throw Error("Mark as read failed");
         setRows(old=>old.map(x=>x.id===row.id?{...x,readAt:new Date().toISOString()}:x));
         setUnread(n=>Math.max(0,n-1));
       }catch{ /* navigation remains available even if the mark-as-read call fails */ }
@@ -79,9 +86,10 @@ export function NotificationInbox(){
         </div>
       </button>)}
     </div>
-    {nextCursor&&<button type="button" onClick={()=>void load(nextCursor)}
-      className="w-full rounded-xl border px-4 py-3 text-sm">
-      Tải thêm thông báo
+    {nextCursor&&<button type="button" disabled={loadingMore}
+      onClick={()=>{if(!loadingMore)void load(nextCursor);}}
+      className="min-h-11 w-full rounded-xl border px-4 py-3 text-sm disabled:opacity-50">
+      {loadingMore?"Đang tải...":"Tải thêm thông báo"}
     </button>}
   </section>;
 }
