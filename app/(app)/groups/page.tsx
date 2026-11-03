@@ -1,6 +1,6 @@
 import { listGroups } from "@/lib/groups/service";
 import { requireUser } from "@/lib/auth/session";
-import { createGroupAction } from "@/app/actions/groups";
+import { CreateGroupForm } from "@/components/groups/create-group-form";
 import Link from "next/link";
 
 const roleLabels: Record<string, string> = {
@@ -25,24 +25,7 @@ export default async function GroupsPage() {
       <div className="flex items-center justify-between">
         <h2 id="new-group-heading" className="text-base font-semibold">Tạo nhóm mới</h2>
       </div>
-      <form action={createGroupAction} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <label className="sr-only" htmlFor="new-group-name">Tên nhóm mới</label>
-        <input id="new-group-name" name="name" minLength={2} maxLength={120}
-          autoComplete="off" required placeholder="Nhập tên nhóm..."
-          className="h-14 w-full min-w-0 rounded-2xl border bg-card px-4 text-base
-            shadow-sm outline-none placeholder:text-muted-foreground/70
-            focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/15"/>
-        <button type="submit"
-          className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl
-            bg-primary px-6 text-base font-semibold text-primary-foreground
-            transition-opacity active:opacity-85 sm:w-auto">
-          <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor"
-            strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-            <path d="M12 5v14M5 12h14"/>
-          </svg>
-          Tạo nhóm
-        </button>
-      </form>
+      <CreateGroupForm/>
     </section>
 
     <section aria-labelledby="my-groups-heading" className="space-y-3">

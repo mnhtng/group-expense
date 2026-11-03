@@ -26,10 +26,21 @@ test("group management uses stable client actions, not Server Action forms",()=>
   assert.match(s,/<GroupRenameForm/);
   assert.match(s,/<GroupArchiveForm/);
   assert.match(s,/<GroupInviteForm/);
+  assert.match(s,/<GroupRenameForm/);
+  assert.match(s,/<GroupArchiveForm/);
   assert.doesNotMatch(s,/action=\{(?:renameGroupAction|archiveGroupAction)\}/);
 });
 test("notification polling merges newer rows instead of resetting paginated cards",()=>{
   const s=readFileSync("components/notifications/notification-inbox.tsx","utf8");
   assert.match(s,/mergeNotificationFeed\(previous,data\.notifications/);
   assert.match(s,/loadedOlder\.current/);
+});
+
+test("create group and invite acceptance do not rely on redirecting server actions",()=>{
+  const home=readFileSync("app/(app)/groups/page.tsx","utf8");
+  const invite=readFileSync("app/invite/[token]/page.tsx","utf8");
+  assert.match(home,/<CreateGroupForm/);
+  assert.match(invite,/<AcceptInviteForm/);
+  assert.doesNotMatch(home,/action=\\{createGroupAction\\}/);
+  assert.doesNotMatch(invite,/action=\\{acceptInviteAction\\}/);
 });

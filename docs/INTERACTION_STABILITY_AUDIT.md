@@ -14,6 +14,8 @@ and accidental deletion. No database changes are required.
 | Group management | Native `<details>` collapsed on RSC refresh | Dedicated stable route `/groups/:id/manage` (PR #12) |
 | Rename group | Server Action submitted form; navigation/state could refresh unexpectedly | Client form + authenticated PATCH JSON; inline error and success |
 | Archive group | Server Action redirect; errors surfaced as page failures | Client form + authenticated POST; preserve form on error; navigate only on success |
+| Create group | Server Action threw on failed create/validation | Client form + JSON API, persistent typed name and inline error |
+| Accept invite | Expired/invalid token could fail a Server Action page | Client form + JSON API; stay on invite screen on failure |
 | Member management | Local eligibility snapshot could stay `owner` after transferring ownership | Derived from refreshed server props; no stale local eligibility |
 | Remove/leave/transfer | Browser `window.confirm` interrupts installed PWA | Explicit persistent inline two-step confirmations next to controls |
 | Delete expense | Browser modal + accidental deletion | Explicit inline confirmation; navigate away only after successful DELETE |
