@@ -165,7 +165,15 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       signal: AbortSignal.timeout(10_000),
     });
     assert.ok(groupScreen.ok, `authenticated /groups returned HTTP ${groupScreen.status}`);
-    assert.match(await groupScreen.text(), /Nhóm của tôi/);
+    const groupsHtml = await groupScreen.text();
+    assert.match(groupsHtml, /Nhóm của tôi/);
+    // Native-feeling PWA shell is rendered server-side, not added only after hydration.
+    assert.match(groupsHtml, /Tạo nhóm mới/, "mobile create group section must be present");
+    assert.match(groupsHtml, /Nhóm đang tham gia/, "group list should be separately labelled");
+    assert.match(groupsHtml, /Điều hướng chính/, "tab navigation should be accessible");
+    assert.match(groupsHtml, /Công nợ/, "financial tab should remain available");
+    assert.match(groupsHtml, /Thông báo/, "notifications tab should remain available");
+    assert.match(groupsHtml, /viewport-fit=cover/, "iOS installed PWA should use safe-area viewport");
 
 
     // The HTTP layer is exercised against disposable PostgreSQL, not Neon.
