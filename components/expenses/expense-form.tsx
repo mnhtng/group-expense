@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { InlineConfirmation } from "@/components/ui/inline-confirmation";
 
 type Member = { id: string; name: string; role: string };
 export type StoredExpense = {
@@ -41,6 +42,7 @@ export function ExpenseForm({ groupId, members, expense }: {
     () => expense?.items.map(fromStored) ?? [nextRow(members)]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [removeRowKey,setRemoveRowKey] = useState<string|null>(null);
   function changeRow(key: string, update: Partial<Row>) {
     setRows(prev => prev.map(row => row.key === key ? { ...row, ...update } : row));
   }
@@ -121,9 +123,19 @@ export function ExpenseForm({ groupId, members, expense }: {
         return <section key={row.key} className="space-y-4 rounded-3xl border bg-card p-5">
           <div className="flex items-center justify-between">
             <strong className="text-sm">Món {index + 1}</strong>
-            <button type="button" disabled={rows.length === 1} className="text-sm text-destructive"
-              onClick={() => setRows(prev => prev.filter(x => x.key !== row.key))}>Xóa món</button>
+            <button type="button" disabled={rows.length === 1}
+              className="min-h-11 rounded-xl px-3 text-sm text-destructive disabled:opacity-50"
+              onClick={() => setRemoveRowKey(row.key)}>Xóa món</button>
           </div>
+          {removeRowKey===row.key&&<InlineConfirmation
+            title={`Xóa món ${index+1}?`}
+            description="Các thông tin đã nhập cho món này sẽ bị xóa khỏi bản nháp. Hành động chưa gửi lên máy chủ."
+            confirmLabel="Xóa món" danger
+            onCancel={()=>setRemoveRowKey(null)}
+            onConfirm={()=>{
+              setRows(prev=>prev.filter(x=>x.key!==row.key));
+              setRemoveRowKey(null);
+            }}/>}
           <input aria-label={`Tên món ${index + 1}`} required maxLength={160} value={row.name}
             onChange={e => changeRow(row.key, { name: e.target.value })}
             placeholder="Tên món hàng" className="w-full rounded-xl border bg-background p-3"/>
@@ -180,7 +192,8 @@ export function ExpenseForm({ groupId, members, expense }: {
       })}
     </div>
     {error && <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
-    <div className="sticky bottom-0 -mx-5 flex items-center justify-between gap-4 border-t bg-background/95 px-5 py-3 backdrop-blur">
+    <div className="expense-save-footer sticky -mx-5 flex flex-wrap items-center justify-between gap-4 border-t bg-background/95 px-5 py-3 backdrop-blur"
+      style={{bottom:"calc(var(--app-tabbar-content-height, 76px) + var(--app-tabbar-safe-bottom, 12px))"}}>
       <div><p className="text-xs text-muted-foreground">Tổng hóa đơn</p>
         <p className="text-lg font-bold tabular-nums">{formatVnd(total)}</p></div>
       <button type="submit" disabled={saving || !members.length}
