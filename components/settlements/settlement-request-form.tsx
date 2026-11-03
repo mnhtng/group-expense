@@ -39,7 +39,7 @@ export function SettlementRequestForm({groupId,debtId,availableMinor,direction}:
         onChange={e=>{setAmount(e.target.value.trim());requestKey.current=null;}}
         className="mt-1 w-full rounded-xl border bg-background p-3 text-base"/>
     </label>
-    <label className="block text-sm">Ghi chú
+    <label className="block text-sm">Ghi chú (không bắt buộc)
       <textarea maxLength={500} value={note} onChange={e=>{setNote(e.target.value);requestKey.current=null;}}
         className="mt-1 w-full rounded-xl border bg-background p-3" rows={2}/>
     </label>
