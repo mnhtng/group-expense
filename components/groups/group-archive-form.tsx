@@ -25,12 +25,12 @@ export function GroupArchiveForm({groupId,groupName}:{
       router.replace("/groups"); // Intentional only after successful archival.
       router.refresh();
     }catch(error){
-      setError(error instanceof Error?error.message:"Có lỗi khi lưu trữ nhóm.");
+      setError(error instanceof Error?error.message:"Không thể lưu trữ nhóm.");
     }finally{setBusy(false)}
   }
   return <form onSubmit={archive} className="space-y-3">
     <label htmlFor="archive-confirmation" className="block text-sm font-medium">
-      Nhập đúng tên nhóm để xác nhận
+      Nhập tên nhóm để xác nhận
     </label>
     <input id="archive-confirmation" name="confirmation" required placeholder="Tên nhóm"
       value={confirmation} onChange={e=>{setConfirmation(e.target.value);setError("");}}

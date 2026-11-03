@@ -7,18 +7,18 @@ type Action="confirm"|"reject"|"cancel";
 const labels:Record<Action,{title:string;description:string;confirm:string}>={
   confirm:{
     title:"Xác nhận đã thanh toán?",
-    description:"Chỉ xác nhận khi tiền thực sự đã được chuyển hoặc nhận và bạn đã đối chiếu số tiền.",
-    confirm:"Xác nhận thanh toán",
+    description:"Chỉ xác nhận khi đã thực sự chuyển hoặc nhận tiền.",
+    confirm:"Xác nhận",
   },
   reject:{
     title:"Từ chối yêu cầu thanh toán?",
-    description:"Số tiền đang chờ sẽ được giải phóng. Giao dịch từ chối vẫn được lưu trong lịch sử.",
+    description:"Yêu cầu bị từ chối. Công nợ không thay đổi.",
     confirm:"Từ chối yêu cầu",
   },
   cancel:{
     title:"Hủy yêu cầu thanh toán?",
-    description:"Yêu cầu sẽ bị hủy và bên còn lại nhận được thông báo. Không làm giảm công nợ.",
-    confirm:"Xác nhận hủy",
+    description:"Yêu cầu bị hủy. Công nợ không thay đổi.",
+    confirm:"Hủy yêu cầu",
   },
 };
 export function SettlementActions({groupId,settlementId,canConfirm,canCancel}:{

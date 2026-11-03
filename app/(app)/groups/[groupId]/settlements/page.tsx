@@ -14,8 +14,7 @@ export default async function SettlementsPage({params}:{params:Promise<{groupId:
   return <main className="app-page space-y-4">
     <Link href={`/groups/${groupId}/debts`} className="text-sm text-muted-foreground">← Sổ công nợ {group.name}</Link>
     <h1 className="text-2xl font-semibold">Xác nhận thanh toán</h1>
-    <p className="text-sm text-muted-foreground">Cả hai bên đều có thể báo đã trả/đã nhận. Chỉ người còn lại xác nhận.</p>
-    {settlements.length===0&&<p className="rounded-xl border p-5 text-sm text-muted-foreground">Chưa có yêu cầu thanh toán nào.</p>}
+    {settlements.length===0&&<p className="rounded-xl border p-5 text-sm text-muted-foreground">Chưa có giao dịch.</p>}
     {settlements.map(x=><Link key={x.id} href={`/groups/${groupId}/settlements/${x.id}`}
       className="block space-y-2 rounded-2xl border bg-card p-4">
       <p className="text-xs text-muted-foreground">{labels[x.status]}</p>

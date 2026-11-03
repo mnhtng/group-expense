@@ -28,21 +28,21 @@ export default async function GroupPage({ params, searchParams }: {
     </Link>
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="min-w-0 flex-1"><h1 className="break-words text-2xl font-semibold">{group.name}</h1>
-        <p className="text-xs text-muted-foreground">Đơn vị tiền: {group.currency}</p></div>
+        <p className="text-xs text-muted-foreground">{group.currency}</p></div>
       <Link href={`/groups/${groupId}/expenses/new`} className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">
         + Hóa đơn
       </Link>
     </div>
     <Link href={`/groups/${groupId}/debts`}
       className="flex min-h-[88px] items-center justify-between gap-4 rounded-3xl border bg-secondary p-5">
-      <span><strong className="block">Sổ công nợ của nhóm</strong>
-        <small className="text-muted-foreground">Ai cần trả ai, theo từng món và hóa đơn</small></span>
+      <span><strong className="block">Công nợ</strong>
+</span>
       <span aria-hidden="true">→</span>
     </Link>
     <section className="space-y-3">
       <h2 className="text-lg font-semibold">Hóa đơn ({expenses.length})</h2>
       {expenses.length === 0 && <p className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Nhóm chưa có hóa đơn. Chọn + Hóa đơn để thêm từng món và phân chia chi phí.
+        Chưa có hóa đơn.
       </p>}
       {expenses.map(e => <Link key={e.id} href={`/groups/${groupId}/expenses/${e.id}`}
         className="flex min-h-[80px] items-center justify-between gap-3 rounded-3xl border bg-card p-4 sm:p-5">
@@ -54,13 +54,12 @@ export default async function GroupPage({ params, searchParams }: {
     <Link href={`/groups/${groupId}/manage`}
       className="flex min-h-[88px] items-center justify-between gap-4 rounded-3xl border bg-card p-5 transition-colors hover:bg-secondary/40 active:bg-secondary/70">
       <span className="min-w-0">
-        <strong className="block text-base">Quản lý nhóm &amp; thành viên ({members.length})</strong>
+        <strong className="block text-base">Quản lý nhóm</strong>
         <span className="mt-1 block text-sm text-muted-foreground">
-          Thành viên, lời mời, quyền sở hữu và rời nhóm
+          {members.length} thành viên
         </span>
       </span>
       <span aria-hidden="true" className="shrink-0 text-xl text-muted-foreground">→</span>
     </Link>
-    <p className="text-xs text-muted-foreground">Thành viên đã rời nhóm không thể tạo chi phí mới, nhưng toàn bộ lịch sử tài chính vẫn được bảo toàn.</p>
   </main>;
 }

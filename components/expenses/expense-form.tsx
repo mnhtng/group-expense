@@ -113,7 +113,7 @@ export function ExpenseForm({ groupId, members, expense }: {
     </div>
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Các món hàng ({rows.length})</h2>
+        <h2 className="text-lg font-semibold">Các món ({rows.length})</h2>
         <button type="button" disabled={rows.length >= 50} onClick={() => setRows(prev => [...prev, nextRow(members)])}
           className="rounded-xl bg-secondary px-3 py-2 text-sm font-semibold">+ Thêm món</button>
       </div>
@@ -129,7 +129,7 @@ export function ExpenseForm({ groupId, members, expense }: {
           </div>
           {removeRowKey===row.key&&<InlineConfirmation
             title={`Xóa món ${index+1}?`}
-            description="Các thông tin đã nhập cho món này sẽ bị xóa khỏi bản nháp. Hành động chưa gửi lên máy chủ."
+            description="Món và số tiền đã nhập sẽ bị xóa."
             confirmLabel="Xóa món" danger
             onCancel={()=>setRemoveRowKey(null)}
             onConfirm={()=>{
@@ -153,7 +153,7 @@ export function ExpenseForm({ groupId, members, expense }: {
           </div>
           <p className="text-right text-sm font-semibold">Thành tiền: {formatVnd(amount)}</p>
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Ai sử dụng món này?</legend>
+            <legend className="text-sm font-medium">Chia cho</legend>
             <div className="flex flex-wrap gap-2">
               {members.map(member => {
                 const active = row.participants.includes(member.id);
@@ -175,7 +175,7 @@ export function ExpenseForm({ groupId, members, expense }: {
             </label>
             <label className="flex items-center gap-2">
               <input type="radio" name={`mode-${row.key}`} checked={row.mode === "manual"}
-                onChange={() => changeRow(row.key, { mode: "manual" })}/> Nhập phần tiền
+                onChange={() => changeRow(row.key, { mode: "manual" })}/> Nhập số tiền
             </label>
           </div>
           {row.mode === "manual" && <div className="space-y-2 rounded-xl bg-muted p-3">
@@ -186,7 +186,7 @@ export function ExpenseForm({ groupId, members, expense }: {
                 onChange={e => changeRow(row.key, { custom: { ...row.custom, [id]: e.target.value.trim() } })}
                 className="w-32 rounded-lg border bg-background p-2 text-right text-base"/>
             </label>)}
-            <p className="text-xs text-muted-foreground">Tổng phần chia phải bằng thành tiền của món.</p>
+            <p className="text-xs text-muted-foreground">Tổng phần chia phải bằng thành tiền.</p>
           </div>}
         </section>;
       })}
