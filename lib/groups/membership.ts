@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/pool";
+import { optionalNote } from "@/lib/notes";
 
 export class MembershipError extends Error {
   constructor(public statusCode: 400 | 403 | 404 | 409, message: string) {
@@ -98,7 +99,8 @@ kind:"left"|"removed"|"rejoined"|"ownership_transferred",details:object={}) {
 }
 
 /** Rejects deletion if ANY financial obligation in either direction remains. */
-export async function departGroup(groupId:string,actorId:string,targetId:string,mode:"left"|"removed") {
+export async function departGroup(groupId:string,actorId:string,targetId:string,mode:"left"|"removed",rawNote?:string) {
+  const note=optionalNote(rawNote);
   return transaction(async client=>{
     const group=await lockGroup(client,groupId);
     const actorRole=await activeRole(client,groupId,actorId);
@@ -126,12 +128,13 @@ export async function departGroup(groupId:string,actorId:string,targetId:string,
       [groupId,targetId,mode,actorId],
     );
     if(r.rowCount!==1)throw new MembershipError(409,"Thành viên đã thay đổi trạng thái.");
-    await recordEvent(client,groupId,targetId,actorId,mode);
+    await recordEvent(client,groupId,targetId,actorId,mode,{note});
     return {status:mode};
   });
 }
 
-export async function transferGroupOwnership(groupId:string,actorId:string,targetId:string) {
+export async function transferGroupOwnership(groupId:string,actorId:string,targetId:string,rawNote?:string) {
+  const note=optionalNote(rawNote);
   return transaction(async client=>{
     const group=await lockGroup(client,groupId);
     if(group.owner_id!==actorId || !(await activeRole(client,groupId,actorId)))
@@ -147,7 +150,7 @@ export async function transferGroupOwnership(groupId:string,actorId:string,targe
     await client.query("UPDATE groups SET owner_id=$2,updated_at=now() WHERE id=$1",
       [groupId,targetId]);
     await recordEvent(client,groupId,targetId,actorId,"ownership_transferred",
-      {previousOwnerId:actorId,newOwnerId:targetId});
+      {previousOwnerId:actorId,newOwnerId:targetId,note});
     return {ownerId:targetId};
   });
 }
