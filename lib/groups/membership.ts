@@ -177,3 +177,26 @@ export async function rejoinExistingMember(client:PoolClient,groupId:string,user
   );
   return true;
 }
+
+export type MembershipNoteEvent = {
+  id:string; kind:string; note:string; recordedAt:string; actorName:string; memberName:string;
+};
+
+/** Only active members can inspect note-bearing membership actions. */
+export async function listMembershipNoteEvents(groupId:string, userId:string):Promise<MembershipNoteEvent[]> {
+  const result=await pool.query<MembershipNoteEvent>(
+    `SELECT e.id,e.kind,e.details->>'note' AS note,
+      e.recorded_at::text AS "recordedAt",
+      actor.name AS "actorName", member.name AS "memberName"
+     FROM group_membership_events e
+     JOIN "user" actor ON actor.id=e.actor_id
+     JOIN "user" member ON member.id=e.user_id
+     WHERE e.group_id=$1 AND NULLIF(btrim(e.details->>'note'),'') IS NOT NULL
+       AND EXISTS(SELECT 1 FROM group_members gm
+         JOIN groups g ON g.id=gm.group_id
+         WHERE gm.group_id=e.group_id AND gm.user_id=$2 AND gm.status='active'
+           AND g.archived_at IS NULL)
+     ORDER BY e.recorded_at DESC LIMIT 30`,[groupId,userId],
+  );
+  return result.rows;
+}
