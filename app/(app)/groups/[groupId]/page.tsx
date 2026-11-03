@@ -31,6 +31,12 @@ export default async function GroupPage({ params, searchParams }: {
         + Hóa đơn
       </Link>
     </div>
+    <Link href={`/groups/${groupId}/debts`}
+      className="flex items-center justify-between rounded-2xl border bg-secondary p-4">
+      <span><strong className="block">Sổ công nợ của nhóm</strong>
+        <small className="text-muted-foreground">Ai cần trả ai, theo từng món và hóa đơn</small></span>
+      <span aria-hidden="true">→</span>
+    </Link>
     <section className="space-y-3">
       <h2 className="text-lg font-semibold">Hóa đơn ({expenses.length})</h2>
       {expenses.length === 0 && <p className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -77,6 +83,6 @@ export default async function GroupPage({ params, searchParams }: {
         </form>}
       </div>
     </details>
-    <p className="text-xs text-muted-foreground">Dữ liệu món và phần chia đã sẵn sàng. Sổ công nợ sẽ được triển khai trong Sprint 3.</p>
+    <p className="text-xs text-muted-foreground">Công nợ truy vết từ từng món. Xác nhận hoàn trả hai chiều sẽ ra mắt trong Sprint 4.</p>
   </main>;
 }

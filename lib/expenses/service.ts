@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/pool";
+import { createExpenseObligations, voidExpenseObligations } from "@/lib/debts/ledger";
 import { prepareExpense, type ExpenseInput, type PreparedExpense } from "@/lib/expenses/domain";
 
 export class ExpenseAccessError extends Error {
@@ -101,6 +102,7 @@ export async function createExpense(groupId: string, actorId: string, data: Expe
         prepared.notes, prepared.occurredOn, prepared.totalMinor],
     );
     await writeItems(client, groupId, id, prepared);
+    await createExpenseObligations(client, id, 1);
     await recordEvent(client, groupId, id, actorId, "created", 1, prepared);
     return { id, version: 1 };
   });
@@ -132,9 +134,11 @@ export async function updateExpense(groupId: string, expenseId: string, actorId:
       [expenseId, groupId, prepared.payerId, prepared.title, prepared.notes,
         prepared.occurredOn, prepared.totalMinor, version],
     );
-    // Only expense_items are replaced. Prior revisions remain in expense_events.
+    // Preserve immutable obligation/source history before replacing mutable item IDs.
+    await voidExpenseObligations(client, expenseId);
     await client.query("DELETE FROM expense_items WHERE expense_id=$1 AND group_id=$2", [expenseId, groupId]);
     await writeItems(client, groupId, expenseId, prepared);
+    await createExpenseObligations(client, expenseId, version);
     await recordEvent(client, groupId, expenseId, actorId, "updated", version, prepared);
     return { id: expenseId, version };
   });
@@ -161,6 +165,7 @@ export async function deleteExpense(groupId: string, expenseId: string, actorId:
       "UPDATE expenses SET deleted_at=now(), updated_at=now(), version=$3 WHERE id=$1 AND group_id=$2",
       [expenseId, groupId, version],
     );
+    await voidExpenseObligations(client, expenseId);
     await recordEvent(client, groupId, expenseId, actorId, "deleted", version, { previousVersion: expense.version });
     return { id: expenseId, version };
   });
