@@ -23,3 +23,8 @@ test("QR is local, exports PNG and supports native image sharing",()=>{
   assert.match(source,/URL\.createObjectURL/);
   assert.doesNotMatch(source,/api\.qrserver|quickchart\.io|qr-code-api/i);
 });
+test("invite QR section does not render literal escaped newline",()=>{
+  const source=readFileSync("components/groups/group-invite-form.tsx","utf8");
+  assert.match(source,/<InviteQr\b/);
+  assert.doesNotMatch(source,/>\\n\s*<InviteQr\b/);
+});
