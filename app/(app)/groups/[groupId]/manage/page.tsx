@@ -56,7 +56,7 @@ export default async function ManageGroupPage({ params, searchParams }: {
     {canManage && <section aria-labelledby="invite-heading" className="space-y-3 rounded-3xl border bg-card p-5">
       <h2 id="invite-heading" className="text-lg font-semibold">Mời thành viên</h2>
       <p className="text-sm text-muted-foreground">Link mời có hiệu lực 7 ngày.</p>
-      <GroupInviteForm groupId={groupId} initialInviteUrl={inviteUrl ?? undefined}/>
+      <GroupInviteForm groupId={groupId} groupName={group.name} initialInviteUrl={inviteUrl ?? undefined}/>
     </section>}
 
     {role === "owner" && <section aria-labelledby="archive-heading"

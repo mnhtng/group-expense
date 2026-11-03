@@ -1,15 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { InviteQr } from "@/components/groups/invite-qr";
+import { normalizeInviteUrl } from "@/lib/invites/invite-link";
 
 export function GroupInviteForm({
-  groupId, initialInviteUrl,
+  groupId, groupName, initialInviteUrl,
 }: {
   groupId: string;
+  groupName: string;
   initialInviteUrl?: string;
 }) {
   const [inviteUrl, setInviteUrl] = useState(initialInviteUrl ?? "");
   const [pending, setPending] = useState(false);
+  useEffect(()=>{
+    if(!initialInviteUrl)return;
+    const normalized=normalizeInviteUrl(initialInviteUrl,window.location.origin);
+    if(normalized)queueMicrotask(()=>setInviteUrl(normalized));
+  },[initialInviteUrl]);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -26,7 +34,9 @@ export function GroupInviteForm({
       if (!response.ok) {
         throw new Error(result?.error ?? "Không tạo được link mời.");
       }
-      setInviteUrl(new URL(`/invite/${result.token}`, window.location.origin).href);
+      const normalized=normalizeInviteUrl(`/invite/${result.token}`,window.location.origin);
+      if(!normalized)throw new Error("Link mời không hợp lệ.");
+      setInviteUrl(normalized);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Không tạo được link mời.");
     } finally {
@@ -48,7 +58,7 @@ export function GroupInviteForm({
       className="min-h-12 rounded-2xl bg-secondary px-5 py-3 text-sm font-semibold disabled:opacity-50">
       {pending ? "Đang tạo liên kết..." : "Tạo link mời"}
     </button>
-    {inviteUrl && <div className="space-y-3 rounded-2xl border p-4 text-sm">
+    {inviteUrl && <div className="space-y-3 rounded-2xl border p-4 text-sm">\n      <InviteQr key={inviteUrl} url={inviteUrl} groupName={groupName}/>
       <p className="font-medium">Link mời</p>
       <a className="block break-all underline underline-offset-4" href={inviteUrl}>
         {inviteUrl}
