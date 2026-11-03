@@ -205,6 +205,58 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     ])assert.match(manageHtml,new RegExp(heading),"missing management action: "+heading);
     assert.doesNotMatch(manageHtml,/<details(?:\\s|>)/i,
       "interactive management controls must never be nested in a toggle");
+
+    // UI regression: management mutations respond in place (JSON) and do not
+    // redirect the browser or discard in-progress form state.
+    assert.match(manageHtml,/Lưu tên nhóm/);
+    assert.match(manageHtml,/Lưu trữ nhóm/);
+    assert.doesNotMatch(manageHtml,/action="[^"]*\?_rsc=/);
+    const renameUrl=`${origin}/api/groups/${groupId}/rename`;
+    const renameRequest=async(body,sessionJar=jar)=>fetch(renameUrl,{
+      method:"PATCH",redirect:"manual",
+      headers:{"content-type":"application/json",origin,
+        ...(sessionJar.size?{cookie:cookieHeader(sessionJar)}:{})},
+      body:JSON.stringify(body),signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal((await renameRequest({name:"Anonymous change"},new Map())).status,401);
+    assert.equal((await renameRequest({name:"x"})).status,400);
+    const renamed=await renameRequest({name:"Renamed integration group"});
+    assert.equal(renamed.status,200);
+    assert.equal(renamed.headers.get("location"),null,
+      "rename must never perform a page redirect");
+    assert.equal((await renamed.json()).name,"Renamed integration group");
+    const renamedDb=await pool.query("SELECT name FROM groups WHERE id=$1",[groupId]);
+    assert.equal(renamedDb.rows[0].name,"Renamed integration group");
+    const refreshedManage=await fetch(`${origin}${managePath}`,{
+      headers:{cookie:cookieHeader(jar)},signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal(refreshedManage.status,200);
+    assert.match(await refreshedManage.text(),/Renamed integration group/);
+
+    const archiveGroupId=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES ($1,$2,'Empty archive group')",
+      [archiveGroupId,registered.user.id]);
+    await pool.query(`INSERT INTO group_members(group_id,user_id,role)
+      VALUES($1,$2,'owner')`,[archiveGroupId,registered.user.id]);
+    const archiveUrl=`${origin}/api/groups/${archiveGroupId}/archive`;
+    const archiveRequest=async(body,sessionJar=jar)=>fetch(archiveUrl,{
+      method:"POST",redirect:"manual",
+      headers:{"content-type":"application/json",origin,
+        ...(sessionJar.size?{cookie:cookieHeader(sessionJar)}:{})},
+      body:JSON.stringify(body),signal:AbortSignal.timeout(10_000),
+    });
+    assert.equal((await archiveRequest({confirmation:"Empty archive group"},new Map())).status,401);
+    assert.equal((await archiveRequest({confirmation:"Wrong name"})).status,409);
+    assert.equal((await pool.query("SELECT archived_at FROM groups WHERE id=$1",
+      [archiveGroupId])).rows[0].archived_at,null);
+    const archived=await archiveRequest({confirmation:"Empty archive group"});
+    assert.equal(archived.status,200);
+    assert.equal(archived.headers.get("location"),null,
+      "archive endpoint must not force navigation or redirect on its own");
+    assert.equal((await archived.json()).archived,true);
+    assert.ok((await pool.query("SELECT archived_at FROM groups WHERE id=$1",
+      [archiveGroupId])).rows[0].archived_at);
+
     const anonManage=await fetch(`${origin}${managePath}`,{
       redirect:"manual",signal:AbortSignal.timeout(10_000),
     });
