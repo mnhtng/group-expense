@@ -25,7 +25,7 @@ export default async function ExpenseDetailPage({ params }: {
     <header className="rounded-2xl border bg-card p-5">
       <p className="text-sm text-muted-foreground">{expense.occurredOn} · {expense.items.length} món</p>
       <h1 className="mt-2 text-2xl font-semibold">{expense.title}</h1>
-      <p className="mt-3 text-3xl font-bold tabular-nums">{vnd(expense.totalMinor)}</p>
+      <p className="mt-3 text-3xl font-bold tabular-nums text-money-out">−{vnd(expense.totalMinor)}</p>
       <p className="mt-2 text-sm text-muted-foreground">Người trả: {expense.payerName}</p>
       {expense.notes && <p className="mt-3 text-sm">{expense.notes}</p>}
     </header>
@@ -49,7 +49,9 @@ export default async function ExpenseDetailPage({ params }: {
         href={`/groups/${groupId}/debts/${debt.id}`}
         className="flex justify-between gap-4 rounded-xl border p-3 text-sm">
         <span>{debt.debtorName} <span className="text-muted-foreground">→</span> {debt.creditorName}</span>
-        <strong className="tabular-nums">{vnd(debt.amountMinor)}</strong>
+        <strong className={`tabular-nums ${debt.debtorId === user.id ? "text-money-out" : debt.creditorId === user.id ? "text-money-in" : "text-foreground"}`}>
+          {debt.debtorId === user.id ? "−" : debt.creditorId === user.id ? "+" : ""}{vnd(debt.amountMinor)}
+        </strong>
       </Link>)}
     </section>
     {canEdit && <div className="flex items-center gap-4">
