@@ -181,9 +181,9 @@ execution (SC-006).
   late adjustment attribution belongs only to SC-006.
 - `SC-004-SNAPSHOTS.md`: exact temporal and ledger contract.
 
-**Final verified code SHA `6d92641af38e528197346df0d765b68b781355b7`**
-- [CI (lint, typecheck, unit, Next.js build) — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41870490676).
-- [Disposable PostgreSQL 17 migration twice, integration and live HTTP — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41870490588).
+**Final verified code SHA `f3fd73bdb7423ead4d89fa60882d7f5e84c6a784`**
+- [CI (lint, typecheck, unit, Next.js build) — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41871541097).
+- [Disposable PostgreSQL 17 migration twice, integration and live HTTP — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41871541730).
 - `settlement-cycle-snapshot.integration.mjs`: direct DB checks for
   valid lock only with complete manifest, immutable source versions,
   zero destructive changes, created/confirmed payments after lock,
@@ -194,6 +194,10 @@ execution (SC-006).
   two simultaneous owner/delegate locks ([200,409]), idempotent retry,
   late expense count after lock, old snapshot unchanged after new cash,
   creator-only invoice completion.
+- Additional hardening: SQL prevents moving expense items/shares OUT
+  of frozen invoices; group-disabled retry returns an already committed
+  idempotent snapshot receipt but cannot start a new lock. Both behaviors
+  are covered by the final green PostgreSQL/HTTP run.
 - PostgreSQL tests used ephemeral GitHub Actions service; **no shared
   Neon development/production migration**.
 
