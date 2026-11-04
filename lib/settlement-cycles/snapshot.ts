@@ -261,7 +261,35 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
     if(expenseInsert.rowCount!==details.totals.expenseCount||
        obligationInsert.rowCount!==details.totals.obligationCount)
       throw fail(409,"Số dòng snapshot không khớp, giao dịch đã rollback.");
-    const t=details.totals;
+    // Verify actual persisted rows, not just a preview SELECT or inserted
+    // row count. If any writer bypassed the documented group-lock protocol,
+    // a changed version/payment amount causes a full transaction rollback.
+    const persistedExpenses=await client.query<DbExpenseRow>(
+      `SELECT expense_id AS "expenseId",expense_version AS "expenseVersion",
+         occurred_on::text AS "occurredOn",total_minor::text AS "totalMinor"
+       FROM group_settlement_cycle_snapshot_expenses
+       WHERE cycle_id=$1 ORDER BY occurred_on,expense_id`,[cycleId]);
+    const persistedObligations=await client.query<DbCashRow>(
+      `SELECT o.obligation_id AS "obligationId",
+         o.expense_id AS "expenseId",o.expense_version AS "expenseVersion",
+         o.debtor_id AS "debtorId",o.creditor_id AS "creditorId",
+         o.original_minor::text AS "originalMinor",
+         o.confirmed_cash_minor::text AS "confirmedCashMinor",
+         o.pending_cash_minor::text AS "pendingCashMinor",
+         o.outstanding_minor::text AS "outstandingMinor",
+         o.available_minor::text AS "availableMinor"
+       FROM group_settlement_cycle_snapshot_obligations o
+       JOIN group_settlement_cycle_snapshot_expenses e
+         ON e.cycle_id=o.cycle_id AND e.expense_id=o.expense_id
+       WHERE o.cycle_id=$1 ORDER BY e.occurred_on,e.expense_id,o.obligation_id`,
+      [cycleId],
+    );
+    const checkTotals=fold(persistedExpenses.rows,persistedObligations.rows);
+    if(fingerprint(persistedExpenses.rows,persistedObligations.rows)!==
+         details.fingerprint||
+       JSON.stringify(checkTotals)!==JSON.stringify(details.totals))
+      throw fail(409,"Bản snapshot đã ghi không khớp dữ liệu gốc. Giao dịch đã rollback.");
+    const t=checkTotals;
     const insert=await client.query<SnapshotDb>(
       `INSERT INTO group_settlement_cycle_snapshots
         (cycle_id,group_id,request_key,locked_by,cutoff_at,
