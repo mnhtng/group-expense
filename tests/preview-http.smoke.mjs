@@ -568,6 +568,9 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       {memberId:otherUser.id,action:"revoke"},jar)).response.status,200);
     assert.equal((await expenseRequest("PATCH",settingsUrl,config(4,false,false),otherJar))
       .response.status,403,"revoked delegate cannot change settings");
+    assert.equal((await expenseRequest("PATCH",sc002Url,
+      sc002Config(2,"weekly",sc002Future),otherJar)).response.status,403,
+      "revoked delegate cannot change schedule even with a valid version");
 
     assert.equal((await expenseRequest("POST",managersUrl,
       {memberId:thirdUser.id,action:"grant"},jar)).response.status,200);
@@ -579,6 +582,9 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       "ownership transfer must revoke all prior delegations");
     assert.equal((await expenseRequest("PATCH",settingsUrl,config(4,false,false),jar))
       .response.status,403,"previous owner no longer has special configuration power");
+    assert.equal((await expenseRequest("PATCH",sc002Url,
+      sc002Config(2,"weekly",sc002Future),jar)).response.status,403,
+      "old owner cannot change schedule after ownership transfer");
     assert.equal((await expenseRequest("POST",managersUrl,
       {memberId:thirdUser.id,action:"grant"},otherJar)).response.status,200,
       "new owner can explicitly grant fresh permissions");
@@ -617,6 +623,11 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     // An archived group cannot be reactivated by any previous owner/delegate.
     await pool.query("UPDATE groups SET archived_at=now() WHERE id=$1",[cycleGroupId]);
     assert.equal((await expenseRequest("GET",settingsUrl,undefined,otherJar)).response.status,404);
+    assert.equal((await expenseRequest("GET",sc002Url,undefined,otherJar)).response.status,404,
+      "archived group schedule must not be readable");
+    assert.equal((await expenseRequest("PATCH",sc002Url,
+      sc002Config(2,"weekly",sc002Future),otherJar)).response.status,404,
+      "archived group cannot change schedule");
     assert.equal((await expenseRequest("PATCH",settingsUrl,config(4,false,false),otherJar))
       .response.status,404,"archived group must reject settings mutations");
     assert.equal((await expenseRequest("POST",managersUrl,
