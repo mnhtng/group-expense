@@ -73,6 +73,8 @@ jobs:
       DATABASE_URL: postgresql://test:test@localhost:5432/group_expense
       BETTER_AUTH_SECRET: test-secret-for-ci-not-used-in-production-12345
       BETTER_AUTH_URL: http://localhost:3101
+      # CI-only placeholder, never a production secret. Exercises Cron auth.
+      CRON_SECRET: ci-cycle-metadata-throwaway-do-not-use-outside-tests
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
