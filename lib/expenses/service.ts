@@ -5,6 +5,7 @@ import { pool } from "@/lib/db/pool";
 import { createExpenseObligations, voidExpenseObligations } from "@/lib/debts/ledger";
 import { prepareExpense, type ExpenseInput, type PreparedExpense } from "@/lib/expenses/domain";
 import { optionalNote } from "@/lib/notes";
+import { canModifyExpense } from "@/lib/expenses/permissions";
 
 export class ExpenseAccessError extends Error {
   constructor(public readonly status: 403 | 404 | 409, message: string) {
@@ -55,10 +56,6 @@ async function lockGroupMembers(client: PoolClient, groupId: string, actorId: st
   const role = members.rows.find(m => m.user_id === actorId)?.role;
   if (!role) throw new ExpenseAccessError(404, "Không tìm thấy nhóm.");
   return { members: members.rows.map(m => m.user_id), role };
-}
-
-function editable(role: string, creator: string, actor: string): boolean {
-  return creator === actor || role === "owner" || role === "admin";
 }
 
 
@@ -124,7 +121,7 @@ export async function createExpense(groupId: string, actorId: string, data: Expe
 export async function updateExpense(groupId: string, expenseId: string, actorId: string,
   expectedVersion: number, data: ExpenseInput) {
   return withTransaction(async client => {
-    const { members, role } = await lockGroupMembers(client, groupId, actorId);
+    const { members } = await lockGroupMembers(client, groupId, actorId);
     const current = await client.query<{ version: number; created_by: string }>(
       `SELECT version, created_by FROM expenses
        WHERE id = $1 AND group_id = $2 AND deleted_at IS NULL FOR UPDATE`,
@@ -132,7 +129,7 @@ export async function updateExpense(groupId: string, expenseId: string, actorId:
     );
     const expense = current.rows[0];
     if (!expense) throw new ExpenseAccessError(404, "Không tìm thấy hóa đơn.");
-    if (!editable(role, expense.created_by, actorId)) {
+    if (!canModifyExpense(expense.created_by, actorId)) {
       throw new ExpenseAccessError(403, "Bạn không có quyền sửa hóa đơn.");
     }
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
@@ -161,7 +158,7 @@ export async function updateExpense(groupId: string, expenseId: string, actorId:
 export async function deleteExpense(groupId: string, expenseId: string, actorId: string, expectedVersion: number, rawNote?: string) {
   const note=optionalNote(rawNote);
   return withTransaction(async client => {
-    const { role } = await lockGroupMembers(client, groupId, actorId);
+    await lockGroupMembers(client, groupId, actorId);
     const current = await client.query<{ version: number; created_by: string }>(
       `SELECT version, created_by FROM expenses
        WHERE id=$1 AND group_id=$2 AND deleted_at IS NULL FOR UPDATE`,
@@ -169,7 +166,7 @@ export async function deleteExpense(groupId: string, expenseId: string, actorId:
     );
     const expense = current.rows[0];
     if (!expense) throw new ExpenseAccessError(404, "Không tìm thấy hóa đơn.");
-    if (!editable(role, expense.created_by, actorId)) {
+    if (!canModifyExpense(expense.created_by, actorId)) {
       throw new ExpenseAccessError(403, "Bạn không có quyền xóa hóa đơn.");
     }
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
