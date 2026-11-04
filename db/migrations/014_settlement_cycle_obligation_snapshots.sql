@@ -162,6 +162,33 @@ BEGIN
         AND s.obligation_count=(
           SELECT count(*) FROM group_settlement_cycle_snapshot_obligations o
           WHERE o.cycle_id=NEW.id)
+        AND s.original_minor=(
+          SELECT COALESCE(sum(o.original_minor),0)
+          FROM group_settlement_cycle_snapshot_obligations o WHERE o.cycle_id=NEW.id)
+        AND s.confirmed_cash_minor=(
+          SELECT COALESCE(sum(o.confirmed_cash_minor),0)
+          FROM group_settlement_cycle_snapshot_obligations o WHERE o.cycle_id=NEW.id)
+        AND s.pending_cash_minor=(
+          SELECT COALESCE(sum(o.pending_cash_minor),0)
+          FROM group_settlement_cycle_snapshot_obligations o WHERE o.cycle_id=NEW.id)
+        AND s.outstanding_minor=(
+          SELECT COALESCE(sum(o.outstanding_minor),0)
+          FROM group_settlement_cycle_snapshot_obligations o WHERE o.cycle_id=NEW.id)
+        AND s.available_minor=(
+          SELECT COALESCE(sum(o.available_minor),0)
+          FROM group_settlement_cycle_snapshot_obligations o WHERE o.cycle_id=NEW.id)
+        AND NOT EXISTS(
+          SELECT 1 FROM group_settlement_cycle_snapshot_expenses e
+          WHERE e.cycle_id=NEW.id
+            AND (e.occurred_on<NEW.period_start OR e.occurred_on>=NEW.period_end)
+        )
+        AND NOT EXISTS(
+          SELECT 1 FROM group_settlement_cycle_snapshot_obligations o
+          JOIN obligations base ON base.id=o.obligation_id
+          WHERE o.cycle_id=NEW.id AND
+            (base.voided_at IS NOT NULL OR base.amount_minor<>o.original_minor
+              OR base.expense_version<>o.expense_version)
+        )
     ) INTO snapshot_exists;
     IF snapshot_exists THEN RETURN NEW; END IF;
   END IF;
