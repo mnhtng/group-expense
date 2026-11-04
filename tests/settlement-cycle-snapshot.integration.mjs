@@ -117,6 +117,10 @@ test("SC-004 isolated PostgreSQL: immutable source snapshot, exact sums, lock gu
       [item],"Frozen invoice item shares cannot change");
     await fails("UPDATE expense_item_shares SET amount_minor=9000 WHERE item_id=$1",
       [item],"Frozen invoice item shares cannot change");
+    await fails("UPDATE expense_items SET expense_id=$2 WHERE id=$1",
+      [item,randomUUID()],"Frozen invoice item shares cannot change");
+    await fails("UPDATE expense_item_shares SET item_id=$2 WHERE item_id=$1",
+      [item,randomUUID()],"Frozen invoice item shares cannot change");
     await fails("UPDATE obligations SET voided_at=clock_timestamp() WHERE id=$1",
       [obligation],"Frozen obligation cannot be modified");
     await fails(`UPDATE expenses SET completed_at=clock_timestamp(),
