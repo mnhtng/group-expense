@@ -932,6 +932,49 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       x=>x.expenseId===receipt2.body.id).outstandingMinor,"0",
       "completion does not remove or rewrite settled debts");
 
+    // Multiple debtors in the SAME invoice: creator must wait for EVERY person.
+    const sharedDraft={...debtDraft,title:"Finalized group dinner",items:[
+      {name:"B portion",quantity:1,unitPriceMinor:"12000",participants:[otherUser.id]},
+      {name:"C portion",quantity:1,unitPriceMinor:"14000",participants:[thirdUser.id]},
+    ]};
+    const shared=await expenseRequest("POST",endpoint,sharedDraft);
+    assert.equal(shared.response.status,201,JSON.stringify(shared.body));
+    const sharedCloseUrl=`${endpoint}/${shared.body.id}/complete`;
+    const sharedDebts=(await expenseRequest("GET",debtEndpoint)).body.debts
+      .filter(x=>x.expenseId===shared.body.id);
+    assert.equal(sharedDebts.length,2);
+    assert.equal((await expenseRequest("POST",sharedCloseUrl,{expectedVersion:1},jar))
+      .response.status,409,"invoice with two unpaid people cannot be finalized");
+    for(const [index,debtor] of [otherUser,thirdUser].entries()){
+      const actorJar=index===0?otherJar:thirdJar;
+      const owed=sharedDebts.find(x=>x.debtorId===debtor.id);
+      const request=await expenseRequest("POST",settlementUrl,{
+        requestKey:randomUUID(),
+        allocations:[{obligationId:owed.id,amountMinor:owed.amountMinor}],
+        note:"paid share "+index,
+      },actorJar);
+      assert.equal(request.response.status,201,JSON.stringify(request.body));
+      assert.equal((await expenseRequest("POST",sharedCloseUrl,{expectedVersion:1},jar))
+        .response.status,409,"pending or incomplete repayment must block invoice finalization");
+      const approve=await expenseRequest("PATCH",`${settlementUrl}/${request.body.id}`,{
+        action:"confirm",note:"receipt confirmed",
+      },jar);
+      assert.equal(approve.response.status,200);
+      if(index===0)assert.equal((await expenseRequest("POST",sharedCloseUrl,{expectedVersion:1},jar))
+        .response.status,409,"first debtor paid, second debtor still owes money");
+    }
+    const readyShared=(await expenseRequest("GET",`${endpoint}/${shared.body.id}`)).body.expense;
+    assert.equal(readyShared.remainingMinor,"0");
+    assert.equal(readyShared.confirmedMinor,"26000");
+    assert.equal(readyShared.pendingMinor,"0");
+    assert.equal(readyShared.completedAt,null);
+    assert.equal((await expenseRequest("POST",sharedCloseUrl,{expectedVersion:1},thirdJar))
+      .response.status,403,"group owner is NOT permitted to finalize invoice they didn't create");
+    assert.equal((await expenseRequest("POST",sharedCloseUrl,{
+      expectedVersion:1,note:"B và C đã tất toán",
+    },jar)).response.status,200);
+    assert.ok((await expenseRequest("GET",`${endpoint}/${shared.body.id}`)).body.expense.completedAt);
+
     assert.equal((await expenseRequest("GET",bLeave,undefined,otherJar)).body.eligibility.canLeave,true);
     assert.equal((await expenseRequest("POST",bLeave,undefined,otherJar)).response.status,200);
     assert.equal((await expenseRequest("GET",debtEndpoint,undefined,otherJar)).response.status,404);
