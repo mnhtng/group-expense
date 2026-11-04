@@ -313,7 +313,9 @@ export async function countLateCycleExpenses(groupId:string,cycleId:string,
       JOIN group_settlement_cycle_snapshots s ON s.cycle_id=c.id
       JOIN expenses e ON e.group_id=c.group_id
         AND e.occurred_on>=c.period_start AND e.occurred_on<c.period_end
-        AND e.deleted_at IS NULL AND e.created_at>s.cutoff_at
+        AND e.deleted_at IS NULL
+        AND NOT EXISTS(SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+          WHERE se.cycle_id=c.id AND se.expense_id=e.id)
       WHERE c.group_id=$1 AND c.id=$2 AND c.state='locked'`,
     [groupId,cycleId]);
   return r.rows[0]?.count??0;
