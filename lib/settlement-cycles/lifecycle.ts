@@ -281,7 +281,7 @@ async function workCyclesForGroup(client:PoolClient,groupId:string,cap:number):P
     const lower=Math.max(rule.effectiveAt.getTime(),enabledSince,
       latest.rows[0]?.end_at?.getTime()??0);
     if(lower>=segmentEnd||lower>now)continue;
-    let cursor=currentLocalDate(rule.timeZone,lower);
+    const cursor=currentLocalDate(rule.timeZone,lower);
     // Use the SC-002 calendar function, never UTC-day arithmetic.
     let period=periodContaining(cursor,rule.frequency,rule.anchorDate);
     if(!period)throw error(409,"Lịch định kỳ không thể xác định kỳ hợp lệ.");
