@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { InviteQr } from "@/components/groups/invite-qr";
 import { normalizeInviteUrl } from "@/lib/invites/invite-link";
-import { OptionalNoteField } from "@/components/ui/optional-note-field";
 
 export function GroupInviteForm({
   groupId, groupName, initialInviteUrl,
@@ -14,7 +13,6 @@ export function GroupInviteForm({
 }) {
   const [inviteUrl, setInviteUrl] = useState(initialInviteUrl ?? "");
   const [pending, setPending] = useState(false);
-  const [note, setNote] = useState("");
   useEffect(()=>{
     if(!initialInviteUrl)return;
     const normalized=normalizeInviteUrl(initialInviteUrl,window.location.origin);
@@ -31,7 +29,6 @@ export function GroupInviteForm({
     try {
       const response = await fetch(`/api/groups/${groupId}/invites`, {
         method: "POST", credentials: "same-origin", cache: "no-store",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({note}),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -57,7 +54,6 @@ export function GroupInviteForm({
   }
 
   return <div className="space-y-3">
-    <OptionalNoteField value={note} onChange={setNote} placeholder="Lời nhắn dành cho người được mời..."/>
     <button type="button" onClick={() => void create()} disabled={pending}
       className="min-h-12 rounded-2xl bg-secondary px-5 py-3 text-sm font-semibold disabled:opacity-50">
       {pending ? "Đang tạo liên kết..." : "Tạo link mời"}
