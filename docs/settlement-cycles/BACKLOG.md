@@ -33,7 +33,7 @@
 
 | ID | Priority | Deliverable | Dependencies | Status |
 |---|---|---|---|---|
-| SC-001 | P0 | Safe feature flags + owner/delegate grants + authz, default OFF, audit, backward compatibility; **NO financial calculation** | none | IN PROGRESS |
+| SC-001 | P0 | Safe feature flags + owner/delegate grants + authz, default OFF, audit, backward compatibility; **NO financial calculation** | none | DONE ON FEATURE BRANCH — CI + HTTP/DB PASS; PR REVIEW PENDING |
 | SC-002 | P0 | Cycle configuration: timezone/anchor/frequency/ranges, versioning, safe future-only changes | SC-001 | TODO |
 | SC-003 | P0 | Cycle state machine / immutable cycle identity + overlap prevention + manual/cron transitions | SC-002 | TODO |
 | SC-004 | P0 | Eligible obligation snapshots: date boundary, cash confirmed/pending, late bills, frozen versions, canonical SQL | SC-003 | TODO |
@@ -51,7 +51,7 @@
 | SC-010 | P1 | Operational runbooks, cron catch-up, monitoring, recovery / rollback, staged production rollout | SC-009 | TODO |
 | BN-007 | P2 | Optional future refinements strictly **within two parties**, never 3+-party debt simplification | SC-010 | BACKLOG |
 
-## SC-001 — this conversation ONLY
+## SC-001 — completed in first conversation (code in draft PR #16)
 
 **Scope:** isolated schema for settings & grants; default-off, separate owner/grant manager access; owner-only delegation; deny all writes to non-members/archived groups; session-authenticated, validated API; minimal mobile-safe configuration UI with clear **"not active until engine rollout"** label; audit and revocation across leave/rejoin/owner transfer; unit + integration + HTTP tests.
 
