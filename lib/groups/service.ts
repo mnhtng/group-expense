@@ -1,11 +1,9 @@
 import "server-only";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { pool } from "@/lib/db/pool";
-import { optionalNote } from "@/lib/notes";
 import { departGroup, rejoinExistingMember } from "@/lib/groups/membership";
 
 export type GroupRow = { id: string; name: string; currency: string; role: string };
-export type GroupNoteEvent = { id:string; eventType:string; note:string|null; recordedAt:string; actorName:string };
 type MemberRole = "owner" | "admin" | "member";
 
 export async function listGroups(userId: string): Promise<GroupRow[]> {
@@ -18,20 +16,15 @@ export async function listGroups(userId: string): Promise<GroupRow[]> {
   return result.rows;
 }
 
-export async function createGroup(ownerId: string, rawName: string, rawNote?: string) {
-  const note = optionalNote(rawNote);
+export async function createGroup(ownerId: string, rawName: string) {
   const name = rawName.trim();
   if (name.length < 2 || name.length > 120) throw new Error("Tên nhóm cần từ 2 đến 120 ký tự.");
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const id = randomUUID();
-    await client.query("INSERT INTO groups (id, owner_id, name, notes) VALUES ($1, $2, $3, $4)", [id, ownerId, name, note]);
+    await client.query("INSERT INTO groups (id, owner_id, name) VALUES ($1, $2, $3)", [id, ownerId, name]);
     await client.query("INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'owner')", [id, ownerId]);
-    await client.query(
-      "INSERT INTO group_note_events(id,group_id,actor_id,event_type,note) VALUES($1,$2,$3,'created',$4)",
-      [randomUUID(),id,ownerId,note],
-    );
     await client.query("COMMIT");
     return id;
   } catch (error) {
@@ -52,8 +45,8 @@ export async function getMemberRole(groupId: string, userId: string): Promise<Me
 }
 
 export async function getGroupDetails(groupId: string, userId: string) {
-  const result = await pool.query<{ id: string; name: string; currency: string; notes: string | null }>(
-    `SELECT g.id, g.name, g.currency, g.notes FROM groups g
+  const result = await pool.query<{ id: string; name: string; currency: string }>(
+    `SELECT g.id, g.name, g.currency FROM groups g
      JOIN group_members m ON m.group_id = g.id
      WHERE g.id = $1 AND m.user_id = $2 AND m.status='active' AND g.archived_at IS NULL`,
     [groupId, userId],
@@ -61,68 +54,39 @@ export async function getGroupDetails(groupId: string, userId: string) {
   return result.rows[0] ?? null;
 }
 
-export async function archiveGroup(groupId: string, ownerId: string, confirmation: string, rawNote?: string) {
-  const note = optionalNote(rawNote);
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const result = await client.query(
-      `UPDATE groups g SET archived_at=now(), updated_at=now()
-       WHERE g.id=$1 AND g.owner_id=$2 AND g.name=$3 AND g.archived_at IS NULL
-         AND NOT EXISTS(SELECT 1 FROM settlements s
-           WHERE s.group_id=g.id AND s.status='pending')
-         AND NOT EXISTS(
-           SELECT 1 FROM obligations o
-           WHERE o.group_id=g.id AND o.voided_at IS NULL
-             AND o.amount_minor >
-               COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
-                 JOIN settlements s ON s.id=a.settlement_id
-                 WHERE a.obligation_id=o.id AND s.status='confirmed'),0)
-         )`,
-      [groupId, ownerId, confirmation.trim()],
-    );
-    if (result.rowCount !== 1) throw new Error("Không thể lưu trữ: sai quyền/tên xác nhận hoặc nhóm còn công nợ chưa thanh toán.");
-    await client.query(
-      "INSERT INTO group_note_events(id,group_id,actor_id,event_type,note) VALUES($1,$2,$3,'archived',$4)",
-      [randomUUID(),groupId,ownerId,note],
-    );
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally { client.release(); }
+export async function archiveGroup(groupId: string, ownerId: string, confirmation: string) {
+  const result = await pool.query(
+    `UPDATE groups g SET archived_at=now(), updated_at=now()
+     WHERE g.id=$1 AND g.owner_id=$2 AND g.name=$3 AND g.archived_at IS NULL
+       AND NOT EXISTS(SELECT 1 FROM settlements s
+         WHERE s.group_id=g.id AND s.status='pending')
+       AND NOT EXISTS(
+         SELECT 1 FROM obligations o
+         WHERE o.group_id=g.id AND o.voided_at IS NULL
+           AND o.amount_minor >
+             COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
+               JOIN settlements s ON s.id=a.settlement_id
+               WHERE a.obligation_id=o.id AND s.status='confirmed'),0)
+       )`,
+    [groupId, ownerId, confirmation.trim()],
+  );
+  if (result.rowCount !== 1) throw new Error("Không thể lưu trữ: sai quyền/tên xác nhận hoặc nhóm còn công nợ chưa thanh toán.");
 }
 
-export async function renameGroup(groupId: string, actorId: string, rawName: string, rawNote?: string) {
+export async function renameGroup(groupId: string, actorId: string, rawName: string) {
   const name = rawName.trim();
   if (name.length < 2 || name.length > 120) throw new Error("Tên nhóm không hợp lệ.");
-  const note = optionalNote(rawNote);
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const result = await client.query(
-      `UPDATE groups g SET name = $3,
-        notes = CASE WHEN $5::boolean THEN $4 ELSE g.notes END,
-        updated_at = now()
-       WHERE g.id = $1 AND g.archived_at IS NULL
-         AND EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id
-           AND m.user_id = $2 AND m.status='active' AND m.role IN ('owner', 'admin'))`,
-      [groupId, actorId, name, note, rawNote !== undefined],
-    );
-    if (result.rowCount !== 1) throw new Error("Không có quyền sửa nhóm.");
-    await client.query(
-      "INSERT INTO group_note_events(id,group_id,actor_id,event_type,note) VALUES($1,$2,$3,'updated',$4)",
-      [randomUUID(),groupId,actorId,note],
-    );
-    await client.query("COMMIT");
-  } catch(error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally { client.release(); }
+  const result = await pool.query(
+    `UPDATE groups g SET name = $3, updated_at = now()
+     WHERE g.id = $1 AND g.archived_at IS NULL
+       AND EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id
+         AND m.user_id = $2 AND m.status='active' AND m.role IN ('owner', 'admin'))`,
+    [groupId, actorId, name],
+  );
+  if (result.rowCount !== 1) throw new Error("Không có quyền sửa nhóm.");
 }
 
-export async function createInvite(groupId: string, actorId: string, rawNote?: string) {
-  const note = optionalNote(rawNote);
+export async function createInvite(groupId: string, actorId: string) {
   const client=await pool.connect();
   try {
     await client.query("BEGIN");
@@ -137,21 +101,16 @@ export async function createInvite(groupId: string, actorId: string, rawNote?: s
     const token=randomBytes(32).toString("base64url");
     const hash=createHash("sha256").update(token).digest("hex");
     await client.query(
-      `INSERT INTO group_invites(id,group_id,token_hash,created_by,expires_at,notes)
-       VALUES($1,$2,$3,$4,now()+interval '7 days',$5)`,
-      [randomUUID(),groupId,hash,actorId,note]);
-    await client.query(
-      "INSERT INTO group_note_events(id,group_id,actor_id,event_type,note) VALUES($1,$2,$3,'invite_created',$4)",
-      [randomUUID(),groupId,actorId,note],
-    );
+      `INSERT INTO group_invites(id,group_id,token_hash,created_by,expires_at)
+       VALUES($1,$2,$3,$4,now()+interval '7 days')`,
+      [randomUUID(),groupId,hash,actorId]);
     await client.query("COMMIT");
     return token;
   }catch(error){await client.query("ROLLBACK");throw error}
   finally{client.release()}
 }
 
-export async function acceptInvite(userId: string, token: string, rawNote?: string) {
-  const note = optionalNote(rawNote);
+export async function acceptInvite(userId: string, token: string) {
   if(!/^[A-Za-z0-9_-]{32,100}$/.test(token))
     throw new Error("Liên kết không hợp lệ.");
   const hash=createHash("sha256").update(token).digest("hex");
@@ -177,10 +136,6 @@ export async function acceptInvite(userId: string, token: string, rawNote?: stri
     if(joined){
       await client.query("UPDATE group_invites SET uses_count=uses_count+1 WHERE id=$1",
         [invite.id]);
-      await client.query(
-        "INSERT INTO group_note_events(id,group_id,actor_id,event_type,note) VALUES($1,$2,$3,'invite_accepted',$4)",
-        [randomUUID(),invite.group_id,userId,note],
-      );
     }
     await client.query("COMMIT");
     return invite.group_id;
@@ -202,29 +157,4 @@ export async function listMembers(groupId: string, userId: string) {
 export async function removeMember(groupId: string, actorId: string, memberId: string) {
   // Preserve financial foreign keys and receipts instead of deleting membership.
   return departGroup(groupId,actorId,memberId,actorId===memberId?"left":"removed");
-}
-
-/** Token holder may see the invite's note but not private financial data. */
-export async function getInvitePreview(token: string) {
-  if (!/^[A-Za-z0-9_-]{32,100}$/.test(token)) return null;
-  const hash = createHash("sha256").update(token).digest("hex");
-  const result = await pool.query<{groupName:string; inviteNote:string|null}>(
-    `SELECT g.name AS "groupName", i.notes AS "inviteNote"
-     FROM group_invites i JOIN groups g ON g.id=i.group_id
-     WHERE i.token_hash=$1 AND i.expires_at>now()
-       AND i.revoked_at IS NULL AND i.uses_count<i.max_uses
-       AND g.archived_at IS NULL`, [hash],
-  );
-  return result.rows[0]??null;
-}
-
-export async function listGroupNoteEvents(groupId: string, userId: string): Promise<GroupNoteEvent[]> {
-  if (!(await getMemberRole(groupId, userId))) return [];
-  const result = await pool.query<GroupNoteEvent>(
-    `SELECT e.id, e.event_type AS "eventType",e.note,
-      e.recorded_at::text AS "recordedAt",u.name AS "actorName"
-     FROM group_note_events e JOIN "user" u ON u.id=e.actor_id
-     WHERE e.group_id=$1 ORDER BY e.recorded_at DESC LIMIT 30`, [groupId],
-  );
-  return result.rows;
 }
