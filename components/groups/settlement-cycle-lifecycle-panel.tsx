@@ -12,9 +12,9 @@ import type {CycleRecord} from "@/lib/settlement-cycles/lifecycle";
 
 /** SC-003 metadata-only controls; not a cash/settlement or completion UI. */
 export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
-  schedule,cycles}:{
+  schedule,cycles,renderedAt}:{
   groupId:string;requestedEnabled:boolean;
-  schedule:ScheduleView;cycles:CycleRecord[];
+  schedule:ScheduleView;cycles:CycleRecord[];renderedAt:string;
 }) {
   const router=useRouter();
   const active=schedule.current;
@@ -126,7 +126,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
           {cycle.reviewedAt?` · Chuyển trạng thái ${formatDateTimeDMY(cycle.reviewedAt)}`:""}
         </p>
         {cycle.state==="open"&&requestedEnabled&&schedule.canManage&&
-          Date.parse(cycle.endAt)<=Date.now()&&
+          Date.parse(cycle.endAt)<=Date.parse(renderedAt)&&
           <button type="button" disabled={busy}
             onClick={()=>void call(`${root}/${cycle.id}/review`,{
               expectedVersion:cycle.version,
