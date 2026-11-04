@@ -1,15 +1,11 @@
 import Link from "next/link";
+import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getDebtDetails } from "@/lib/debts/service";
 import { SettlementRequestForm } from "@/components/settlements/settlement-request-form";
 
 const vnd = (amount: string) => new Intl.NumberFormat("vi-VN").format(BigInt(amount)) + " ₫";
-const shortDate = (date: string) => date.split("-").reverse().join("/");
-const dateTime = (value: string) => new Intl.DateTimeFormat("vi-VN", {
-  day: "2-digit", month: "2-digit", year: "numeric",
-  hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh",
-}).format(new Date(value));
 const statusLabel = {
   pending: "Chờ xác nhận", confirmed: "Đã xác nhận",
   rejected: "Đã từ chối", cancelled: "Đã hủy",
@@ -42,7 +38,7 @@ export default async function DebtDetailPage({ params }: {
     <header className="space-y-4 rounded-2xl border bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm text-muted-foreground">
-          {debt.groupName} · {shortDate(debt.occurredOn)}
+          {debt.groupName} · {formatDateDMY(debt.occurredOn)}
         </span>
         <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">{status}</span>
       </div>
@@ -112,11 +108,11 @@ export default async function DebtDetailPage({ params }: {
           </strong>
         </div>
         <p className="text-xs text-muted-foreground">
-          Tạo: {dateTime(payment.createdAt)} · {payment.initiatedBy === debt.debtorId ? debt.debtorName : debt.creditorName}
+          Tạo: {formatDateTimeDMY(payment.createdAt)} · {payment.initiatedBy === debt.debtorId ? debt.debtorName : debt.creditorName}
         </p>
         {payment.resolvedAt &&
           <p className="text-xs text-muted-foreground">
-            Xử lý: {dateTime(payment.resolvedAt)}
+            Xử lý: {formatDateTimeDMY(payment.resolvedAt)}
             {payment.resolvedBy ? ` · ${payment.resolvedBy === debt.debtorId ? debt.debtorName : debt.creditorName}` : ""}
           </p>}
         {payment.note && <p className="break-words text-sm">{payment.note}</p>}
