@@ -35,8 +35,8 @@
 |---|---|---|---|---|
 | SC-001 | P0 | Safe feature flags + owner/delegate grants + authz, default OFF, audit, backward compatibility; **NO financial calculation** | none | DONE ON FEATURE BRANCH — CI + HTTP/DB PASS; PR REVIEW PENDING |
 | SC-002 | P0 | Cycle configuration: timezone/anchor/frequency/ranges, versioning, safe future-only changes | SC-001 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO ENGINE ACTIVATION |
-| SC-003 | P0 | Cycle state machine / immutable cycle identity + overlap prevention + manual/cron transitions | SC-002 | IMPLEMENTED — FINAL CI/HTTP VERIFICATION PENDING |
-| SC-004 | P0 | Eligible obligation snapshots: date boundary, cash confirmed/pending, late bills, frozen versions, canonical SQL | SC-003 | TODO |
+| SC-003 | P0 | Cycle state machine / immutable cycle identity + overlap prevention + manual/cron transitions | SC-002 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO FINANCIAL ACTIONS |
+| SC-004 | P0 | Eligible obligation snapshots: date boundary, cash confirmed/pending, late bills, frozen versions, canonical SQL | SC-003 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; REVIEW PENDING |
 | SC-005 | P0 | Same-direction batch repayment by pair, 50+ allocations, idempotent requests and scoped confirmation | SC-004 | TODO |
 | BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | TODO |
 | BN-002 | P0 | Bilateral proposal persistence, one group+cycle+pair+version, stable fingerprint and conflict handling | BN-001 | TODO |
@@ -118,6 +118,30 @@ stale versions, early reviews, and duplicate actions. Run CI + disposable
 Postgres/HTTP and record actual results in PROGRESS.md before marking DONE.
 
 See [SC-003-LIFECYCLE.md](./SC-003-LIFECYCLE.md) for all state semantics.
+
+## SC-004 — completed in fourth conversation (Draft PR #16)
+
+**Scope:** canonical ledger eligibility over the entire group's obligations
+(no 100/500 row cap), exact local `[start,end)` invoice dates,
+`deleted_at`/`voided_at` exclusions, recorded-at cutoff, frozen expense
+and obligation versions, confirmed vs pending cash and explicit conservation.
+Manager approves a preview fingerprint; group-locked atomic transaction
+persists immutable source snapshots, verifies actual persisted data and
+moves `review (v2) -> locked (v3)` with append-only audit.
+A snapshot is NOT a debt discharge, cash transfer or invoice completion.
+The SC-001 financial-engine-ready flag remains false.
+
+**Acceptance evidence:** SQL migration installed twice on disposable PG17;
+CI lint/typecheck/unit/build; HTTP with 551 source obligations,
+confirmed/pending money, wrong/stale fingerprint, simultaneous owner/delegate
+locking, idempotent retry, exclusive end boundary, deleted bill exclusion,
+post-lock late invoice, creator-only completion after cash confirmation.
+No automatic adjustment to a future cycle (SC-006), no grouped repayment
+(SC-005), no two-way set-off (BN-*).
+
+**Canonical detailed spec:** [SC-004-SNAPSHOTS.md](./SC-004-SNAPSHOTS.md).
+**Financial release gate:** remain Draft, do not merge/deploy/migrate shared
+Neon, do not enable actual settlement engine until future P0 reviews.
 
 ## Design debt & migration/release gates
 
