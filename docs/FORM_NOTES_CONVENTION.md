@@ -1,39 +1,31 @@
-# Quy ước ghi chú cho mọi form nghiệp vụ
+# Quy ước ghi chú cho form tài chính
 
-**Áp dụng:** mọi luồng nhập liệu nhằm tạo/sửa/xóa một bản ghi hoặc thực hiện thay đổi nghiệp vụ trong Group Expense PWA. Không dùng ORM.
+**Phạm vi:** chỉ những form liên quan trực tiếp đến **hóa đơn, công nợ, thanh toán/hoàn trả**.
 
-## Yêu cầu bắt buộc
+## Quy tắc
 
-- Mọi form nghiệp vụ phải có trường **Ghi chú (không bắt buộc)**. Khi form là một confirmation inline, hiển thị trường này bên trong vùng xác nhận.
-- Lưu được cả khi người dùng để trống; không tự thêm giá trị giả/placeholder vào database. Với dữ liệu nhập, trim khoảng trắng; trống -> `NULL`.
-- Giới hạn chuẩn **1000 ký tự**; riêng settlement có giới hạn sẵn **500 ký tự** để tương thích schema. Kiểm tra ở UI **và** server. Không tin dữ liệu client gửi lên.
-- Dùng `OptionalNoteField` để giao diện thống nhất: textarea tối thiểu 2 dòng, màn mobile dễ bấm, không tự đóng khi tương tác.
-- Ghi chú của bản ghi có thể sửa -> lưu trực tiếp trong bản ghi tương ứng; ghi chú của thao tác đã xảy ra -> lưu audit/event append-only, không ghi đè các sự kiện trước.
-- Ghi chú cần xuất hiện lại tại màn chi tiết hoặc lịch sử có phân quyền; render như text (React escaped), không dùng `dangerouslySetInnerHTML`.
-- Không thay thế ghi chú gốc của hóa đơn/settlement bằng ghi chú của một lần thao tác. Các đối tượng có nhiều phiên bản ghi chú phải giữ nguồn/actor/thời gian.
-- Không cho phép truy vấn ghi chú ngoài phạm vi nhóm hoặc user được ủy quyền.
+- Trường ghi chú là **không bắt buộc**. Bỏ trống không cản trở thao tác.
+- Áp dụng cho: tạo/sửa hóa đơn, xóa hóa đơn, tạo yêu cầu thanh toán công nợ (một hoặc nhiều khoản), xác nhận, từ chối và hủy yêu cầu thanh toán.
+- Trường ghi chú gắn với chứng từ hoặc sự kiện tài chính chính xác: hóa đơn lưu `expenses.notes`; xóa hóa đơn lưu `expense_events.snapshot.note`; yêu cầu hoàn trả lưu `settlements.note`; xác nhận/từ chối/hủy lưu `settlement_events.note`.
+- Ghi chú thanh toán: tối đa **500 ký tự** (theo schema hiện hữu); ghi chú hóa đơn: **1000 ký tự**.
+- Ghi chú được trim/validate **trên server**, lưu bằng SQL tham số hóa và hiển thị dưới dạng text, không dùng HTML tùy ý.
+- Dùng `OptionalNoteField` trong confirmation tài chính khi phù hợp. Vẫn giữ UI gọn, ưu tiên mobile.
+- Không xóa hoặc ghi đè audit cũ của thao tác đã xác nhận.
 
-## Các form hiện hữu
+## Không thêm ghi chú vào các form khác
 
-| Form | Nơi lưu |
-|---|---|
-| Tạo nhóm | `groups.notes` + `group_note_events` |
-| Đổi tên / thông tin nhóm | `groups.notes` + `group_note_events` |
-| Lưu trữ nhóm | `group_note_events` |
-| Tạo link mời / QR | `group_invites.notes` + `group_note_events` |
-| Chấp nhận lời mời | `group_note_events` |
-| Rời nhóm / xóa thành viên / chuyển chủ nhóm | `group_membership_events.details.note` |
-| Tạo / sửa hóa đơn | `expenses.notes` (đã hỗ trợ trước đó) |
-| Xóa hóa đơn | `expense_events.snapshot.note` |
-| Tạo yêu cầu thanh toán (một hoặc nhiều công nợ) | `settlements.note` và `settlement_events.note` |
-| Xác nhận / từ chối / hủy yêu cầu thanh toán | `settlement_events.note` |
+**Không có note field** trong: tạo nhóm, sửa tên nhóm, lưu trữ nhóm, tạo link mời/QR, chấp nhận lời mời, rời nhóm, chuyển chủ nhóm, xóa thành viên, đăng ký/đăng nhập, hồ sơ, tìm kiếm, cấp quyền thông báo và các biểu mẫu không liên quan đến hóa đơn/công nợ/thanh toán.
 
-**Ngoại lệ có chủ ý:** Đăng nhập, đăng ký, đổi mật khẩu, cấp quyền thông báo và các điều khiển thuần giao diện không được coi là form nghiệp vụ có đối tượng ghi chú. Không lưu ghi chú trong quá trình xác thực, tránh thu thập thông tin không cần thiết và xung đột với Better Auth.
+Khi tạo form mới, chỉ thêm trường ghi chú nếu nó là thao tác nghiệp vụ tài chính thuộc phạm vi trên; không mặc định chèn ghi chú vào mọi form.
 
-## Acceptance checklist cho form mới
+## Tương thích database
 
-1. Giao diện có ô ghi chú không bắt buộc, không làm nút lưu bị vô hiệu khi để trống.
-2. API/Server Action nhận và validate ghi chú; SQL parameterized query lưu đúng nơi.
-3. Mở lại trang chi tiết/lịch sử có thể đọc ghi chú của đúng đối tượng.
-4. Ghi chú dài, không có ghi chú, emoji, tiếng Việt, xuống dòng và XSS payload được xử lý an toàn.
-5. Tất cả tests, typecheck, build, DB migrations và test trên mobile đều phải pass.
+Migration **`008_optional_notes.sql` đã được áp dụng trên database development**. Vì migration đã có checksum và có thể đã chứa ghi chú lịch sử, **không xóa, đổi nội dung hay DROP các cột/bảng do migration đó tạo ra** trong đợt chỉnh sửa giao diện này. Chúng sẽ không còn được sử dụng bởi giao diện, API hoặc nhóm nghiệp vụ phi tài chính; dữ liệu cũ vẫn được bảo toàn. Nếu muốn dọn schema sau này, cần quyết định riêng về lưu trữ/export, backup và migration không phá hủy dữ liệu.
+
+## Acceptance
+
+1. Có ô "Ghi chú (không bắt buộc)" ở mọi form tài chính đang hỗ trợ ghi chú.
+2. Không có ô ghi chú ở các form ngoài tài chính.
+3. Ghi chú tài chính được lưu và đọc lại trong đúng hóa đơn/sự kiện.
+4. Dữ liệu ghi chú cũ ngoài tài chính không bị xóa.
+5. CI, SQL integration tests, build và preview deployment thành công.
