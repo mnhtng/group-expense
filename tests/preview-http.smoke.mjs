@@ -519,6 +519,15 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       assert.equal(count.rows[0].n,0,`${table} must not mutate during feature setup`);
     }
 
+    // An archived group cannot be reactivated by any previous owner/delegate.
+    await pool.query("UPDATE groups SET archived_at=now() WHERE id=$1",[cycleGroupId]);
+    assert.equal((await expenseRequest("GET",settingsUrl,undefined,otherJar)).response.status,404);
+    assert.equal((await expenseRequest("PATCH",settingsUrl,config(4,false,false),otherJar))
+      .response.status,404,"archived group must reject settings mutations");
+    assert.equal((await expenseRequest("POST",managersUrl,
+      {memberId:thirdUser.id,action:"grant"},otherJar)).response.status,404,
+      "archived group must reject delegated permission changes");
+
     // Creator-only invoice authorization: no owner, admin or payer exception.
     // B creates an invoice; C is its payer and is temporarily promoted to admin.
     const memberCreatedDraft = {
