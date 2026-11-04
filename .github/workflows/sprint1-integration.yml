@@ -75,6 +75,8 @@ jobs:
       BETTER_AUTH_URL: http://localhost:3101
       # CI-only placeholder, never a production secret. Exercises Cron auth.
       CRON_SECRET: ci-cycle-metadata-throwaway-do-not-use-outside-tests
+      # Only with exact disposable localhost PG URL + CI=true can SC-005 requests run.
+      SC005_TEST_ONLY: isolated-pg17
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
