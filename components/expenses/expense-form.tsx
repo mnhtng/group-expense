@@ -3,6 +3,8 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { InlineConfirmation } from "@/components/ui/inline-confirmation";
+import { DateDMYInput } from "@/components/ui/date-dmy-input";
+import { todayVietnamISO } from "@/lib/date-format";
 
 type Member = { id: string; name: string; role: string };
 export type StoredExpense = {
@@ -16,10 +18,6 @@ type Row = {
   participants: string[]; mode: "equal" | "manual"; custom: Record<string, string>;
 };
 const formatVnd = (minor: bigint) => new Intl.NumberFormat("vi-VN").format(minor) + " ₫";
-const today = () => {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-};
 function nextRow(members: Member[]): Row {
   return { key: crypto.randomUUID(), name: "", quantity: "1", unitPriceMinor: "",
     participants: members.map(m => m.id), mode: "equal", custom: {} };
@@ -36,7 +34,7 @@ export function ExpenseForm({ groupId, members, expense }: {
   const router = useRouter();
   const [title, setTitle] = useState(expense?.title ?? "");
   const [notes, setNotes] = useState(expense?.notes ?? "");
-  const [occurredOn, setOccurredOn] = useState(expense?.occurredOn ?? today());
+  const [occurredOn, setOccurredOn] = useState(expense?.occurredOn ?? todayVietnamISO());
   const [payerId, setPayerId] = useState(expense?.payerId ?? members[0]?.id ?? "");
   const [rows, setRows] = useState<Row[]>(
     () => expense?.items.map(fromStored) ?? [nextRow(members)]);
@@ -53,6 +51,7 @@ export function ExpenseForm({ groupId, members, expense }: {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
+    if (!occurredOn) { setError("Ngày chi tiêu không hợp lệ. Nhập theo d/m/yyyy."); return; }
     setSaving(true); setError("");
     const payload = {
       title, notes, occurredOn, payerId,
@@ -95,10 +94,7 @@ export function ExpenseForm({ groupId, members, expense }: {
           placeholder="Ví dụ: Mua đồ ăn tối" className="mt-1 w-full rounded-xl border bg-background p-3"/>
       </label>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className="text-sm font-medium">Ngày chi tiêu
-          <input required type="date" value={occurredOn} onChange={e => setOccurredOn(e.target.value)}
-            className="mt-1 w-full min-w-0 rounded-xl border bg-background p-3"/>
-        </label>
+        <DateDMYInput value={occurredOn} onChange={setOccurredOn} />
         <label className="text-sm font-medium">Người trả tiền
           <select required value={payerId} onChange={e => setPayerId(e.target.value)}
             className="mt-1 w-full min-w-0 rounded-xl border bg-background p-3">
