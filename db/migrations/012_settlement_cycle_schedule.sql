@@ -34,7 +34,7 @@ CREATE TABLE group_settlement_schedule_events (
   group_id uuid NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
   schedule_revision_id uuid NOT NULL REFERENCES group_settlement_schedule_revisions(id) ON DELETE RESTRICT,
   actor_id text NOT NULL REFERENCES "user"(id) ON DELETE RESTRICT,
-  event_type text NOT NULL CHECK (event_type IN ('schedule_created','schedule_replaced')),
+  event_type text NOT NULL CHECK (event_type IN ('schedule_created','schedule_replaced','schedule_revised')),
   previous_revision_id uuid REFERENCES group_settlement_schedule_revisions(id) ON DELETE RESTRICT,
   details jsonb NOT NULL CHECK (jsonb_typeof(details)='object'),
   recorded_at timestamptz NOT NULL DEFAULT now()
