@@ -154,7 +154,7 @@ export async function inspectCycleSnapshot(groupId:string,cycleId:string,
   actorId:string):Promise<EligibilityPreview|LockedSnapshot|null>{
   if(!validUUID(groupId)||!validUUID(cycleId))
     throw fail(400,"Mã nhóm hoặc kỳ không hợp lệ.");
-  const permissions=await getSettlementSettings(groupId,actorId);
+  await getSettlementSettings(groupId,actorId);
   const client=await pool.connect();
   try{
     await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -193,11 +193,6 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
      !/^[0-9a-f]{64}$/.test(expectedFingerprint))
     throw fail(400,"Mã yêu cầu hoặc phiên bản kỳ không hợp lệ.");
   return withAuthorizedCycleManager(groupId,actorId,async client=>{
-    const setting=await client.query<{requested_enabled:boolean}>(
-      "SELECT requested_enabled FROM group_settlement_settings WHERE group_id=$1",
-      [groupId]);
-    if(setting.rows[0]?.requested_enabled!==true)
-      throw fail(409,"Nhóm đã tắt chế độ quyết toán; không thể khóa kỳ.");
     const cycleQuery=await client.query<DbCycle>(
       selectCycle+" FOR UPDATE",[groupId,cycleId]);
     const c=cycleQuery.rows[0];
@@ -212,6 +207,13 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
       if(c.state!=="locked")throw fail(409,"Snapshot đã ghi nhưng kỳ chưa ở trạng thái khóa.");
       return snapshotRecord(prior.rows[0]);
     }
+    // A previously committed idempotent response remains retrievable even
+    // if the owner disabled new cycle locks after that commit.
+    const setting=await client.query<{requested_enabled:boolean}>(
+      "SELECT requested_enabled FROM group_settlement_settings WHERE group_id=$1",
+      [groupId]);
+    if(setting.rows[0]?.requested_enabled!==true)
+      throw fail(409,"Nhóm đã tắt chế độ quyết toán; không thể khóa kỳ.");
     if(c.state!=="review"||c.version!==expectedVersion)
       throw fail(409,"Kỳ không còn chờ rà soát hoặc phiên bản đã thay đổi.");
     const clock=await client.query<{now:Date}>(
