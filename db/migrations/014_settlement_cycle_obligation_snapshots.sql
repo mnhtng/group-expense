@@ -104,6 +104,29 @@ CREATE TRIGGER sc004_manifest_immutable BEFORE UPDATE OR DELETE
  ON group_settlement_cycle_snapshots FOR EACH ROW
  EXECUTE FUNCTION sc004_immutable_snapshot();
 
+-- Seal snapshot rows once the manifest exists. After LOCKED, INSERT
+-- is forbidden even though audit tables remain permanently readable.
+CREATE FUNCTION sc004_guard_snapshot_insert() RETURNS trigger LANGUAGE plpgsql AS $sc004$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM group_settlement_cycles c
+    WHERE c.id=NEW.cycle_id AND c.group_id=NEW.group_id
+      AND c.state='review'
+      AND NOT EXISTS(SELECT 1 FROM group_settlement_cycle_snapshots s
+        WHERE s.cycle_id=c.id)
+  ) THEN
+    RAISE EXCEPTION 'Cannot append to sealed or non-review cycle snapshot';
+  END IF;
+  RETURN NEW;
+END;
+$sc004$;
+CREATE TRIGGER sc004_expenses_insert_guard BEFORE INSERT
+ ON group_settlement_cycle_snapshot_expenses FOR EACH ROW
+ EXECUTE FUNCTION sc004_guard_snapshot_insert();
+CREATE TRIGGER sc004_obligations_insert_guard BEFORE INSERT
+ ON group_settlement_cycle_snapshot_obligations FOR EACH ROW
+ EXECUTE FUNCTION sc004_guard_snapshot_insert();
+
 -- Lifecycle extension: a valid fully materialized snapshot is REQUIRED to
 -- allow REVIEW -> LOCKED. The financial snapshot does not authorize any
 -- payment or creator-only invoice completion.
@@ -302,13 +325,18 @@ BEGIN
   oid=CASE WHEN TG_OP='INSERT' THEN NEW.id ELSE OLD.id END;
   IF EXISTS (SELECT 1 FROM group_settlement_cycle_snapshot_obligations so
     JOIN group_settlement_cycles c ON c.id=so.cycle_id
-    WHERE so.obligation_id=oid AND c.state='locked') THEN
+    WHERE so.obligation_id=oid AND c.state='locked') OR
+     (TG_OP IN ('INSERT','UPDATE') AND EXISTS (
+       SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+       JOIN group_settlement_cycles c ON c.id=se.cycle_id
+       WHERE se.expense_id=NEW.expense_id AND c.state='locked'
+     )) THEN
     RAISE EXCEPTION 'Frozen obligation cannot be modified or deleted';
   END IF;
   RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
 END;
 $sc004$;
-CREATE TRIGGER sc004_guard_obligations BEFORE UPDATE OR DELETE
+CREATE TRIGGER sc004_guard_obligations BEFORE INSERT OR UPDATE OR DELETE
   ON obligations FOR EACH ROW EXECUTE FUNCTION sc004_guard_frozen_obligation();
 
 -- No migration modifies settlements, settlement_allocations, existing debt or
