@@ -6,6 +6,8 @@ import { GroupRenameForm } from "@/components/groups/group-rename-form";
 import { GroupArchiveForm } from "@/components/groups/group-archive-form";
 import { GroupInviteForm } from "@/components/groups/group-invite-form";
 import { SettlementCycleSettingsPanel } from "@/components/groups/settlement-cycle-settings-panel";
+import { SettlementSchedulePanel } from "@/components/groups/settlement-schedule-panel";
+import { getSettlementSchedule } from "@/lib/settlement-cycles/schedule";
 import { getSettlementSettings } from "@/lib/settlement-cycles/settings";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -21,10 +23,11 @@ export default async function ManageGroupPage({ params, searchParams }: {
   if (!role) notFound();
   const group = await getGroupDetails(groupId, user.id);
   if (!group) notFound();
-  const [members, eligibility, settlementSettings] = await Promise.all([
+  const [members, eligibility, settlementSettings, settlementSchedule] = await Promise.all([
     listMembers(groupId, user.id),
     getExitEligibility(groupId, user.id),
     getSettlementSettings(groupId, user.id),
+    getSettlementSchedule(groupId, user.id),
   ]);
   if (!eligibility) notFound();
 
@@ -56,9 +59,13 @@ export default async function ManageGroupPage({ params, searchParams }: {
         members={members} eligibility={eligibility}/>
     </section>
 
-    {settlementSettings.canManage && <SettlementCycleSettingsPanel
-      key={`${settlementSettings.version}-${settlementSettings.managerIds.join(",")}`}
-      groupId={groupId} initial={settlementSettings} members={members}/>}
+    {settlementSettings.canManage && <>
+      <SettlementCycleSettingsPanel
+        key={`${settlementSettings.version}-${settlementSettings.managerIds.join(",")}`}
+        groupId={groupId} initial={settlementSettings} members={members}/>
+      <SettlementSchedulePanel key={settlementSchedule.version}
+        groupId={groupId} initial={settlementSchedule}/>
+    </>}
 
     {canManage && <section aria-labelledby="invite-heading" className="space-y-3 rounded-3xl border bg-card p-5">
       <h2 id="invite-heading" className="text-lg font-semibold">Mời thành viên</h2>
