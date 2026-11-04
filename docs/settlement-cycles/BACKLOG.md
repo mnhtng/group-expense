@@ -37,7 +37,7 @@
 | SC-002 | P0 | Cycle configuration: timezone/anchor/frequency/ranges, versioning, safe future-only changes | SC-001 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO ENGINE ACTIVATION |
 | SC-003 | P0 | Cycle state machine / immutable cycle identity + overlap prevention + manual/cron transitions | SC-002 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO FINANCIAL ACTIONS |
 | SC-004 | P0 | Eligible obligation snapshots: date boundary, cash confirmed/pending, late bills, frozen versions, canonical SQL | SC-003 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; REVIEW PENDING |
-| SC-005 | P0 | Same-direction batch repayment by pair, 50+ allocations, idempotent requests and scoped confirmation | SC-004 | TODO |
+| SC-005 | P0 | Same-direction batch repayment by pair, 50+ allocations, idempotent requests and scoped confirmation | SC-004 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; RELEASE GATED OFF |
 | BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | TODO |
 | BN-002 | P0 | Bilateral proposal persistence, one group+cycle+pair+version, stable fingerprint and conflict handling | BN-001 | TODO |
 | BN-003 | P0 | Dual approval with identities, invalidation/rejection/expiry/revoke, no auto-apply | BN-002 | TODO |
@@ -142,6 +142,34 @@ No automatic adjustment to a future cycle (SC-006), no grouped repayment
 **Canonical detailed spec:** [SC-004-SNAPSHOTS.md](./SC-004-SNAPSHOTS.md).
 **Financial release gate:** remain Draft, do not merge/deploy/migrate shared
 Neon, do not enable actual settlement engine until future P0 reviews.
+
+## SC-005 — completed in fifth conversation (Draft PR #16)
+
+**Scope:** one locked cycle + one debtor→creditor direction, all LIVE
+available original obligations, one standard `settlements` pending cash
+request, 50+ original allocation rows, real other-party confirm/reject,
+initiator cancellation, immutable provenance and exact BigInt sums.
+It never creates a noncash set-off or automatically completes a cycle.
+
+**Acceptance:** CI-only disposable PostgreSQL 17 fixture executes actual
+HTTP money writes while the production global financial-engine constant
+remains FALSE. 550 allocations from original source invoices in a single
+`pending` settlement; outdated fingerprint on changed cash; double-key
+and same-key races; duplicate notes; no admin impersonation; source pair
+and cycle must match; confirmed/pending/rejected/cancelled live balances;
+SQL immutability; disabled-group retries but no new cash writes.
+
+**Implementation:** `015_settlement_cycle_batch_repayments.sql`,
+`lib/settlement-cycles/repayments.ts`,
+`app/api/groups/[groupId]/settlement-cycle/cycles/[cycleId]/repayments/route.ts`,
+extended `preview-http.smoke.mjs`.
+Canonical contract: [SC-005-BATCH-REPAYMENTS.md](./SC-005-BATCH-REPAYMENTS.md).
+
+**Hard exclusions:** No BN-* bilateral netting, no SC-006 late adjustment
+attribution, no SC-008 full mobile UI, no automatic debit/transfer,
+no financial engine activation, no shared Neon migration or release.
+Batch status `pending` does NOT discharge debt; the two original
+counterparties alone control confirmation.
 
 ## Design debt & migration/release gates
 
