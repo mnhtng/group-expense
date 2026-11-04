@@ -1611,6 +1611,192 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal((await expenseRequest("GET",sc003AutoApi,undefined,new Map()))
       .response.status,401);
 
+    // SC-004: full HTTP -> Postgres financial snapshot. The SC-003 manual
+    // cycle is in REVIEW and opted-in but the actual money engine remains OFF.
+    const sc004Url=`${sc003Api}/${sc003FirstId}/snapshot`;
+    const sc004ExpensesApi=`${origin}/api/groups/${sc003Group}/expenses`;
+    const sc004PaymentsApi=`${origin}/api/groups/${sc003Group}/settlements`;
+    assert.equal((await expenseRequest("GET",sc004Url,undefined,new Map()))
+      .response.status,401);
+    assert.equal((await expenseRequest("GET",sc004Url,undefined,thirdJar))
+      .response.status,200,"a member may inspect, but not lock");
+    assert.equal((await expenseRequest("POST",sc004Url,{
+      expectedVersion:2,requestKey:randomUUID(),expectedFingerprint:"a".repeat(64),
+    },thirdJar)).response.status,403,"admin without delegation cannot lock");
+
+    const sc004BillDraft={
+      title:"SC004 confirmed and pending",notes:"isolated HTTP fixture",
+      occurredOn:sc003Date(-2),payerId:registered.user.id,
+      items:[{name:"Shared weekly meal",quantity:1,
+        unitPriceMinor:"100000",participants:[otherUser.id]}],
+    };
+    const sc004Made=await expenseRequest("POST",sc004ExpensesApi,sc004BillDraft,jar);
+    assert.equal(sc004Made.response.status,201,JSON.stringify(sc004Made.body));
+    const sc004Invoice=sc004Made.body.id;
+    const sc004Obligation=(await pool.query(
+      "SELECT id,amount_minor::text FROM obligations WHERE expense_id=$1 AND voided_at IS NULL",
+      [sc004Invoice])).rows[0];
+    assert.equal(sc004Obligation.amount_minor,"100000");
+
+    // 550 additional obligations: proves the canonical SQL ignores the
+    // 100-invoice and 500-obligation caps of the existing UI lists.
+    await pool.query(`INSERT INTO expenses
+      (id,group_id,payer_id,created_by,title,occurred_on,total_minor)
+      SELECT gen_random_uuid(),$1,$2,$2,
+        'SC004 Bulk '||g::text,$3::date,1000
+      FROM generate_series(1,550) AS g`,
+      [sc003Group,registered.user.id,sc003Date(-2)]);
+    await pool.query(`INSERT INTO expense_items
+      (id,expense_id,group_id,position,name,quantity,unit_price_minor,amount_minor)
+      SELECT gen_random_uuid(),id,group_id,0,'Bulk item',1,1000,1000
+      FROM expenses WHERE group_id=$1 AND title LIKE 'SC004 Bulk %'`,
+      [sc003Group]);
+    await pool.query(`INSERT INTO expense_item_shares(item_id,group_id,user_id,amount_minor)
+      SELECT i.id,i.group_id,$2,1000 FROM expense_items i
+      JOIN expenses e ON e.id=i.expense_id
+      WHERE e.group_id=$1 AND e.title LIKE 'SC004 Bulk %'`,
+      [sc003Group,otherUser.id]);
+    await pool.query(`INSERT INTO obligations
+      (id,group_id,expense_id,expense_version,debtor_id,creditor_id,amount_minor)
+      SELECT gen_random_uuid(),group_id,id,1,$2,$3,1000
+      FROM expenses WHERE group_id=$1 AND title LIKE 'SC004 Bulk %'`,
+      [sc003Group,otherUser.id,registered.user.id]);
+    await pool.query(`INSERT INTO obligation_sources
+      (id,obligation_id,expense_item_id,item_name,amount_minor)
+      SELECT gen_random_uuid(),o.id,i.id,'Bulk item',1000
+      FROM obligations o JOIN expense_items i ON i.expense_id=o.expense_id
+      JOIN expenses e ON e.id=o.expense_id
+      WHERE o.group_id=$1 AND e.title LIKE 'SC004 Bulk %'`,[sc003Group]);
+
+    const sc004Cash1=await expenseRequest("POST",sc004PaymentsApi,{
+      requestKey:randomUUID(),
+      allocations:[{obligationId:sc004Obligation.id,amountMinor:"30000"}],
+    },otherJar);
+    assert.equal(sc004Cash1.response.status,201,JSON.stringify(sc004Cash1.body));
+    assert.equal((await expenseRequest("PATCH",
+      `${sc004PaymentsApi}/${sc004Cash1.body.id}`,{action:"confirm"},jar))
+      .response.status,200);
+    const sc004Cash2=await expenseRequest("POST",sc004PaymentsApi,{
+      requestKey:randomUUID(),
+      allocations:[{obligationId:sc004Obligation.id,amountMinor:"20000"}],
+    },otherJar);
+    assert.equal(sc004Cash2.response.status,201,JSON.stringify(sc004Cash2.body));
+
+    const sc004Preview1=await expenseRequest("GET",sc004Url,undefined,jar);
+    assert.equal(sc004Preview1.response.status,200);
+    const sc004Before=sc004Preview1.body.snapshot;
+    assert.equal(sc004Before.state,"review");
+    assert.equal(sc004Before.previewOnly,true);
+    assert.deepEqual([
+      sc004Before.expenseCount,sc004Before.obligationCount,
+      sc004Before.originalMinor,sc004Before.confirmedCashMinor,
+      sc004Before.pendingCashMinor,sc004Before.outstandingMinor,
+      sc004Before.availableMinor,
+    ],[551,551,"650000","30000","20000","620000","600000"]);
+    assert.match(sc004Before.fingerprint,/^[0-9a-f]{64}$/);
+    assert.equal(sc004Preview1.body.financialEngineEnabled,false);
+    assert.equal((await expenseRequest("POST",sc004Url,{
+      expectedVersion:2,requestKey:randomUUID(),
+      expectedFingerprint:"x".repeat(64),
+    },jar)).response.status,400,"malformed fingerprint fails validation");
+    assert.equal((await expenseRequest("POST",sc004Url,{
+      expectedVersion:2,requestKey:randomUUID(),
+    },jar)).response.status,400,"all lock keys required");
+
+    // Cash confirmation invalidates the manager's old preview.
+    assert.equal((await expenseRequest("PATCH",
+      `${sc004PaymentsApi}/${sc004Cash2.body.id}`,{action:"confirm"},jar))
+      .response.status,200);
+    assert.equal((await expenseRequest("POST",sc004Url,{
+      expectedVersion:2,requestKey:randomUUID(),
+      expectedFingerprint:sc004Before.fingerprint,
+    },jar)).response.status,409,
+    "manager cannot lock data that changed after explicit preview");
+
+    const sc004Cash3=await expenseRequest("POST",sc004PaymentsApi,{
+      requestKey:randomUUID(),
+      allocations:[{obligationId:sc004Obligation.id,amountMinor:"10000"}],
+    },otherJar);
+    assert.equal(sc004Cash3.response.status,201);
+    const sc004Preview2=await expenseRequest("GET",sc004Url,undefined,otherJar);
+    assert.equal(sc004Preview2.response.status,200);
+    const sc004Reviewed=sc004Preview2.body.snapshot;
+    assert.deepEqual([
+      sc004Reviewed.originalMinor,sc004Reviewed.confirmedCashMinor,
+      sc004Reviewed.pendingCashMinor,sc004Reviewed.outstandingMinor,
+      sc004Reviewed.availableMinor,
+    ],["650000","50000","10000","600000","590000"]);
+
+    // Two authorized writers can try to seal the same version; group row
+    // lock + version + one manifest guarantee a single winner.
+    const sc004KeyA=randomUUID(),sc004KeyB=randomUUID();
+    const requests=[
+      {jar,requestKey:sc004KeyA,actor:registered.user.id},
+      {jar:otherJar,requestKey:sc004KeyB,actor:otherUser.id},
+    ];
+    const sc004Race=await Promise.all(requests.map(x=>expenseRequest(
+      "POST",sc004Url,{
+        expectedVersion:2,requestKey:x.requestKey,
+        expectedFingerprint:sc004Reviewed.fingerprint,
+      },x.jar)));
+    assert.deepEqual(sc004Race.map(x=>x.response.status).sort(),[200,409],
+      "concurrent snapshot locks commit exactly once");
+    const winner=sc004Race.findIndex(x=>x.response.status===200);
+    const stored=sc004Race[winner].body.snapshot;
+    assert.equal(stored.state,"locked");
+    assert.equal(stored.fingerprint,sc004Reviewed.fingerprint);
+    const duplicate=await expenseRequest("POST",sc004Url,{
+      expectedVersion:2,requestKey:requests[winner].requestKey,
+      expectedFingerprint:sc004Reviewed.fingerprint,
+    },requests[winner].jar);
+    assert.equal(duplicate.response.status,200,
+      "lost HTTP response retry returns the same sealed snapshot");
+    assert.equal(duplicate.body.snapshot.cycleId,sc003FirstId);
+    assert.equal((await expenseRequest("POST",sc004Url,{
+      expectedVersion:2,requestKey:randomUUID(),
+      expectedFingerprint:sc004Reviewed.fingerprint,
+    },jar)).response.status,409,"a second key cannot relock a frozen period");
+    const sc004Sealed=(await expenseRequest("GET",sc004Url,undefined,thirdJar)).body;
+    assert.equal(sc004Sealed.snapshot.state,"locked");
+    assert.equal(sc004Sealed.snapshot.obligationCount,551);
+    assert.equal(sc004Sealed.snapshot.pendingCashMinor,"10000");
+    assert.equal(sc004Sealed.lateExpenseCount,0);
+
+    // Late invoice belongs to the old date range but NOT to the frozen
+    // snapshot. It must be reported as an adjustment candidate.
+    assert.equal((await expenseRequest("POST",sc004ExpensesApi,{
+      ...sc004BillDraft,title:"SC004 entered after lock",
+      items:[{...sc004BillDraft.items[0],unitPriceMinor:"5000"}],
+    },jar)).response.status,201);
+    const afterLate=(await expenseRequest("GET",sc004Url,undefined,jar)).body;
+    assert.equal(afterLate.lateExpenseCount,1);
+    assert.equal(afterLate.snapshot.expenseCount,551);
+    assert.equal((await expenseRequest("PATCH",
+      `${sc004ExpensesApi}/${sc004Invoice}`,{
+        expectedVersion:1,expense:{...sc004BillDraft,title:"Attempt frozen edit"},
+      },jar)).response.status,409,
+      "creator must not mutate invoice included in locked cycle");
+    assert.equal((await expenseRequest("DELETE",
+      `${sc004ExpensesApi}/${sc004Invoice}`,{expectedVersion:1},jar))
+      .response.status,409,"frozen invoice cannot be deleted");
+
+    // Confirming the cash AFTER the snapshot remains legal, but must not
+    // rewrite the historic pending/confirmed amounts in sealed data.
+    assert.equal((await expenseRequest("PATCH",
+      `${sc004PaymentsApi}/${sc004Cash3.body.id}`,{action:"confirm"},jar))
+      .response.status,200);
+    const stillFrozen=(await expenseRequest("GET",sc004Url,undefined,jar)).body.snapshot;
+    assert.equal(stillFrozen.confirmedCashMinor,"50000");
+    assert.equal(stillFrozen.pendingCashMinor,"10000");
+    assert.equal(stillFrozen.fingerprint,stored.fingerprint);
+    assert.equal((await pool.query(
+      `SELECT count(*)::int AS n FROM group_settlement_cycle_events
+       WHERE cycle_id=$1 AND event_type='snapshot_locked'`,
+      [sc003FirstId])).rows[0].n,1);
+    assert.equal((await pool.query(
+      `SELECT count(*)::int AS n FROM group_settlement_cycle_snapshots
+       WHERE cycle_id=$1`,[sc003FirstId])).rows[0].n,1);
+
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
