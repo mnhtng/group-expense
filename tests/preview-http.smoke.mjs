@@ -469,6 +469,101 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const delegated=await expenseRequest("PATCH",settingsUrl,config(3,true,true),otherJar);
     assert.equal(delegated.response.status,200);
     assert.equal(delegated.body.version,4);
+
+    // SC-002: schedule is CONFIGURATION only, independent from money engine.
+    const sc002Url=`${origin}/api/groups/${cycleGroupId}/settlement-cycle/schedule`;
+    const sc002Date=(()=>{
+      const parts=new Intl.DateTimeFormat("en-GB",{
+        timeZone:"Asia/Ho_Chi_Minh",year:"numeric",month:"2-digit",day:"2-digit",
+      }).formatToParts(new Date());
+      const value=k=>parts.find(x=>x.type===k).value;
+      return `${value("year")}-${value("month")}-${value("day")}`;
+    })();
+    const sc002Add=(d,days)=>new Date(Date.parse(d+"T00:00:00Z")+
+      days*86400000).toISOString().slice(0,10);
+    const sc002Tomorrow=sc002Add(sc002Date,1);
+    const sc002Future=sc002Add(sc002Date,8);
+    const sc002Config=(version,frequency="weekly",anchorDate=sc002Tomorrow,
+      timeZone="Asia/Ho_Chi_Minh")=>({
+      expectedVersion:version,frequency,anchorDate,timeZone,
+    });
+    assert.equal((await expenseRequest("GET",sc002Url,undefined,new Map())).response.status,401);
+    const sc002Empty=await expenseRequest("GET",sc002Url,undefined,jar);
+    assert.equal(sc002Empty.response.status,200);
+    assert.deepEqual([
+      sc002Empty.body.version,sc002Empty.body.current,sc002Empty.body.pending,
+      sc002Empty.body.effectiveEnabled,sc002Empty.body.canManage,
+    ],[0,null,null,false,true],"missing schedule must never activate any cycle");
+    assert.equal((await expenseRequest("PATCH",sc002Url,sc002Config(0),thirdJar))
+      .response.status,403,"admin without grant may not change period settings");
+    assert.equal((await expenseRequest("PATCH",sc002Url,
+      {...sc002Config(0), unexpected:"x"},jar)).response.status,400);
+    assert.equal((await expenseRequest("PATCH",sc002Url,
+      sc002Config(0,"weekly","2026-02-30"),jar)).response.status,400);
+    assert.equal((await expenseRequest("PATCH",sc002Url,
+      sc002Config(0,"weekly",sc002Tomorrow,"Moon/Base"),jar)).response.status,400);
+    assert.equal((await expenseRequest("PATCH",sc002Url,
+      sc002Config(0,"daily"),jar)).response.status,400);
+    const sc002Concurrent=await Promise.all([
+      expenseRequest("PATCH",sc002Url,sc002Config(0),jar),
+      expenseRequest("PATCH",sc002Url,sc002Config(0),otherJar),
+    ]);
+    assert.deepEqual(sc002Concurrent.map(x=>x.response.status).sort(),[200,409],
+      "concurrent owner/delegate configuration cannot overwrite each other");
+    const sc002Pending=(await expenseRequest("GET",sc002Url,undefined,jar)).body;
+    assert.equal(sc002Pending.version,1);
+    assert.equal(sc002Pending.current,null);
+    assert.equal(sc002Pending.pending.anchorDate,sc002Tomorrow);
+    assert.equal(sc002Pending.effectiveEnabled,false);
+    assert.equal((await expenseRequest("PATCH",sc002Url,sc002Config(1),jar)).body.version,1,
+      "identical pending schedule is idempotent");
+    assert.equal((await expenseRequest("PATCH",sc002Url,
+      sc002Config(1,"monthly",sc002Future),otherJar)).response.status,200,
+      "authorized delegate may replace an unactivated schedule");
+    assert.equal((await expenseRequest("PATCH",sc002Url,sc002Config(1),jar))
+      .response.status,409,"stale schedule edit rejected");
+    const sc002Rows=await pool.query(
+      `SELECT count(*)::int AS total,
+       count(*) FILTER(WHERE superseded_at IS NULL)::int AS retained
+       FROM group_settlement_schedule_revisions WHERE group_id=$1`,[cycleGroupId]);
+    assert.deepEqual(sc002Rows.rows[0],{total:2,retained:1},
+      "replaced planned revision is retained for audit, but cannot become active");
+    assert.equal((await pool.query(
+      "SELECT count(*)::int AS n FROM group_settlement_schedule_events WHERE group_id=$1",
+      [cycleGroupId])).rows[0].n,2,"no-op and stale requests create no audit events");
+
+    // Test changing a RUNNING schedule without time travel in application
+    // code: the isolated fixture creates a historical UTC biweekly anchor.
+    const sc002RunningGroup=randomUUID(),sc002OldRevision=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'SC002 running group')",
+      [sc002RunningGroup,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
+      [sc002RunningGroup,registered.user.id]);
+    await pool.query("INSERT INTO group_settlement_schedule_heads(group_id,updated_by) VALUES($1,$2)",
+      [sc002RunningGroup,registered.user.id]);
+    const sc002Past=sc002Add(sc002Date,-7);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,1,'biweekly','UTC',$3,$4,$5)`,
+      [sc002OldRevision,sc002RunningGroup,sc002Past,sc002Past+"T00:00:00Z",
+        registered.user.id]);
+    const sc002RunningUrl=`${origin}/api/groups/${sc002RunningGroup}/settlement-cycle/schedule`;
+    assert.equal((await expenseRequest("GET",sc002RunningUrl,undefined,jar)).body
+      .current.id,sc002OldRevision,"historical schedule remains readable");
+    assert.equal((await expenseRequest("PATCH",sc002RunningUrl,
+      sc002Config(1,"weekly",sc002Tomorrow,"UTC"),jar)).response.status,409,
+      "a change in the middle of an existing period is rejected");
+    const sc002Aligned=sc002Add(sc002Date,7);
+    assert.equal((await expenseRequest("PATCH",sc002RunningUrl,
+      sc002Config(1,"weekly",sc002Aligned,"Asia/Ho_Chi_Minh"),jar)).response.status,409,
+      "timezone change must not produce a gap/overlap between UTC instants");
+    assert.equal((await expenseRequest("PATCH",sc002RunningUrl,
+      sc002Config(1,"monthly",sc002Aligned,"UTC"),jar)).response.status,200);
+    const sc002RunningState=(await expenseRequest("GET",sc002RunningUrl,undefined,jar)).body;
+    assert.equal(sc002RunningState.current.id,sc002OldRevision);
+    assert.equal(sc002RunningState.pending.frequency,"monthly");
+    assert.equal(sc002RunningState.effectiveEnabled,false);
+
     assert.equal((await expenseRequest("POST",managersUrl,
       {memberId:otherUser.id,action:"revoke"},jar)).response.status,200);
     assert.equal((await expenseRequest("PATCH",settingsUrl,config(4,false,false),otherJar))
