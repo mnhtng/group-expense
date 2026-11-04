@@ -79,7 +79,82 @@ choose a matching upcoming 31st-day boundary when possible to preserve
 future day-31 behavior. Timezone changes with different UTC midnights
 are rejected, not approximated.
 
-## NEXT CONVERSATION: SC-003 ONLY
+## 2026-11-04 — SC-003: IMPLEMENTED, FINAL CI/HTTP GATE PENDING
+
+**Ticket scope:** metadata-only cycle state machine. No SC-004 eligible
+obligation snapshot, no BN-* netting, no settlement/payment changes.
+
+**Implementation (branch `feat/settlement-cycles-bilateral`)**
+- Migration `013_settlement_cycle_lifecycle.sql`: `btree_gist` exclusion
+  on UTC half-open ranges per group; FK pins a cycle to the same group's
+  schedule revision; immutable cycle identity and append-only lifecycle audit;
+  PostgreSQL check/unique/version constraints; idempotency keys for manual
+  cycles, fair Cron checkpoints.
+- Service `lib/settlement-cycles/lifecycle.ts`: OPEN (v1) -> REVIEW (v2)
+  after period end, nothing further. All writes hold the group row lock.
+  Owner/delegate permissions and current opt-in are checked inside the
+  transaction. Missing/disabled settings fail closed. Last explicit
+  OFF -> ON audit event bounds both manual and Cron creation; past intervals
+  are not silently imported. Manual retry with the same request key is
+  idempotent, changing its payload is rejected.
+- `/api/groups/:groupId/settlement-cycle/cycles` GET/POST;
+  `/cycles/:cycleId/review` and `/cycles/refresh` POST. Validated JSON,
+  session-derived actor, 403/404/409 on invalid role/state/period.
+- Existing authenticated daily Cron route now calls bounded
+  `processCycleMetadataCron(30,24)`; no new Vercel Cron, and no money action.
+  A per-group checkpoint rotates groups fairly to avoid starvation.
+- SC-002 schedule cutover cannot split an existing manual cycle.
+- Minimal manager-only `settlement-cycle-lifecycle-panel.tsx`:
+  manual date form, due refresh, OPEN/REVIEW cards with explicit “metadata
+  only: no financial snapshot/transfer/offset” explanation.
+- `SC-003-LIFECYCLE.md` describes all time/permission/retry constraints.
+
+**Tests written**
+- `settlement-cycle-lifecycle.integration.mjs`: PostgreSQL trigger,
+  overlapping/adjacent periods, unique/FK/CHECK, audit immutability,
+  review transition and zero writes to monetary tables.
+- `preview-http.smoke.mjs`: unauthorized admin, manual duplicate key,
+  owner/delegate simultaneous creation, early review, opt-in-before-start,
+  disable, cron retry, delayed weekly catch-up, safe weekly->biweekly
+  revision cutover, no historical backfill after late opt-in.
+- The disposable integration workflow sets a **dummy CI-only**
+  `CRON_SECRET` for HTTP bearer verification; no production secrets changed.
+
+**Evidence available during implementation**
+- Early full lifecycle code + HTTP integration succeeded on commit
+  `52789c789fa6a048ff8c75de344dcb2a675e16e0`:
+  https://github.com/mnhtng/group-expense/actions/runs/41861305883
+  and https://github.com/mnhtng/group-expense/actions/runs/41861305803.
+- SQL integration additionally succeeded on `88b045e2`:
+  https://github.com/mnhtng/group-expense/actions/runs/41861006218.
+- **Latest extended acceptance checks still need completion**:
+  https://github.com/mnhtng/group-expense/actions/runs/41862640018
+  (PostgreSQL/HTTP), and
+  https://github.com/mnhtng/group-expense/actions/runs/41862639999
+  (CI). Do not claim DONE until both are green.
+
+**Release gate and outstanding work**
+- No shared Neon migration, no staging/prod deploy, no merge into
+  `develop`/`main`; PR #16 stays Draft.
+- `SETTLEMENT_CYCLE_ENGINE_READY=false`. The only cycles are
+  **time-window metadata** for already opted-in groups.
+- Complete the currently queued final Actions run and fix any detected
+  issues within SC-003 before closing the ticket.
+- Continue to SC-004 in a **future conversation only after** full CI,
+  integration, HTTP and concurrency acceptance is proven for SC-003.
+
+## NEXT CONVERSATION: SC-003 VERIFICATION UNTIL DONE; THEN SC-004 ONLY
+
+**Current:** If SC-003's last run remains queued/failed, recheck the two
+run URLs above, fix SC-003 tests only and update the completion status.
+Never skip a failed financial-data safety gate.
+
+**After SC-003 is verified DONE:** SC-004 eligible obligation snapshots
+and financial review/locking. Read `BACKLOG.md`, `DOMAIN_RULES.md`,
+`PROGRESS.md`, `SC-002-SCHEDULE.md` and `SC-003-LIFECYCLE.md`.
+Still no bilateral netting before BN-* tickets and no deployment
+without a separate explicit release decision.
+
 
 **Title:** Cycle state machine / immutable cycle identity, overlap prevention
 and manual/cron transitions using persisted schedule revisions.
