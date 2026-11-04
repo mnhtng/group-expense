@@ -1938,6 +1938,48 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       otherJar)).response.status,409,
       "same idempotency key with modified note is a conflict");
 
+    // SQL bypass attempts must not mutate the saved 550 allocations or
+    // impersonate either counterparty. These direct writes must be denied.
+    await assert.rejects(pool.query(
+      `UPDATE settlement_allocations SET amount_minor=amount_minor+1
+       WHERE settlement_id=$1`,[sc005Created.id]),
+      /SC-005 batch allocations are immutable/);
+    await assert.rejects(pool.query(
+      `DELETE FROM settlement_allocations WHERE settlement_id=$1`,
+      [sc005Created.id]),/SC-005 batch allocations are immutable/);
+    await assert.rejects(pool.query(
+      `UPDATE group_settlement_cycle_repayments SET allocation_count=1
+       WHERE settlement_id=$1`,[sc005Created.id]),/append-only/);
+    await assert.rejects(pool.query(
+      `UPDATE settlements SET status='confirmed',
+       resolved_at=clock_timestamp(),resolved_by=$2 WHERE id=$1`,
+      [sc005Created.id,otherUser.id]),/SC-005 batch payment cannot be altered/);
+    await assert.rejects(pool.query(
+      `DELETE FROM settlements WHERE id=$1`,
+      [sc005Created.id]),/SC-005 batch payment cannot be altered/);
+    await assert.rejects(pool.query(
+      `DELETE FROM settlement_events WHERE settlement_id=$1`,
+      [sc005Created.id]),/SC-005 settlement events are append-only/);
+
+    // Direct SQL cannot associate a legacy settlement with another cycle
+    // or pretend the original settlement amount was a larger batch.
+    await assert.rejects(pool.query(
+      `INSERT INTO group_settlement_cycle_repayments
+       (settlement_id,group_id,cycle_id,debtor_id,creditor_id,
+        initiated_by,preview_fingerprint,allocation_count,amount_minor)
+       VALUES($1,$2,$3,$4,$5,$4,$6,1,250)`,
+      [sc005OtherPending.body.id,sc003Group,sc003Pending.id,
+        otherUser.id,registered.user.id,sc005Fresh.fingerprint]),
+      /foreign key constraint/);
+    await assert.rejects(pool.query(
+      `INSERT INTO group_settlement_cycle_repayments
+       (settlement_id,group_id,cycle_id,debtor_id,creditor_id,
+        initiated_by,preview_fingerprint,allocation_count,amount_minor)
+       VALUES($1,$2,$3,$4,$5,$4,$6,1,251)`,
+      [sc005OtherPending.body.id,sc003Group,sc003FirstId,
+        otherUser.id,registered.user.id,sc005Fresh.fingerprint]),
+      /SC-005 repayment cannot bind invalid/);
+
     const sc005PaymentUrl=`${sc004PaymentsApi}/${sc005Created.id}`;
     const sc005Owed=(await pool.query(
       `SELECT amount_minor::text, status FROM settlements WHERE id=$1`,
@@ -1966,6 +2008,37 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       `SELECT count(*)::int AS n FROM group_settlement_cycle_repayments
        WHERE cycle_id=$1`,[sc003FirstId])).rows[0].n,1);
 
+    // Once the separate 250 VND pending reservation is cancelled by its
+    // initiator, that exact amount becomes available again. A second
+    // cycle-scoped request may cover only that amount, without paying
+    // anyone outside the A->B direction or double-counting old cash.
+    assert.equal((await expenseRequest("PATCH",
+      `${sc004PaymentsApi}/${sc005OtherPending.body.id}`,
+      {action:"cancel"},otherJar)).response.status,200);
+    const sc005Residual=(await expenseRequest("GET",sc005Url,undefined,jar)).body.pairs[0];
+    assert.equal(sc005Residual.availableMinor,"250");
+    assert.equal(sc005Residual.allocationCount,1);
+    const sc005CreditorRequest=await expenseRequest("POST",sc005Url,
+      sc005Request(randomUUID(),sc005Residual.fingerprint,"Residual cash"),
+      jar);
+    assert.equal(sc005CreditorRequest.response.status,201,
+      JSON.stringify(sc005CreditorRequest.body));
+    assert.equal(sc005CreditorRequest.body.amountMinor,"250");
+    assert.equal(sc005CreditorRequest.body.allocationCount,1);
+    assert.equal((await expenseRequest("PATCH",
+      `${sc004PaymentsApi}/${sc005CreditorRequest.body.id}`,
+      {action:"confirm"},jar)).response.status,403,
+      "creditor who reports receiving cash cannot approve own request");
+    assert.equal((await expenseRequest("PATCH",
+      `${sc004PaymentsApi}/${sc005CreditorRequest.body.id}`,
+      {action:"confirm"},otherJar)).response.status,200,
+      "debtor confirms the creditor-initiated cash request");
+    assert.equal((await expenseRequest("GET",sc005Url,undefined,jar))
+      .body.pairs.length,0,"all live same-direction cash now confirmed");
+    assert.equal((await pool.query(
+      `SELECT count(*)::int AS n FROM group_settlement_cycle_repayments
+       WHERE cycle_id=$1`,[sc003FirstId])).rows[0].n,2);
+
     // Disabling a group denies NEW locking, but a lost-response retry must
     // still read the EXACT immutable receipt that committed previously.
     assert.equal((await expenseRequest("PATCH",sc003SettingUrl,
@@ -1982,6 +2055,17 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       expectedFingerprint:sc004Reviewed.fingerprint,
     },jar)).response.status,409,
       "disabled group cannot issue any new snapshot lock");
+
+    // Idempotent retry survives group opt-out, while a fresh batch request
+    // remains forbidden. UI must report disabled, not pretend money is live.
+    const sc005Disabled=(await expenseRequest("GET",sc005Url,undefined,jar)).body;
+    assert.equal(sc005Disabled.enabled,false);
+    assert.equal((await expenseRequest("POST",sc005Url,
+      sc005Request(sc005WinnerKey,sc005Fresh.fingerprint),otherJar))
+      .response.status,200,"original batch receipt survives opt-out");
+    assert.equal((await expenseRequest("POST",sc005Url,
+      sc005Request(randomUUID(),sc005Fresh.fingerprint),otherJar))
+      .response.status,409,"opt-out cannot start a new cash request");
 
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
