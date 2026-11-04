@@ -1837,6 +1837,23 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       `SELECT count(*)::int AS n FROM group_settlement_cycle_snapshots
        WHERE cycle_id=$1`,[sc003FirstId])).rows[0].n,1);
 
+    // Disabling a group denies NEW locking, but a lost-response retry must
+    // still read the EXACT immutable receipt that committed previously.
+    assert.equal((await expenseRequest("PATCH",sc003SettingUrl,
+      config(1,false,false),jar)).response.status,200);
+    const sc004AfterDisable=await expenseRequest("POST",sc004Url,{
+      expectedVersion:2,requestKey:requests[sc004Winner].requestKey,
+      expectedFingerprint:sc004Reviewed.fingerprint,
+    },requests[sc004Winner].jar);
+    assert.equal(sc004AfterDisable.response.status,200,
+      "disable does not erase already committed idempotent lock receipt");
+    assert.equal(sc004AfterDisable.body.snapshot.fingerprint,stored.fingerprint);
+    assert.equal((await expenseRequest("POST",sc004Url,{
+      expectedVersion:2,requestKey:randomUUID(),
+      expectedFingerprint:sc004Reviewed.fingerprint,
+    },jar)).response.status,409,
+      "disabled group cannot issue any new snapshot lock");
+
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
