@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mergeNotificationFeed } from "@/lib/notifications/merge-feed";
+import { formatDateTimeDMY } from "@/lib/date-format";
 import { useRouter } from "next/navigation";
 type Notification={
   id:string;kind:string;title:string;body:string;href:string;
@@ -80,7 +81,7 @@ export function NotificationInbox(){
             <strong className="block text-sm">{row.title}</strong>
             <p className="mt-1 text-sm">{row.body}</p>
             <p className="mt-2 text-xs text-muted-foreground">
-              {row.actorName} · {row.groupName} · {new Date(row.createdAt).toLocaleString("vi-VN")}
+              {row.actorName} · {row.groupName} · {formatDateTimeDMY(row.createdAt)}
             </p>
           </div>
         </div>
