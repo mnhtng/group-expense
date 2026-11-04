@@ -212,7 +212,27 @@ BEGIN
     AND NEW.completed_by=OLD.created_by AND NEW.version=OLD.version+1
     AND (to_jsonb(NEW)-'completed_at'-'completed_by'-'version'-'updated_at')
        = (to_jsonb(OLD)-'completed_at'-'completed_by'-'version'-'updated_at')
-  THEN RETURN NEW; END IF;
+  THEN
+    -- Creator completion must still obey the existing bilateral cash
+    -- confirmation rule; a frozen snapshot never forgives unpaid debt.
+    IF EXISTS(
+      SELECT 1 FROM obligations o
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(sum(a.amount_minor) FILTER (WHERE s.status='confirmed'),0)
+          AS confirmed,
+          COALESCE(sum(a.amount_minor) FILTER (WHERE s.status='pending'),0)
+          AS pending
+        FROM settlement_allocations a
+        JOIN settlements s ON s.id=a.settlement_id
+        WHERE a.obligation_id=o.id
+      ) paid ON true
+      WHERE o.expense_id=OLD.id AND o.voided_at IS NULL
+        AND (o.amount_minor<>paid.confirmed OR paid.pending<>0)
+    ) THEN
+      RAISE EXCEPTION 'Unpaid or pending debt prevents completing frozen invoice';
+    END IF;
+    RETURN NEW;
+  END IF;
   RAISE EXCEPTION 'Frozen cycle expense can only be creator-completed';
 END;
 $sc004$;
