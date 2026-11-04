@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/pool";
 import { createExpenseObligations, voidExpenseObligations } from "@/lib/debts/ledger";
-import { prepareExpense, type ExpenseInput, type PreparedExpense } from "@/lib/expenses/domain";
+import { prepareExpense, ExpenseValidationError, type ExpenseInput, type PreparedExpense } from "@/lib/expenses/domain";
 import { optionalNote } from "@/lib/notes";
 import { canModifyExpense } from "@/lib/expenses/permissions";
 
@@ -288,7 +288,9 @@ export async function listExpenses(groupId: string, actorId: string,
  */
 export async function completeExpense(groupId: string, expenseId: string, actorId: string,
   expectedVersion: number, rawNote?: unknown) {
-  const note = optionalNote(rawNote);
+  let note: string | null;
+  try { note=optionalNote(rawNote); }
+  catch { throw new ExpenseValidationError("Ghi chú không hợp lệ hoặc vượt quá 1000 ký tự."); }
   return withTransaction(async client => {
     await lockGroupMembers(client,groupId,actorId);
     const result=await client.query<{
