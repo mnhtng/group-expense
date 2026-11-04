@@ -104,6 +104,9 @@ export default async function GroupPage({params,searchParams}:{
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1 space-y-2">
             <h3 className="break-words font-semibold">{invoice.title}</h3>
+            {invoice.recurringRuleId&&<span className="inline-block rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">
+              ↻ Định kỳ · {invoice.recurringPeriod?formatDateDMY(invoice.recurringPeriod).slice(2):"Hằng tháng"}
+            </span>}
             <ExpenseStatus invoice={invoice}/>
             <p className="text-xs text-muted-foreground">
               {formatDateDMY(invoice.occurredOn)} · {invoice.itemCount} món · {invoice.payerName} đã trả
