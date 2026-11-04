@@ -189,7 +189,7 @@ export async function updateSettlementSchedule(
        (id,group_id,schedule_revision_id,actor_id,event_type,
         previous_revision_id,details)
        VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,
-      [randomUUID(),groupId,id,actorId,pending?"schedule_replaced":"schedule_created",
+      [randomUUID(),groupId,id,actorId,pending?"schedule_replaced":current?"schedule_revised":"schedule_created",
        pending?.id??current?.id??null,
        JSON.stringify({before:pending?toView(pending):current?toView(current):null,
          after:next,headVersion,previousCutoverUnchanged:!!current})],
