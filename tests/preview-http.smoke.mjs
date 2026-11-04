@@ -395,6 +395,69 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
       [groupId, thirdUser.id]);
 
+    // Creator-only invoice authorization: no owner, admin or payer exception.
+    // B creates an invoice; C is its payer and is temporarily promoted to admin.
+    const memberCreatedDraft = {
+      ...draft, title: "Member-created receipt", payerId: thirdUser.id,
+      items: [{ name: "Covered by admin", quantity: 1, unitPriceMinor: "10000",
+        participants: [thirdUser.id] }],
+    };
+    const memberCreated = await expenseRequest("POST", endpoint, memberCreatedDraft, otherJar);
+    assert.equal(memberCreated.response.status, 201,
+      `member may create own invoice: ${JSON.stringify(memberCreated.body)}`);
+    const creatorOnlyUrl = `${endpoint}/${memberCreated.body.id}`;
+
+    await pool.query("UPDATE group_members SET role='admin' WHERE group_id=$1 AND user_id=$2",
+      [groupId, thirdUser.id]);
+    for (const [label, actorJar] of [["owner", jar], ["admin and payer", thirdJar]]) {
+      const attempted = await expenseRequest("PATCH", creatorOnlyUrl,
+        { expectedVersion: 1, expense: {
+          ...memberCreatedDraft, title: "Unauthorized modification",
+          createdBy: registered.user.id, // forged data must never grant access
+        } }, actorJar);
+      assert.equal(attempted.response.status, 403,
+        `${label} cannot edit another person's invoice`);
+      assert.equal((await expenseRequest("DELETE", creatorOnlyUrl,
+        { expectedVersion: 1 }, actorJar)).response.status, 403,
+        `${label} cannot delete another person's invoice`);
+
+      // View access remains available, but direct /edit URL must not expose form.
+      assert.equal((await expenseRequest("GET", creatorOnlyUrl, undefined, actorJar))
+        .response.status, 200, `${label} may still view group invoice`);
+      const editPage = await fetch(`${origin}/groups/${groupId}/expenses/${memberCreated.body.id}/edit`, {
+        headers: { cookie: cookieHeader(actorJar) },
+        redirect: "manual", signal: AbortSignal.timeout(10_000),
+      });
+      if (editPage.status === 200) {
+        const html = await editPage.text();
+        assert.match(html, /NEXT_HTTP_ERROR_FALLBACK|NEXT_NOT_FOUND|404/,
+          `${label} must receive not-found instead of invoice edit form`);
+        assert.doesNotMatch(html, /Tên hóa đơn.*Ngày chi tiêu/s,
+          `${label} must not see the edit form`);
+      } else {
+        assert.equal(editPage.status, 404);
+      }
+    }
+    const untouched = await pool.query("SELECT title,version,created_by FROM expenses WHERE id=$1",
+      [memberCreated.body.id]);
+    assert.equal(untouched.rows[0].title, "Member-created receipt");
+    assert.equal(untouched.rows[0].version, 1);
+    assert.equal(untouched.rows[0].created_by, otherUser.id);
+    const creatorEdit = await expenseRequest("PATCH", creatorOnlyUrl,
+      { expectedVersion: 1, expense: { ...memberCreatedDraft, title: "Creator updated" } },
+      otherJar);
+    assert.equal(creatorEdit.response.status, 200,
+      `only the creator may edit: ${JSON.stringify(creatorEdit.body)}`);
+    assert.equal(creatorEdit.body.version, 2);
+    assert.equal((await expenseRequest("DELETE", creatorOnlyUrl,
+      { expectedVersion: 2 }, thirdJar)).response.status, 403,
+      "admin cannot delete an invoice after its creator edits it");
+    assert.equal((await expenseRequest("DELETE", creatorOnlyUrl,
+      { expectedVersion: 2 }, otherJar)).response.status, 200,
+      "creator may delete own invoice under the usual settlement rules");
+    await pool.query("UPDATE group_members SET role='member' WHERE group_id=$1 AND user_id=$2",
+      [groupId, thirdUser.id]);
+
     const debtDraft = {
       title: "130k itemized receipt", notes: "two traceable debts",
       occurredOn: "2026-11-03", payerId: registered.user.id,
