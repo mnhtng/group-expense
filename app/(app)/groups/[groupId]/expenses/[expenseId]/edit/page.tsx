@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
-import { getGroupDetails, getMemberRole, listMembers } from "@/lib/groups/service";
+import { getGroupDetails, listMembers } from "@/lib/groups/service";
+import { canModifyExpense } from "@/lib/expenses/permissions";
 import { getExpense } from "@/lib/expenses/service";
 import { ExpenseForm } from "@/components/expenses/expense-form";
 
@@ -14,8 +15,7 @@ export default async function EditExpensePage({ params }: {
   if (!group) notFound();
   const expense = await getExpense(groupId, expenseId, user.id);
   if (!expense) notFound();
-  const role = await getMemberRole(groupId, user.id);
-  if (user.id !== expense.createdBy && role !== "owner" && role !== "admin") notFound();
+  if (!canModifyExpense(expense.createdBy, user.id)) notFound();
   const members = await listMembers(groupId, user.id);
   return <main className="app-page">
     <Link href={`/groups/${groupId}/expenses/${expenseId}`} className="text-sm text-muted-foreground">← Chi tiết hóa đơn</Link>
