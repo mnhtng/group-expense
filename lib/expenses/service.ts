@@ -132,22 +132,36 @@ async function recordEvent(client: PoolClient, groupId: string, expenseId: strin
   );
 }
 
+/**
+ * Used by manual expense creation and the recurring schedule worker.
+ * Caller MUST be inside a transaction holding the group's row lock and
+ * MUST authorize the creator. The same itemization/ledger path is reused.
+ */
+export async function createExpenseInTransaction(
+  client:PoolClient, groupId:string, creatorId:string,
+  prepared:PreparedExpense, auditMetadata?:Record<string,string>,
+) {
+  const id=randomUUID();
+  await client.query(
+    `INSERT INTO expenses
+     (id, group_id, payer_id, created_by, title, notes, occurred_on, total_minor)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [id,groupId,prepared.payerId,creatorId,prepared.title,prepared.notes,
+      prepared.occurredOn,prepared.totalMinor],
+  );
+  await writeItems(client,groupId,id,prepared);
+  await createExpenseObligations(client,id,1);
+  await recordEvent(client,groupId,id,creatorId,"created",1,{
+    ...prepared,...(auditMetadata??{}),
+  });
+  return {id,version:1};
+}
+
 export async function createExpense(groupId: string, actorId: string, data: ExpenseInput) {
   return withTransaction(async client => {
-    const { members } = await lockGroupMembers(client, groupId, actorId);
-    const prepared = prepareExpense(data, members);
-    const id = randomUUID();
-    await client.query(
-      `INSERT INTO expenses
-       (id, group_id, payer_id, created_by, title, notes, occurred_on, total_minor)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [id, groupId, prepared.payerId, actorId, prepared.title,
-        prepared.notes, prepared.occurredOn, prepared.totalMinor],
-    );
-    await writeItems(client, groupId, id, prepared);
-    await createExpenseObligations(client, id, 1);
-    await recordEvent(client, groupId, id, actorId, "created", 1, prepared);
-    return { id, version: 1 };
+    const { members }=await lockGroupMembers(client,groupId,actorId);
+    const prepared=prepareExpense(data,members);
+    return createExpenseInTransaction(client,groupId,actorId,prepared);
   });
 }
 
