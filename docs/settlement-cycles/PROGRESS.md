@@ -57,11 +57,11 @@ SC-004 snapshot, BN-001 calculator, or financial ledger changes.
   `preview-http.smoke.mjs`; migration list updated.
 - `SC-002-SCHEDULE.md`: exhaustive calendar, version and safe cutover contract.
 
-**Verified on code commit `41c2a539e4076c711098279f0591c243fe8f884d`**
-- GitHub CI: https://github.com/mnhtng/group-expense/actions/runs/41855322302 —
+**Verified through final SC-002 code/test commit `cfb12b6ac92d771c0cf9fba222c8bf7f941a5893`**
+- GitHub CI: https://github.com/mnhtng/group-expense/actions/runs/41856078827 —
   SUCCESS (lint, Next.js typecheck, unit, production build).
 - PostgreSQL integration + HTTP:
-  https://github.com/mnhtng/group-expense/actions/runs/41855321924 —
+  https://github.com/mnhtng/group-expense/actions/runs/41856078768 —
   SUCCESS (migration twice/checksum, integration, build, HTTP smoke).
 - SQL CI creates **disposable PostgreSQL 17**, not shared Neon.
 - Negative cases: unauthorized admins, stale delegate, invalid zones/dates/JSON,
