@@ -37,7 +37,7 @@ export type LockedSnapshot=SnapshotTotals & {
 };
 export type EligibilityPreview=SnapshotTotals & {
   cycleId:string;state:"review";previewOnly:true;lateExpenseCount:0;
-  calculatedAt:string;
+  calculatedAt:string;fingerprint:string;
 };
 type SnapshotDb=Omit<LockedSnapshot,"state"|"cutoffAt"|"sealedAt"> &
   {cutoffAt:Date;sealedAt:Date};
@@ -173,7 +173,8 @@ export async function inspectCycleSnapshot(groupId:string,cycleId:string,
     const details=await readCanonical(client,c,at.rows[0].now);
     await client.query("COMMIT");
     return {...details.totals,cycleId,state:"review",previewOnly:true,
-      lateExpenseCount:0,calculatedAt:at.rows[0].now.toISOString()};
+      lateExpenseCount:0,calculatedAt:at.rows[0].now.toISOString(),
+      fingerprint:details.fingerprint};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
 }
@@ -184,9 +185,12 @@ export async function inspectCycleSnapshot(groupId:string,cycleId:string,
  * later cash confirmations must still be reconciled in SC-005+.
  */
 export async function lockCycleSnapshot(groupId:string,cycleId:string,
-  actorId:string,expectedVersion:number,requestKey:string):Promise<LockedSnapshot>{
+  actorId:string,expectedVersion:number,requestKey:string,
+  expectedFingerprint:string):Promise<LockedSnapshot>{
   if(!validUUID(groupId)||!validUUID(cycleId)||!validUUID(requestKey)||
-     !Number.isSafeInteger(expectedVersion)||expectedVersion!==2)
+     !Number.isSafeInteger(expectedVersion)||expectedVersion!==2||
+     typeof expectedFingerprint!=="string"||
+     !/^[0-9a-f]{64}$/.test(expectedFingerprint))
     throw fail(400,"Mã yêu cầu hoặc phiên bản kỳ không hợp lệ.");
   return withAuthorizedCycleManager(groupId,actorId,async client=>{
     const setting=await client.query<{requested_enabled:boolean}>(
@@ -202,7 +206,8 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
       snapshotQuery+" WHERE group_id=$1 AND request_key=$2 FOR UPDATE",
       [groupId,requestKey]);
     if(prior.rows[0]){
-      if(prior.rows[0].cycleId!==cycleId||prior.rows[0].lockedBy!==actorId)
+      if(prior.rows[0].cycleId!==cycleId||prior.rows[0].lockedBy!==actorId||
+         prior.rows[0].fingerprint!==expectedFingerprint)
         throw fail(409,"Mã yêu cầu đã dùng cho một snapshot khác.");
       if(c.state!=="locked")throw fail(409,"Snapshot đã ghi nhưng kỳ chưa ở trạng thái khóa.");
       return snapshotRecord(prior.rows[0]);
@@ -215,6 +220,9 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
     if(c.endAt.getTime()>cutoff.getTime())
       throw fail(409,"Không được khóa kỳ trước thời điểm kết thúc.");
     const details=await readCanonical(client,c,cutoff);
+    if(details.fingerprint!==expectedFingerprint)
+      throw fail(409,
+        "Số liệu hóa đơn hoặc thanh toán đã thay đổi. Phải kiểm tra lại trước khi khóa.");
     const params=[groupId,c.startDate,c.endDate,cutoff.toISOString(),cycleId];
     const expenseInsert=await client.query(
       `INSERT INTO group_settlement_cycle_snapshot_expenses
