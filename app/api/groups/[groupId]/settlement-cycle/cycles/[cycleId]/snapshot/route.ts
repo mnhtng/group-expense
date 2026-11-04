@@ -21,11 +21,12 @@ export const GET=withAuthenticatedApi<Context>(async(_request,{params},user)=>{
 /** Snapshot locking does not mark payments paid or invoices complete. */
 export const POST=withAuthenticatedApi<Context>(async(request,{params},user)=>{
   try{
-    const body=await settlementBody(request,["expectedVersion","requestKey"]);
+    const body=await settlementBody(request,["expectedVersion","requestKey","expectedFingerprint"]);
     const {groupId,cycleId}=await params;
     return NextResponse.json({
       snapshot:await lockCycleSnapshot(groupId,cycleId,user.id,
-        body.expectedVersion as number,body.requestKey as string),
+        body.expectedVersion as number,body.requestKey as string,
+        body.expectedFingerprint as string),
       financialEngineEnabled:false,
     });
   }catch(cause){return settlementError(cause);}
