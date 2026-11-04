@@ -83,6 +83,47 @@ test("BN-001 separates confirmed cash/setoff and BOTH pending reservation kinds"
   assert.equal(result.bOwesA.outstandingAfterHypotheticalSetoffMinor,"50");
 });
 
+test("BN-001 swapping labels A and B swaps directions but preserves exact offset",()=>{
+  const rows=[
+    obligation(251,A,B,{originalMinor:"120",confirmedCashMinor:"10"}),
+    obligation(252,B,A,{originalMinor:"90",pendingCashMinor:"20"}),
+    obligation(253,A,B,{originalMinor:"10"}),
+  ];
+  const forward=calculateBilateralSetoff(input(rows));
+  const swapped=calculateBilateralSetoff(input(rows,{
+    partyAId:B,partyBId:A,
+  }));
+  assert.equal(forward.offsetMinor,"70");
+  assert.equal(swapped.offsetMinor,forward.offsetMinor);
+  assert.deepEqual(swapped.aOwesB,forward.bOwesA);
+  assert.deepEqual(swapped.bOwesA,forward.aOwesB);
+  assert.equal(forward.aOwesB.availableBeforeMinor,"120");
+  assert.equal(forward.bOwesA.availableBeforeMinor,"70");
+});
+
+test("BN-001 rejected/cancelled pending cash frees reservation but never fakes confirmed cash",()=>{
+  const old=[
+    obligation(271,A,B,{originalMinor:"100",pendingCashMinor:"80"}),
+    obligation(272,B,A,{originalMinor:"90"}),
+  ];
+  const pending=calculateBilateralSetoff(input(old));
+  assert.equal(pending.offsetMinor,"20");
+  assert.equal(pending.aOwesB.outstandingMinor,"100");
+  const cancelled=calculateBilateralSetoff(input([
+    {...old[0],pendingCashMinor:"0"},old[1],
+  ]));
+  assert.equal(cancelled.offsetMinor,"90");
+  assert.equal(cancelled.aOwesB.outstandingMinor,"100",
+    "cancelling a request does not lower outstanding");
+  const confirmed=calculateBilateralSetoff(input([
+    {...old[0],pendingCashMinor:"0",confirmedCashMinor:"80"},old[1],
+  ]));
+  assert.equal(confirmed.offsetMinor,"20");
+  assert.equal(confirmed.aOwesB.outstandingMinor,"20",
+    "confirmed cash actually reduces outstanding, unlike pending cash");
+  assert.equal(confirmed.aOwesB.pendingReservedMinor,"0");
+});
+
 test("BN-001 pending allocations reserve, never discharge or synthesize offset",()=>{
   const result=calculateBilateralSetoff(input([
     obligation(31,A,B,{originalMinor:"100",pendingCashMinor:"100"}),
