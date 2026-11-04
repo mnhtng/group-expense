@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   pushFailureMessage, pushSupportReason, type PushEnvironment,
 } from "@/lib/notifications/push-support";
@@ -11,226 +11,306 @@ type PushConfig = {
   enabled: boolean;
   devices: number;
 };
+type PushStatus = NotificationPermission | "unavailable";
 
 function keyBytes(value: string): ArrayBuffer {
-  const base64=value.replace(/-/g,"+").replace(/_/g,"/");
-  const decoded=atob(base64.padEnd(Math.ceil(base64.length/4)*4,"="));
-  const bytes=new Uint8Array(decoded.length);
-  for(let index=0;index<decoded.length;index++)bytes[index]=decoded.charCodeAt(index);
-  if(bytes.length!==65||bytes[0]!==4)throw Error("Khóa Web Push không hợp lệ. Hãy kiểm tra cấu hình VAPID.");
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const text = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
   return bytes.buffer;
 }
 
-function browserEnvironment(): PushEnvironment {
-  const isIos=/iPad|iPhone|iPod/i.test(navigator.userAgent) ||
-    (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
-  const isStandalone=window.matchMedia("(display-mode: standalone)").matches ||
-    (navigator as Navigator & {standalone?:boolean}).standalone===true;
+function detectEnvironment(): PushEnvironment {
+  const nav = navigator as Navigator & {
+    standalone?: boolean;
+    brave?: { isBrave?: () => Promise<boolean> };
+  };
+  const ios = /iPhone|iPad|iPod/i.test(nav.userAgent) ||
+    (nav.platform === "MacIntel" && nav.maxTouchPoints > 1);
   return {
-    secure:window.isSecureContext,
-    serviceWorker:"serviceWorker" in navigator,
-    pushManager:"PushManager" in window,
-    notification:"Notification" in window,
-    ios:isIos,
-    standalone:isStandalone,
-    brave:false,
+    secure: window.isSecureContext,
+    serviceWorker: "serviceWorker" in navigator,
+    pushManager: "PushManager" in window,
+    notification: "Notification" in window,
+    ios,
+    standalone: window.matchMedia("(display-mode: standalone)").matches ||
+      nav.standalone === true,
+    brave: /Brave/i.test(nav.userAgent) || Boolean(nav.brave),
   };
 }
 
+function currentPermission(): PushStatus {
+  return typeof Notification === "undefined" ? "unavailable" : Notification.permission;
+}
+
 export function PushSettings() {
-  const [config,setConfig]=useState<PushConfig|null>(null);
-  const [environment,setEnvironment]=useState<PushEnvironment|null>(null);
-  const [subscribed,setSubscribed]=useState(false);
-  const [busy,setBusy]=useState(false);
-  const [loading,setLoading]=useState(true);
-  const [error,setError]=useState("");
+  const [config, setConfig] = useState<PushConfig | null>(null);
+  const [environment, setEnvironment] = useState<PushEnvironment | null>(null);
+  const [permission, setPermission] = useState<PushStatus>("unavailable");
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [workerReady, setWorkerReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [hint, setHint] = useState("");
+  const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
+  const subscriptionRef = useRef<PushSubscription | null>(null);
 
-  const refresh=useCallback(async()=>{
-    try {
-      const response=await fetch("/api/push/subscriptions",{
-        cache:"no-store",credentials:"same-origin",
-      });
-      if(!response.ok)throw Error("Không tải được cấu hình thông báo.");
-      const nextConfig:PushConfig=await response.json();
-      setConfig(nextConfig);
-
-      // A browser subscription is not proof that the server saved it.
-      let active=false;
-      if("serviceWorker" in navigator && "PushManager" in window) {
-        const registration=await navigator.serviceWorker.getRegistration("/");
-        const local=await registration?.pushManager.getSubscription();
-        if(local) {
-          const check=await fetch("/api/push/subscriptions/check",{
-            method:"POST",credentials:"same-origin",cache:"no-store",
-            headers:{"content-type":"application/json"},
-            body:JSON.stringify({endpoint:local.endpoint}),
-          });
-          if(!check.ok)throw Error("Không kiểm tra được đăng ký Push trên máy chủ.");
-          const status:{saved:boolean}=await check.json();
-          active=Boolean(status.saved && nextConfig.enabled);
-        }
-      }
-      setSubscribed(active);
-      setError("");
-    } catch (cause) {
-      setError(cause instanceof Error?cause.message:"Không tải được cấu hình thông báo.");
-    } finally {
-      setLoading(false);
-    }
-  },[]);
-
-  useEffect(()=>{
-    let cancelled=false;
-    queueMicrotask(()=>{
-      if(cancelled)return;
-      setEnvironment(browserEnvironment());
-      void refresh();
-      const brave=(navigator as Navigator & {
-        brave?:{isBrave?:()=>Promise<boolean>}
-      }).brave;
-      if(brave?.isBrave) {
-        void brave.isBrave().then(isBrave=>{
-          if(!cancelled&&isBrave)setEnvironment(previous=>previous?{...previous,brave:true}:previous);
-        }).catch(()=>{});
-      }
-    });
-    return ()=>{cancelled=true;};
-  },[refresh]);
-
-  const reason=environment?pushSupportReason(environment):"unsupported";
-  const permissionDenied=environment?.notification &&
-    typeof Notification!=="undefined" && Notification.permission==="denied";
-
-  async function enable() {
-    if(busy || reason!==null || !config?.configured || !config.publicKey || permissionDenied)return;
-    setBusy(true);
+  const refresh = useCallback(async () => {
+    const env = detectEnvironment();
+    setEnvironment(env);
+    setPermission(currentPermission());
+    setLoading(true);
     setError("");
     try {
-      const publicKey=keyBytes(config.publicKey);
-      // Keep permission prompting directly inside the user's click.
-      const permission=await Notification.requestPermission();
-      if(permission!=="granted") {
-        throw new DOMException("Notification permission denied","NotAllowedError");
+      // "isBrave" is a privacy-friendly browser identification API, when available.
+      const nav = navigator as Navigator & { brave?: { isBrave?: () => Promise<boolean> } };
+      if (nav.brave?.isBrave) {
+        try {
+          if (await nav.brave.isBrave()) setEnvironment({ ...env, brave: true });
+        } catch { /* Browser feature detection must not block push. */ }
       }
-      const registration=await navigator.serviceWorker.register("/sw.js",{scope:"/"});
-      const worker=await navigator.serviceWorker.ready;
-      if(registration.scope!==worker.scope) {
-        throw Error("Service Worker chưa sẵn sàng. Hãy tải lại trang và thử lại.");
+
+      const response = await fetch("/api/push/subscriptions", { cache: "no-store" });
+      if (!response.ok) throw Error("Không tải được cấu hình thông báo.");
+      const nextConfig = await response.json() as PushConfig;
+      setConfig(nextConfig);
+
+      if (pushSupportReason(env) !== null || !nextConfig.configured) {
+        registrationRef.current = null;
+        subscriptionRef.current = null;
+        setWorkerReady(false);
+        setSubscribed(false);
+        return;
       }
-      let subscription=await worker.pushManager.getSubscription();
-      // VAPID keys may change between preview environments. Do not keep
-      // a subscription whose applicationServerKey differs from the server key.
-      if(subscription?.options.applicationServerKey) {
-        const current=new Uint8Array(subscription.options.applicationServerKey);
-        const expected=new Uint8Array(publicKey);
-        if(current.length!==expected.length||current.some((b,i)=>b!==expected[i])) {
-          await subscription.unsubscribe();
-          subscription=null;
+
+      // Prepare the active worker BEFORE the user presses the button. iOS WebKit
+      // requires subscribe() to run immediately in the user's tap handler.
+      await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+      const registration = await navigator.serviceWorker.ready;
+      registrationRef.current = registration;
+      setWorkerReady(true);
+
+      const subscription = await registration.pushManager.getSubscription();
+      subscriptionRef.current = subscription;
+      if (!subscription || currentPermission() !== "granted") {
+        setSubscribed(false);
+        return;
+      }
+
+      // Browser subscription != successfully saved on our server.
+      const checked = await fetch("/api/push/subscriptions/check", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ endpoint: subscription.endpoint }),
+      });
+      if (!checked.ok) throw Error("Không xác minh được đăng ký thiết bị trên máy chủ.");
+      const result = await checked.json() as { saved: boolean };
+      setSubscribed(result.saved);
+    } catch (cause) {
+      setSubscribed(false);
+      setError(cause instanceof Error ? cause.message : "Không kiểm tra được Web Push.");
+    } finally {
+      setPermission(currentPermission());
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    // The user may change permission in iOS Settings while this PWA is paused.
+    const onResume = () => { if (!document.hidden) void refresh(); };
+    document.addEventListener("visibilitychange", onResume);
+    window.addEventListener("focus", onResume);
+    return () => {
+      document.removeEventListener("visibilitychange", onResume);
+      window.removeEventListener("focus", onResume);
+    };
+  }, [refresh]);
+
+  async function enable() {
+    const env = environment;
+    const configNow = config;
+    const registration = registrationRef.current;
+    if (!env || pushSupportReason(env) !== null || !configNow?.configured ||
+      !configNow.publicKey || !registration || busy) return;
+
+    setBusy(true);
+    setError("");
+    setHint("");
+    try {
+      // iOS requires a direct user gesture for BOTH permission and subscription.
+      // Keep them in separate taps if permission was not already granted.
+      const present = currentPermission();
+      if (present === "denied") {
+        setPermission("denied");
+        return;
+      }
+      if (present === "default") {
+        // RequestPermission() is called immediately from the actual tap.
+        const permissionPromise = Notification.requestPermission();
+        const granted = await permissionPromise;
+        setPermission(granted);
+        if (granted === "granted") {
+          setHint("Đã cấp quyền. Nhấn “Hoàn tất bật thông báo” để đăng ký thiết bị.");
+        } else if (granted === "default") {
+          setHint("Bạn chưa chọn cấp quyền. Nhấn lại khi muốn bật thông báo.");
         }
+        return;
       }
-      subscription??=await worker.pushManager.subscribe({
-        userVisibleOnly:true,
-        applicationServerKey:publicKey,
-      });
-      const saved=await fetch("/api/push/subscriptions",{
-        method:"POST",credentials:"same-origin",cache:"no-store",
-        headers:{"content-type":"application/json"},
-        body:JSON.stringify(subscription),
-      });
-      if(!saved.ok) {
-        const data:unknown=await saved.json().catch(()=>null);
-        const message=data&&typeof data==="object"&&"error" in data &&
-          typeof (data as {error:unknown}).error==="string"
-          ? (data as {error:string}).error : "Không lưu được thiết bị nhận Push.";
-        throw Error(message);
+
+      const saved = subscriptionRef.current;
+      let subscription: PushSubscription;
+      if (saved) {
+        const currentKey = saved.options.applicationServerKey;
+        const expected = new Uint8Array(keyBytes(configNow.publicKey));
+        const actual = currentKey ? new Uint8Array(currentKey) : null;
+        const matches = actual?.length === expected.length &&
+          actual.every((value, index) => value === expected[index]);
+        if (!matches) {
+          // An old VAPID key cannot be reused. Do not subscribe after an await:
+          // Safari may consider the original user activation already consumed.
+          await saved.unsubscribe();
+          subscriptionRef.current = null;
+          setSubscribed(false);
+          setHint("Đã làm mới đăng ký cũ. Nhấn “Hoàn tất bật thông báo” lần nữa.");
+          return;
+        }
+        subscription = saved;
+      } else {
+        // CRITICAL: subscribe must be invoked before ANY await in this branch,
+        // while the click's user activation is still valid on iOS WebKit.
+        const pending = registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: keyBytes(configNow.publicKey),
+        });
+        subscription = await pending;
+        subscriptionRef.current = subscription;
       }
-      const preference=await fetch("/api/push/subscriptions",{
-        method:"PATCH",credentials:"same-origin",cache:"no-store",
-        headers:{"content-type":"application/json"},
-        body:JSON.stringify({enabled:true}),
+
+      const response = await fetch("/api/push/subscriptions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(subscription.toJSON()),
       });
-      if(!preference.ok)throw Error("Không thể bật thông báo cho tài khoản.");
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as {error?:string} | null;
+        throw Error(body?.error ?? "Không lưu được đăng ký thiết bị.");
+      }
+      const preference = await fetch("/api/push/subscriptions", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+      if (!preference.ok) throw Error("Không thể bật thông báo trên máy chủ.");
+      setHint("Thông báo đã được bật cho thiết bị này.");
       await refresh();
-    } catch(cause) {
-      setError(pushFailureMessage(cause,environment??{brave:false}));
+    } catch (cause) {
+      setPermission(currentPermission());
+      setError(pushFailureMessage(cause, env));
     } finally {
       setBusy(false);
     }
   }
 
   async function disable() {
-    if(busy)return;
     setBusy(true);
     setError("");
+    setHint("");
     try {
-      const registration=await navigator.serviceWorker.getRegistration("/");
-      const subscription=await registration?.pushManager.getSubscription();
-      if(subscription) {
-        const response=await fetch("/api/push/subscriptions",{
-          method:"DELETE",credentials:"same-origin",cache:"no-store",
-          headers:{"content-type":"application/json"},
-          body:JSON.stringify({endpoint:subscription.endpoint}),
+      const subscription = subscriptionRef.current;
+      if (subscription) {
+        const response = await fetch("/api/push/subscriptions", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
         });
-        if(!response.ok)throw Error("Không thể bỏ đăng ký thiết bị trên máy chủ.");
+        if (!response.ok) throw Error("Không thể hủy đăng ký trên máy chủ.");
         await subscription.unsubscribe();
+        subscriptionRef.current = null;
       }
+      setSubscribed(false);
       await refresh();
-    } catch(cause) {
-      setError(pushFailureMessage(cause,environment??{brave:false}));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Không thể tắt thông báo.");
     } finally {
       setBusy(false);
     }
   }
 
+  const reason = environment ? pushSupportReason(environment) : null;
+  const canSubscribe = environment && reason === null && config?.configured && workerReady;
+  const denied = permission === "denied";
+
   return <section className="space-y-3 rounded-2xl border bg-card p-4">
     <h2 className="text-lg font-semibold">Thông báo đẩy</h2>
-    {environment===null || loading
-      ? <p role="status" className="text-sm text-muted-foreground">Đang kiểm tra thiết bị...</p>
-      : null}
-    {environment && reason==="ios-install" && <div className="space-y-2 text-sm">
-      <p>iPhone/iPad chỉ nhận Web Push khi mở ứng dụng từ Màn hình chính (iOS 16.4 trở lên).</p>
-      <p className="text-muted-foreground">
-        Trong Safari: nhấn <strong>Chia sẻ</strong> → <strong>Thêm vào Màn hình chính</strong>.
-        Sau đó mở Group Expense bằng biểu tượng trên Màn hình chính và chọn <strong>Bật thông báo</strong>.
-      </p>
+    {loading && <p className="text-sm text-muted-foreground">Đang kiểm tra thông báo...</p>}
+
+    {!loading && reason === "ios-install" && <div className="space-y-2 text-sm text-muted-foreground">
+      <p>Trên iPhone, thông báo chỉ hoạt động khi mở web từ biểu tượng PWA trên Màn hình chính.</p>
+      <p>Mở trang trong Safari → Chia sẻ → Thêm vào Màn hình chính → bật “Mở dưới dạng ứng dụng web” → mở từ biểu tượng mới.</p>
     </div>}
-    {environment && reason==="ios-upgrade" && <p className="text-sm text-muted-foreground">
-      Thiết bị chưa có các API Web Push cần thiết. Hãy dùng iOS/iPadOS 16.4 trở lên,
-      mở Group Expense từ biểu tượng ở Màn hình chính rồi thử lại.
+    {!loading && reason === "ios-upgrade" && <p className="text-sm text-muted-foreground">
+      Web Push cần iOS 16.4 trở lên và ứng dụng được mở từ Màn hình chính. Hãy cập nhật iOS rồi mở lại PWA.
     </p>}
-    {environment && reason==="https-required" && <p className="text-sm text-muted-foreground">
-      Web Push cần kết nối HTTPS an toàn.
+    {!loading && reason === "https-required" && <p className="text-sm text-muted-foreground">
+      Thông báo đẩy cần kết nối HTTPS an toàn.
     </p>}
-    {environment && reason==="unsupported" && <p className="text-sm text-muted-foreground">
-      Trình duyệt hoặc chế độ duyệt web hiện tại chưa cung cấp Web Push.
+    {!loading && reason === "unsupported" && <p className="text-sm text-muted-foreground">
+      Trình duyệt này chưa cung cấp đầy đủ Web Push. Bạn vẫn nhận được thông báo trong ứng dụng.
     </p>}
-    {environment && reason===null && config?.configured===false &&
-      <p className="text-sm text-muted-foreground">Máy chủ chưa cấu hình Web Push (VAPID).</p>}
-    {environment && reason===null && config?.configured && <div className="space-y-2">
-      <p className="text-sm">{subscribed?"Đã bật trên thiết bị này":"Chưa bật trên thiết bị này"}</p>
-      {permissionDenied
-        ? <p className="text-sm text-muted-foreground">
-          Bạn đã chặn quyền thông báo. Hãy cho phép trang này gửi thông báo trong cài đặt
-          trình duyệt hoặc hệ điều hành, rồi tải lại trang.
+    {!loading && !reason && config && !config.configured &&
+      <p className="text-sm text-muted-foreground">Web Push chưa được cấu hình trên máy chủ.</p>}
+
+    {!loading && !reason && config?.configured && <>
+      {denied ? <div className="space-y-2 text-sm">
+        <p className="font-medium">Quyền thông báo đang bị từ chối hoặc bị chặn.</p>
+        {environment?.ios ? <>
+          <p className="text-muted-foreground">
+            Mở Cài đặt iPhone → Thông báo → Group Expense → bật “Cho phép thông báo”.
+            Bạn cũng có thể tìm trong Cài đặt → Ứng dụng → Group Expense → Thông báo.
+          </p>
+          <p className="text-muted-foreground">
+            Nếu không thấy Group Expense trong danh sách, hãy mở lại PWA từ Màn hình chính và kiểm tra quyền lần nữa.
+          </p>
+        </> : <p className="text-muted-foreground">
+          Bật quyền thông báo cho website trong cài đặt trình duyệt rồi kiểm tra lại.
+        </p>}
+        <button type="button" onClick={() => void refresh()} disabled={busy}
+          className="min-h-11 rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-50">
+          Kiểm tra lại quyền
+        </button>
+      </div> : <div className="space-y-2">
+        <p className="text-sm">
+          {subscribed ? "Đã bật trên thiết bị này"
+            : permission === "default" ? "Chưa cấp quyền thông báo"
+            : "Đã có quyền; chưa đăng ký thiết bị"}
         </p>
-        : subscribed
-          ? <button disabled={busy} type="button" onClick={()=>void disable()}
-              className="min-h-11 rounded-xl border px-4 py-3 text-sm disabled:opacity-50">
-              {busy?"Đang xử lý...":"Tắt thông báo"}
-            </button>
-          : <button disabled={busy} type="button" onClick={()=>void enable()}
-              className="min-h-11 rounded-xl bg-primary px-4 py-3 text-sm text-primary-foreground disabled:opacity-50">
-              {busy?"Đang xử lý...":"Bật thông báo"}
-            </button>}
-      {environment.brave && !subscribed && <p className="text-xs text-muted-foreground">
-        Brave: nếu không đăng ký được Push, mở <code>brave://settings/privacy</code>,
-        bật <strong>Use Google services for push messaging</strong> rồi khởi động lại Brave.
-      </p>}
+        {subscribed ? <button type="button" disabled={busy}
+          onClick={() => void disable()}
+          className="min-h-11 rounded-xl border px-4 py-3 text-sm disabled:opacity-50">
+          Tắt thông báo
+        </button> : <button type="button" disabled={busy || !canSubscribe}
+          onClick={() => void enable()}
+          className="min-h-11 rounded-xl bg-primary px-4 py-3 text-sm text-primary-foreground disabled:opacity-50">
+          {busy ? "Đang xử lý..." : permission === "granted"
+            ? "Hoàn tất bật thông báo" : "Cho phép thông báo"}
+        </button>}
+        {!workerReady && <p className="text-xs text-muted-foreground">
+          Đang chuẩn bị dịch vụ thông báo...
+        </p>}
+      </div>}
       <p className="text-xs text-muted-foreground">Thiết bị đã đăng ký: {config.devices}</p>
-    </div>}
+    </>}
+
+    {!loading && environment?.brave && reason === null &&
+      <p className="text-xs text-muted-foreground">
+        Brave: nếu đăng ký thất bại, hãy kiểm tra tùy chọn “Use Google services for push messaging”
+        trong brave://settings/privacy. Khởi động lại Brave sau khi thay đổi.
+      </p>}
+    {hint && <p role="status" className="text-sm text-muted-foreground">{hint}</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    <p className="text-xs text-muted-foreground">
-      Thông báo trong ứng dụng vẫn hoạt động ngay cả khi bạn không bật Web Push.
-    </p>
   </section>;
 }
