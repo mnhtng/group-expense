@@ -1062,9 +1062,14 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(monthlyRows[0].createdBy,registered.user.id);
     assert.equal((await expenseRequest("POST",generatedUrl,{},otherJar))
       .response.status,403,"only schedule creator may generate due bills");
-    const firstRun=await expenseRequest("POST",generatedUrl,{},jar);
+    const [firstRun,concurrentRun]=await Promise.all([
+      expenseRequest("POST",generatedUrl,{},jar),
+      expenseRequest("POST",generatedUrl,{},jar),
+    ]);
     assert.equal(firstRun.response.status,200,JSON.stringify(firstRun.body));
-    assert.equal(firstRun.body.generated,1,"due bill generates once");
+    assert.equal(concurrentRun.response.status,200,JSON.stringify(concurrentRun.body));
+    assert.equal(firstRun.body.generated+concurrentRun.body.generated,1,
+      "two concurrent generation requests must create only one invoice");
     const secondRun=await expenseRequest("POST",generatedUrl,{},jar);
     assert.equal(secondRun.response.status,200);
     assert.equal(secondRun.body.generated,0,"repeated cron/manual trigger is idempotent");
