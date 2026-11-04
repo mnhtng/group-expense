@@ -43,3 +43,12 @@ test("Subscription isn't shown as enabled until saved on authenticated server",(
   const store=read("lib/notifications/push-store.ts");
   assert.match(store,/WHERE user_id=\$1 AND endpoint=\$2 LIMIT 1/);
 });
+
+test("iOS push worker always displays a visible notification, even for bad payloads",()=>{
+  const worker=read("public/sw.js");
+  assert.match(worker,/event\.waitUntil\(/);
+  assert.match(worker,/showNotification\(/);
+  assert.match(worker,/Bạn có thông báo mới trong ứng dụng/);
+  assert.doesNotMatch(worker,/if \(!event\.data\) return/);
+  assert.doesNotMatch(worker,/catch\s*\{\s*return;\s*\}/);
+});
