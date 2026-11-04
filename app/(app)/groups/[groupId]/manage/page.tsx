@@ -70,7 +70,8 @@ export default async function ManageGroupPage({ params, searchParams }: {
         groupId={groupId} initial={settlementSchedule}/>
       <SettlementCycleLifecyclePanel
         groupId={groupId} requestedEnabled={settlementSettings.requestedEnabled}
-        schedule={settlementSchedule} cycles={settlementCycles.cycles}/>
+        schedule={settlementSchedule} cycles={settlementCycles.cycles}
+        renderedAt={new Date().toISOString()}/>
     </>}
 
     {canManage && <section aria-labelledby="invite-heading" className="space-y-3 rounded-3xl border bg-card p-5">
