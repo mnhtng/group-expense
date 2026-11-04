@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails, getMemberRole, listMembers } from "@/lib/groups/service";
 import { listExpenses } from "@/lib/expenses/service";
 import Link from "next/link";
+import { formatDateDMY } from "@/lib/date-format";
 import { notFound, redirect } from "next/navigation";
 
 const vnd = (minor: string) => new Intl.NumberFormat("vi-VN").format(BigInt(minor)) + " ₫";
@@ -47,7 +48,7 @@ export default async function GroupPage({ params, searchParams }: {
       {expenses.map(e => <Link key={e.id} href={`/groups/${groupId}/expenses/${e.id}`}
         className="flex min-h-[80px] items-center justify-between gap-3 rounded-3xl border bg-card p-4 sm:p-5">
         <div className="min-w-0"><h3 className="truncate font-semibold">{e.title}</h3>
-          <p className="mt-1 text-xs text-muted-foreground">{e.occurredOn} · {e.itemCount} món · {e.payerName} đã trả</p></div>
+          <p className="mt-1 text-xs text-muted-foreground">{formatDateDMY(e.occurredOn)} · {e.itemCount} món · {e.payerName} đã trả</p></div>
         <strong className="shrink-0 text-sm tabular-nums text-money-out">−{vnd(e.totalMinor)}</strong>
       </Link>)}
     </section>
