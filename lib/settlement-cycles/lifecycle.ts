@@ -15,7 +15,7 @@ import {
  * OPEN -> REVIEW is the only transition; locking/reconciliation belongs to
  * SC-004 and later. Never infer actual engine readiness from a saved opt-in.
  */
-export type CycleState="open"|"review";
+export type CycleState="open"|"review"|"locked";
 export type CycleSource="scheduled"|"manual";
 export type CycleRecord={
   id:string;groupId:string;scheduleRevisionId:string;
