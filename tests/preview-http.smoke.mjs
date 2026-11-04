@@ -1741,14 +1741,14 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       },x.jar)));
     assert.deepEqual(sc004Race.map(x=>x.response.status).sort(),[200,409],
       "concurrent snapshot locks commit exactly once");
-    const winner=sc004Race.findIndex(x=>x.response.status===200);
-    const stored=sc004Race[winner].body.snapshot;
+    const sc004Winner=sc004Race.findIndex(x=>x.response.status===200);
+    const stored=sc004Race[sc004Winner].body.snapshot;
     assert.equal(stored.state,"locked");
     assert.equal(stored.fingerprint,sc004Reviewed.fingerprint);
     const duplicate=await expenseRequest("POST",sc004Url,{
-      expectedVersion:2,requestKey:requests[winner].requestKey,
+      expectedVersion:2,requestKey:requests[sc004Winner].requestKey,
       expectedFingerprint:sc004Reviewed.fingerprint,
-    },requests[winner].jar);
+    },requests[sc004Winner].jar);
     assert.equal(duplicate.response.status,200,
       "lost HTTP response retry returns the same sealed snapshot");
     assert.equal(duplicate.body.snapshot.cycleId,sc003FirstId);
