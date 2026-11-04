@@ -395,6 +395,130 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
       [groupId, thirdUser.id]);
 
+    // SC-001: a separately owned group proves default-OFF feature gate,
+    // owner-only delegation and no financial side effects.
+    const cycleGroupId=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'SC-001 test group')",
+      [cycleGroupId,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
+      [cycleGroupId,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
+      [cycleGroupId,otherUser.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'admin')",
+      [cycleGroupId,thirdUser.id]);
+    const settingsUrl=`${origin}/api/groups/${cycleGroupId}/settlement-cycle/settings`;
+    const managersUrl=`${origin}/api/groups/${cycleGroupId}/settlement-cycle/managers`;
+    const config=(version,enabled,netting)=>({
+      expectedVersion:version,requestedEnabled:enabled,requestedBilateralNetting:netting,
+    });
+    assert.equal((await expenseRequest("GET",settingsUrl,undefined,new Map())).response.status,401);
+    const emptyConfig=await expenseRequest("GET",settingsUrl,undefined,jar);
+    assert.equal(emptyConfig.response.status,200);
+    assert.deepEqual([
+      emptyConfig.body.version,emptyConfig.body.requestedEnabled,
+      emptyConfig.body.requestedBilateralNetting,emptyConfig.body.effectiveEnabled,
+      emptyConfig.body.canManage,emptyConfig.body.canDelegate,
+    ],[0,false,false,false,true,true],"existing groups start with settlement-cycle OFF");
+    assert.equal((await expenseRequest("GET",settingsUrl,undefined,thirdJar)).body.canManage,false,
+      "group admin does not automatically manage cycles");
+    assert.equal((await expenseRequest("PATCH",settingsUrl,config(0,true,false),new Map()))
+      .response.status,401);
+    assert.equal((await expenseRequest("PATCH",settingsUrl,config(0,true,false),thirdJar))
+      .response.status,403,"admin cannot enable ungranted feature");
+    assert.equal((await expenseRequest("PATCH",settingsUrl,config(0,true,false),otherJar))
+      .response.status,403,"normal member cannot configure cycles");
+    assert.equal((await expenseRequest("PATCH",settingsUrl,config(0,false,true),jar))
+      .response.status,400,"bilateral netting requires cycle opt-in");
+    assert.equal((await expenseRequest("PATCH",settingsUrl,
+      {...config(0,true,false),unexpected:true},jar)).response.status,400);
+    assert.equal((await expenseRequest("PATCH",settingsUrl,
+      {expectedVersion:0,requestedEnabled:"yes",requestedBilateralNetting:false},jar))
+      .response.status,400);
+
+    const attempts=await Promise.all([
+      expenseRequest("PATCH",settingsUrl,config(0,true,false),jar),
+      expenseRequest("PATCH",settingsUrl,config(0,true,false),jar),
+    ]);
+    assert.deepEqual(attempts.map(x=>x.response.status).sort(),[200,409],
+      "concurrent stale PATCH requests cannot overwrite one another");
+    assert.equal((await expenseRequest("GET",settingsUrl,undefined,jar)).body.version,1);
+    assert.equal((await expenseRequest("PATCH",settingsUrl,config(1,true,true),jar))
+      .response.status,200);
+    const nettingPrepared=(await expenseRequest("GET",settingsUrl,undefined,jar)).body;
+    assert.equal(nettingPrepared.requestedBilateralNetting,true);
+    assert.equal(nettingPrepared.effectiveEnabled,false,
+      "configured opt-in MUST NOT activate unfinished money logic");
+    const disable=await expenseRequest("PATCH",settingsUrl,config(2,false,false),jar);
+    assert.equal(disable.response.status,200);
+    assert.equal(disable.body.requestedBilateralNetting,false,
+      "disabling cycles always disables netting as well");
+
+    assert.equal((await expenseRequest("POST",managersUrl,
+      {memberId:otherUser.id,action:"grant"},thirdJar)).response.status,403);
+    assert.equal((await expenseRequest("POST",managersUrl,
+      {memberId:registered.user.id,action:"grant"},jar)).response.status,400);
+    const grant=await expenseRequest("POST",managersUrl,
+      {memberId:otherUser.id,action:"grant"},jar);
+    assert.equal(grant.response.status,200);
+    assert.equal((await expenseRequest("POST",managersUrl,
+      {memberId:otherUser.id,action:"grant"},jar)).response.status,409);
+    assert.equal((await expenseRequest("GET",settingsUrl,undefined,otherJar)).body.canManage,true);
+    assert.equal((await expenseRequest("POST",managersUrl,
+      {memberId:thirdUser.id,action:"grant"},otherJar)).response.status,403,
+      "delegate cannot delegate");
+    const delegated=await expenseRequest("PATCH",settingsUrl,config(3,true,true),otherJar);
+    assert.equal(delegated.response.status,200);
+    assert.equal(delegated.body.version,4);
+    assert.equal((await expenseRequest("POST",managersUrl,
+      {memberId:otherUser.id,action:"revoke"},jar)).response.status,200);
+    assert.equal((await expenseRequest("PATCH",settingsUrl,config(4,false,false),otherJar))
+      .response.status,403,"revoked delegate cannot change settings");
+
+    assert.equal((await expenseRequest("POST",managersUrl,
+      {memberId:thirdUser.id,action:"grant"},jar)).response.status,200);
+    const transfer=await expenseRequest("POST",
+      `${origin}/api/groups/${cycleGroupId}/membership/transfer`,
+      {targetId:otherUser.id},jar);
+    assert.equal(transfer.response.status,200,JSON.stringify(transfer.body));
+    assert.equal((await expenseRequest("GET",settingsUrl,undefined,thirdJar)).body.canManage,false,
+      "ownership transfer must revoke all prior delegations");
+    assert.equal((await expenseRequest("PATCH",settingsUrl,config(4,false,false),jar))
+      .response.status,403,"previous owner no longer has special configuration power");
+    assert.equal((await expenseRequest("POST",managersUrl,
+      {memberId:thirdUser.id,action:"grant"},otherJar)).response.status,200,
+      "new owner can explicitly grant fresh permissions");
+    const thirdLeave=await expenseRequest("POST",
+      `${origin}/api/groups/${cycleGroupId}/membership/leave`,{},thirdJar);
+    assert.equal(thirdLeave.response.status,200,JSON.stringify(thirdLeave.body));
+    assert.equal((await expenseRequest("GET",settingsUrl,undefined,thirdJar)).response.status,404);
+    const invitationResponse=await expenseRequest("POST",
+      `${origin}/api/groups/${cycleGroupId}/invites`,{},otherJar);
+    assert.equal(invitationResponse.response.status,201);
+    const thirdRejoin=await expenseRequest("POST",
+      `${origin}/api/invites/accept`,{token:invitationResponse.body.token},thirdJar);
+    assert.equal(thirdRejoin.response.status,200);
+    assert.equal((await expenseRequest("GET",settingsUrl,undefined,thirdJar)).body.canManage,false,
+      "leaving and rejoining never restores a previous delegation");
+    assert.equal((await expenseRequest("PATCH",settingsUrl,config(4,false,false),thirdJar))
+      .response.status,403);
+
+    const cycleAudit=await pool.query(
+      `SELECT event_type,actor_id,subject_user_id,details
+       FROM group_settlement_config_events WHERE group_id=$1 ORDER BY recorded_at,id`,
+      [cycleGroupId]);
+    assert.ok(cycleAudit.rows.some(e=>e.event_type==="settings_changed"));
+    assert.ok(cycleAudit.rows.some(e=>e.event_type==="manager_granted" &&
+      e.actor_id===registered.user.id));
+    assert.ok(cycleAudit.rows.some(e=>e.event_type==="manager_revoked" &&
+      e.subject_user_id===thirdUser.id && e.details.reason==="ownership_transferred"));
+    assert.ok(cycleAudit.rows.some(e=>e.event_type==="manager_revoked" &&
+      e.subject_user_id===thirdUser.id && e.details.reason==="member_departed"));
+    for(const table of ["expenses","obligations","settlements","settlement_allocations"]){
+      const count=await pool.query(`SELECT count(*)::int AS n FROM ${table} WHERE group_id=$1`,
+        [cycleGroupId]);
+      assert.equal(count.rows[0].n,0,`${table} must not mutate during feature setup`);
+    }
+
     // Creator-only invoice authorization: no owner, admin or payer exception.
     // B creates an invoice; C is its payer and is temporarily promoted to admin.
     const memberCreatedDraft = {
