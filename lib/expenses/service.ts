@@ -28,7 +28,7 @@ type ExpenseItem = {
   amountMinor: string; shares: { userId: string; userName: string; amountMinor: string }[];
 };
 export type ExpenseDetail = ExpenseSummary & {
-  groupId: string; notes: string;
+  groupId: string; notes: string; completionNote: string | null;
   items: ExpenseItem[];
 };
 
@@ -326,6 +326,9 @@ export async function getExpense(groupId: string, expenseId: string, actorId: st
        e.created_by AS "createdBy", author.name AS "creatorName",
        e.completed_at::text AS "completedAt", e.completed_by AS "completedBy",
        e.version, (SELECT count(*)::int FROM expense_items WHERE expense_id=e.id) AS "itemCount",
+       (SELECT ev.snapshot->>'note' FROM expense_events ev
+         WHERE ev.expense_id=e.id AND ev.operation='completed'
+         ORDER BY ev.recorded_at DESC LIMIT 1) AS "completionNote",
        progress.*
        FROM expenses e JOIN "user" u ON u.id=e.payer_id
        JOIN "user" author ON author.id=e.created_by
