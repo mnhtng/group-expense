@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatDateTimeDMY } from "@/lib/date-format";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getSettlementDetail } from "@/lib/settlements/service";
@@ -16,10 +17,6 @@ export default async function SettlementPage({params}:{
   const incoming = result.creditorId === user.id;
   const color = outgoing ? "text-money-out" : incoming ? "text-money-in" : "text-foreground";
   const sign = outgoing ? "−" : incoming ? "+" : "";
-  const dateTime = (value:string) => new Intl.DateTimeFormat("vi-VN",{
-    day:"2-digit",month:"2-digit",year:"numeric",
-    hour:"2-digit",minute:"2-digit",timeZone:"Asia/Ho_Chi_Minh",
-  }).format(new Date(value));
   const eventLabel:Record<string,string>={
     created:"Tạo yêu cầu",confirmed:"Xác nhận hoàn trả",
     rejected:"Từ chối",cancelled:"Hủy yêu cầu",
@@ -38,8 +35,8 @@ export default async function SettlementPage({params}:{
         {sign}{vnd(result.amountMinor)}
       </p>
       <p className="mt-2 text-xs text-muted-foreground">
-        Tạo: {dateTime(result.createdAt)}
-        {result.resolvedAt ? ` · Xử lý: ${dateTime(result.resolvedAt)}` : ""}
+        Tạo: {formatDateTimeDMY(result.createdAt)}
+        {result.resolvedAt ? ` · Xử lý: ${formatDateTimeDMY(result.resolvedAt)}` : ""}
       </p>
       <p className="mt-2 text-sm text-muted-foreground">Người tạo: {result.initiatedBy===result.debtorId?result.debtorName:result.creditorName}</p>
       {result.note&&<p className="mt-2 text-sm">{result.note}</p>}
@@ -59,7 +56,7 @@ export default async function SettlementPage({params}:{
     <section className="space-y-2"><h2 className="font-semibold">Lịch sử xác nhận</h2>
       {result.events.map((event,i)=><div key={i} className="rounded-xl border p-3 text-sm">
         <strong>{eventLabel[event.eventType]??event.eventType}</strong>
-        <p className="text-xs text-muted-foreground">{dateTime(event.recordedAt)} · {event.actorId===result.debtorId?result.debtorName:event.actorId===result.creditorId?result.creditorName:"Thành viên"}</p>
+        <p className="text-xs text-muted-foreground">{formatDateTimeDMY(event.recordedAt)} · {event.actorId===result.debtorId?result.debtorName:event.actorId===result.creditorId?result.creditorName:"Thành viên"}</p>
         {event.note&&<p>{event.note}</p>}
       </div>)}
     </section>
