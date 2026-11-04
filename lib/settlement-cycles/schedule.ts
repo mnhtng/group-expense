@@ -139,6 +139,17 @@ export async function updateSettlementSchedule(
       if(Date.parse(effectiveAt)<=current.effectiveAt.getTime())
         throw new SettlementSettingsError(409,"Không thể thay đổi lịch đã có hiệu lực.");
     }
+    // A manually created cycle may extend across the intended cutover.
+    // A schedule revision must never split an already persisted cycle,
+    // including a cycle created by another delegated manager.
+    const intersects=await client.query(
+      `SELECT 1 FROM group_settlement_cycles
+       WHERE group_id=$1 AND start_at<$2::timestamptz
+         AND end_at>$2::timestamptz LIMIT 1`,
+      [groupId,effectiveAt],
+    );
+    if(intersects.rowCount)throw new SettlementSettingsError(409,
+      "Không thể thay đổi lịch giữa một kỳ đã tạo. Chọn ranh giới sau khi kỳ kết thúc.");
     // The above guards run INSIDE the transaction after permission+group locks.
     // A planned revision can be replaced, but an active/historical one cannot.
     // Re-check wall-clock time inside the locked transaction. A request that
