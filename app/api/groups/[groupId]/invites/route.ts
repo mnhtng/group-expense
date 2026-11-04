@@ -1,22 +1,15 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedApi } from "@/lib/security/api-guards";
 import { createInvite } from "@/lib/groups/service";
-import { optionalNote } from "@/lib/notes";
 
 type Ctx = { params: Promise<{ groupId: string }> };
-export const POST = withAuthenticatedApi<Ctx>(async (request, { params }, user) => {
+export const POST = withAuthenticatedApi<Ctx>(async (_request, { params }, user) => {
   const { groupId } = await params;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(groupId)) {
     return NextResponse.json({ error: "Nhóm không hợp lệ." }, { status: 400 });
   }
-  let note: string | null;
   try {
-    const raw=await request.text();
-    const body:unknown=raw?JSON.parse(raw):{}; // Legacy clients without a note remain valid.
-    note = optionalNote(typeof body==="object"&&body!==null&&"note" in body ? (body as {note:unknown}).note : undefined);
-  } catch {return NextResponse.json({error:"Dữ liệu hoặc ghi chú không hợp lệ."},{status:400});}
-  try {
-    const token = await createInvite(groupId, user.id,note??"");
+    const token = await createInvite(groupId, user.id);
     // The client builds the URL using its current origin, so Preview and
     // Production links always point to the environment being used.
     return NextResponse.json({ token }, { status: 201 });
