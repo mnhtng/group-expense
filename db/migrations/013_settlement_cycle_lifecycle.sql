@@ -20,6 +20,7 @@ CREATE TABLE group_settlement_cycles (
   version integer NOT NULL DEFAULT 1 CHECK(version > 0),
   reviewed_at timestamptz,
   created_by text REFERENCES "user"(id) ON DELETE RESTRICT,
+  request_key uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT cycle_dates_ordered CHECK(period_start < period_end),
@@ -29,13 +30,14 @@ CREATE TABLE group_settlement_cycles (
     OR (state='review' AND reviewed_at IS NOT NULL)
   ),
   CONSTRAINT cycle_source_actor_consistent CHECK (
-    (source='scheduled' AND created_by IS NULL)
-    OR (source='manual' AND created_by IS NOT NULL)
+    (source='scheduled' AND created_by IS NULL AND request_key IS NULL)
+    OR (source='manual' AND created_by IS NOT NULL AND request_key IS NOT NULL)
   ),
   CONSTRAINT cycle_schedule_group_fk FOREIGN KEY(schedule_revision_id,group_id)
     REFERENCES group_settlement_schedule_revisions(id,group_id) ON DELETE RESTRICT,
   CONSTRAINT cycle_identity_group UNIQUE(id,group_id),
   CONSTRAINT cycle_revision_start UNIQUE(schedule_revision_id,period_start),
+  CONSTRAINT cycle_manual_request_unique UNIQUE(group_id,request_key),
   -- An exclusion constraint prevents overlapping periods even if code has
   -- a race, is bypassed or revisions have different frequencies/timezones.
   CONSTRAINT cycle_group_no_overlap EXCLUDE USING gist
@@ -76,6 +78,14 @@ CREATE TABLE group_settlement_cycle_events (
 );
 CREATE INDEX settlement_cycle_events_by_group
   ON group_settlement_cycle_events(group_id,recorded_at DESC);
+
+-- Fair rotation: one faulty or undued group cannot starve other groups.
+-- No financial data and no impact on the actual settlement engine toggle.
+CREATE TABLE group_settlement_cycle_cron_checkpoints (
+  group_id uuid PRIMARY KEY REFERENCES groups(id) ON DELETE RESTRICT,
+  last_checked_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  last_error_at timestamptz
+);
 
 -- Do not allow deleting cycles or mutating their identity/calendar boundaries.
 -- The only transition available until SC-004 is OPEN -> REVIEW after end_at.
