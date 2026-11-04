@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuthenticatedApi } from "@/lib/security/api-guards";
 import { createGroup } from "@/lib/groups/service";
-import { optionalNote } from "@/lib/notes";
 
 export const POST=withAuthenticatedApi(async(request,_context,user)=>{
   let data:unknown;
@@ -12,11 +11,8 @@ export const POST=withAuthenticatedApi(async(request,_context,user)=>{
     ? (data as {name:unknown}).name:null;
   if(typeof name!=="string"||name.trim().length<2||name.trim().length>120)
     return NextResponse.json({error:"Tên nhóm cần từ 2 đến 120 ký tự."},{status:400});
-  let note: string | null;
-  try { note = optionalNote(typeof data==="object"&&data!==null&&"note" in data ? (data as {note:unknown}).note : undefined); }
-  catch { return NextResponse.json({error:"Ghi chú tối đa 1000 ký tự."},{status:400}); }
   try{
-    const id=await createGroup(user.id,name,note??"");
+    const id=await createGroup(user.id,name);
     return NextResponse.json({id},{status:201});
   }catch(error){
     console.error("Could not create group",error instanceof Error?error.name:"Unknown");
