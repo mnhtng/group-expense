@@ -275,3 +275,22 @@ export async function revokeSettlementManagersWithMembership(
   }
   return result.rowCount ?? 0;
 }
+
+/**
+ * Shared SC-001 privilege boundary for SC-002 schedule writes.
+ * Group row lock is acquired BEFORE membership, delegation and schedule
+ * version checks. Admin status alone is never sufficient.
+ */
+export async function withAuthorizedCycleManager<T>(
+  groupId:string,actorId:string,work:(client:PoolClient)=>Promise<T>,
+):Promise<T> {
+  return transact(async client=>{
+    const group=await groupLock(client,groupId);
+    await memberCheck(client,groupId,actorId);
+    if(group.owner_id!==actorId &&
+       !(await activeGrant(client,groupId,actorId))) {
+      throw new SettlementSettingsError(403,"Bạn không được quản lý quyết toán theo kỳ.");
+    }
+    return work(client);
+  });
+}
