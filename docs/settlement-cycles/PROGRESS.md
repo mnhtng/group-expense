@@ -79,7 +79,7 @@ choose a matching upcoming 31st-day boundary when possible to preserve
 future day-31 behavior. Timezone changes with different UTC midnights
 are rejected, not approximated.
 
-## 2026-11-04 — SC-003: IMPLEMENTED, FINAL CI/HTTP GATE PENDING
+## 2026-11-04 — SC-003: DONE (feature branch, verification complete)
 
 **Ticket scope:** metadata-only cycle state machine. No SC-004 eligible
 obligation snapshot, no BN-* netting, no settlement/payment changes.
@@ -127,45 +127,94 @@ obligation snapshot, no BN-* netting, no settlement/payment changes.
   and https://github.com/mnhtng/group-expense/actions/runs/41861305803.
 - SQL integration additionally succeeded on `88b045e2`:
   https://github.com/mnhtng/group-expense/actions/runs/41861006218.
-- **Latest extended acceptance checks still need completion**:
-  https://github.com/mnhtng/group-expense/actions/runs/41862640018
-  (PostgreSQL/HTTP), and
-  https://github.com/mnhtng/group-expense/actions/runs/41862639999
-  (CI). Do not claim DONE until both are green.
+- Final SC-003 code/documentation commit `e99ea906ecefc27d230f254698c215f5f9bfd3c5`:
+  [CI passed](https://github.com/mnhtng/group-expense/actions/runs/41863083471),
+  [PostgreSQL/HTTP passed](https://github.com/mnhtng/group-expense/actions/runs/41863083416).
+  This gate was verified BEFORE starting SC-004.
 
 **Release gate and outstanding work**
 - No shared Neon migration, no staging/prod deploy, no merge into
   `develop`/`main`; PR #16 stays Draft.
 - `SETTLEMENT_CYCLE_ENGINE_READY=false`. The only cycles are
   **time-window metadata** for already opted-in groups.
-- Complete the currently queued final Actions run and fix any detected
-  issues within SC-003 before closing the ticket.
-- Continue to SC-004 in a **future conversation only after** full CI,
-  integration, HTTP and concurrency acceptance is proven for SC-003.
+- All SC-003 final acceptance checks passed. SC-004 was started only after
+  verifying both GitHub Actions runs above.
 
-## NEXT CONVERSATION: SC-003 VERIFICATION UNTIL DONE; THEN SC-004 ONLY
+## 2026-11-04 — SC-004: DONE (feature branch; human review/release pending)
 
-**Current:** If SC-003's last run remains queued/failed, recheck the two
-run URLs above, fix SC-003 tests only and update the completion status.
-Never skip a failed financial-data safety gate.
+**One-ticket scope:** Canonical eligible-obligation snapshot and guarded
+review -> locked transition. NO same-direction batch payment (SC-005),
+no netting proposal or noncash set-off (BN-*), no future adjustment
+execution (SC-006).
 
-**After SC-003 is verified DONE:** SC-004 eligible obligation snapshots
-and financial review/locking. Read `BACKLOG.md`, `DOMAIN_RULES.md`,
-`PROGRESS.md`, `SC-002-SCHEDULE.md` and `SC-003-LIFECYCLE.md`.
-Still no bilateral netting before BN-* tickets and no deployment
-without a separate explicit release decision.
+**Delivered**
+- Migration `014_settlement_cycle_obligation_snapshots.sql`:
+  source invoice rows (including self-only/no-obligation bills), one unique
+  origin snapshot per obligation, immutable as-of cash fields,
+  totals/versions, SHA-256 manifest, INSERT seal guards,
+  money conservation CHECK, exact DB total/source validation.
+  Cycle transition extended exactly from REVIEW v2 to LOCKED v3,
+  contingent upon a correct complete manifest; no settlement transition.
+- `lib/settlement-cycles/snapshot.ts`: canonical complete PostgreSQL SQL
+  from active nonvoid obligations and nondeleted invoices within
+  `occurred_on >= period_start AND < period_end`; excludes sources
+  created after the lock cutoff; aggregates exact confirmed/pending
+  settlement allocations; all calculations in bigint/numeric, no UI caps.
+  Reads are independently recalculated under group+cycle locks.
+- Explicit preview fingerprint binding: manager must preview exact totals,
+  then POST lock with `expectedVersion=2`, UUID idempotency key and
+  `expectedFingerprint`. Any live invoice/cash changes force HTTP 409
+  and a new preview. Transaction also rereads persisted snapshot rows
+  and asserts their fingerprint and totals before sealing.
+- `GET/POST /api/groups/:groupId/settlement-cycle/cycles/:cycleId/snapshot`:
+  authenticated, group member read, active owner/delegate only lock,
+  default-OFF groups denied writes, snapshot lock does not perform
+  money movement, discharges or invoice completion.
+- `components/groups/settlement-snapshot-panel.tsx` and existing lifecycle
+  panel: present confirmed/pending/outstanding/available separately;
+  deliberate checkbox and explicit lock confirmation, no modal auto-close.
+- `lib/expenses/service.ts` and DB triggers: frozen invoice cannot be
+  changed/deleted or its item shares/obligations replaced; creator-only
+  completion remains possible after ALL actual cash is confirmed with
+  no pending claims. Historical snapshot remains unchanged after later cash.
+- Read-only late bill count detects invoices absent from sealed source;
+  late adjustment attribution belongs only to SC-006.
+- `SC-004-SNAPSHOTS.md`: exact temporal and ledger contract.
 
+**Final verified code SHA `6d92641af38e528197346df0d765b68b781355b7`**
+- [CI (lint, typecheck, unit, Next.js build) — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41870490676).
+- [Disposable PostgreSQL 17 migration twice, integration and live HTTP — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41870490588).
+- `settlement-cycle-snapshot.integration.mjs`: direct DB checks for
+  valid lock only with complete manifest, immutable source versions,
+  zero destructive changes, created/confirmed payments after lock,
+  frozen invoice creator completion only when paid.
+- `preview-http.smoke.mjs`: **551** obligations across **551** invoices,
+  confirmed and pending allocations, exclusive end-date and deleted
+  invoices excluded, stale fingerprint after cash confirmation,
+  two simultaneous owner/delegate locks ([200,409]), idempotent retry,
+  late expense count after lock, old snapshot unchanged after new cash,
+  creator-only invoice completion.
+- PostgreSQL tests used ephemeral GitHub Actions service; **no shared
+  Neon development/production migration**.
 
-**Title:** Cycle state machine / immutable cycle identity, overlap prevention
-and manual/cron transitions using persisted schedule revisions.
+**Unimplemented / intentionally deferred**
+- Snapshot is an AS-OF baseline, not an authorization to pay that amount
+  after later confirmations. SC-005 MUST re-evaluate the actual live
+  available balance under locks before creating any settlement.
+- Late bills are only detected, not moved/charged into another period:
+  SC-006 adjustment design remains required. Full 10k+ stress/property
+  testing is also part of SC-007; current HTTP coverage exceeds both
+  legacy 100-invoice and 500-debt UI limits.
+- No set-off, bilateral calculator, auto-lock or auto-payment in SC-004.
+  `SETTLEMENT_CYCLE_ENGINE_READY=false` remains unmodified.
+- Draft PR #16, no merge into `develop`/`main`, no staging/production
+  deployment or shared Neon migration. Financial P0 release gate remains CLOSED.
 
-**Start procedure:** Read `BACKLOG.md`, `DOMAIN_RULES.md`, `PROGRESS.md` and
-`SC-002-SCHEDULE.md`. Stay on `feat/settlement-cycles-bilateral`; do not merge
-or deploy unfinished financial functionality. Implement SC-003 only; no
-financial eligibility/snapshots (SC-004) and NO bilateral netting (BN-*).
+## NEXT CONVERSATION: SC-005 ONLY
 
-**Review checklist:** correct schedule cutovers across timezones,
-half-open period overlap prevention, exact once per group/period, safe
-delayed cron and manual state transitions, version checks, negative
-authorization and immutable history; ensure default-OFF cannot
-create financial or scheduled cycles.
+**Ticket:** Same-direction batch repayment by pair, 50+ allocation support,
+idempotent requests and existing two-party confirmation, rechecking actual
+remaining and reserved balances rather than trusting old snapshot totals.
+Read all files in `docs/settlement-cycles/`, preserve
+`feat/settlement-cycles-bilateral`, keep PR Draft, test on disposable DB.
+**NO BN-* set-off or SC-006 member/recurring adjustments in SC-005.**
