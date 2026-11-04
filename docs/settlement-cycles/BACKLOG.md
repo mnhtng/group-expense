@@ -38,7 +38,7 @@
 | SC-003 | P0 | Cycle state machine / immutable cycle identity + overlap prevention + manual/cron transitions | SC-002 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO FINANCIAL ACTIONS |
 | SC-004 | P0 | Eligible obligation snapshots: date boundary, cash confirmed/pending, late bills, frozen versions, canonical SQL | SC-003 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; REVIEW PENDING |
 | SC-005 | P0 | Same-direction batch repayment by pair, 50+ allocations, idempotent requests and scoped confirmation | SC-004 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; RELEASE GATED OFF |
-| BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | TODO |
+| BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | IMPLEMENTED — UNIT/CI VERIFICATION PENDING |
 | BN-002 | P0 | Bilateral proposal persistence, one group+cycle+pair+version, stable fingerprint and conflict handling | BN-001 | TODO |
 | BN-003 | P0 | Dual approval with identities, invalidation/rejection/expiry/revoke, no auto-apply | BN-002 | TODO |
 | BN-004 | P0 | Atomic noncash set-off ledger + reservations, exact A↔B balance conservation, immutable audit | BN-003 | TODO |
@@ -170,6 +170,41 @@ attribution, no SC-008 full mobile UI, no automatic debit/transfer,
 no financial engine activation, no shared Neon migration or release.
 Batch status `pending` does NOT discharge debt; the two original
 counterparties alone control confirmation.
+
+## BN-001 — pure bilateral offset calculator (current conversation)
+
+**Implementation:** `lib/settlement-cycles/bilateral-calculator.ts`.
+Only one active pair (A,B), one group, one LOCKED cycle and one currency
+(VND); exactly one half-open local `[start,end)` interval. Every input
+original obligation is verified for scope, snapshot attribution, nonvoid
+status, undeleted source invoice and equal snapshot/live expense version.
+Unexpected third persons, duplicate source IDs, wrong period, currency,
+negative/overbooked money or malformed input fail CLOSED.
+
+All money computations use BigInt:
+`outstanding=original-confirmed_cash-confirmed_setoff`,
+`available=outstanding-pending_cash-pending_setoff`,
+`offset=min(SUM(available_A_to_B),SUM(available_B_to_A))`.
+Apply exactly the SAME hypothetical set-off amount against both directions,
+oldest original invoice date then canonical obligation UUID, with no
+floating point, loss of audit or input mutation. The resulting allocations
+are **not** paid, approved or persisted.
+
+**Test:** `tests/bilateral-calculator.test.mjs` covers 16 independent
+scenarios including two-way conservation, one-sided/zero/full-paid,
+partial confirmed cash/set-off, pending cash/set-off, cancelled reservations,
+reversed pair labels, stale dates/versions, cross-group/cycle/3rd party,
+exact BigInt, 1,200 deterministic property scenarios and 10,000 sources.
+Direct independent JS-equivalent execution: 16/16 passed.
+Official GitHub CI, TypeScript build and PostgreSQL/HTTP regressions must
+also pass before changing status to DONE; do not skip this release gate.
+
+**Detailed contract:** [BN-001-CALCULATOR.md](./BN-001-CALCULATOR.md).
+
+**Explicit exclusion:** No BN-002 proposal/fingerprint, BN-003 approvals,
+BN-004 ledger, SC-006 late adjustments, financial schema or API changes.
+`SETTLEMENT_CYCLE_ENGINE_READY=false`, Draft PR #16, no deployment or
+shared Neon migration.
 
 ## Design debt & migration/release gates
 
