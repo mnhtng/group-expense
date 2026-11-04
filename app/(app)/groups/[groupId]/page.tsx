@@ -4,7 +4,7 @@ import {
   countExpenseStatuses,listExpenses,type ExpenseListFilter,type ExpenseSummary,
 } from "@/lib/expenses/service";
 import Link from "next/link";
-import { formatDateDMY } from "@/lib/date-format";
+import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
 import { notFound, redirect } from "next/navigation";
 
 const vnd=(minor:string)=>new Intl.NumberFormat("vi-VN").format(BigInt(minor))+" ₫";
@@ -97,7 +97,7 @@ export default async function GroupPage({params,searchParams}:{
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-xs">
           {invoice.completedAt
-            ? <span className="font-medium text-money-in">✓ Chốt ngày {formatDateDMY(invoice.completedAt.slice(0,10))}</span>
+            ? <span className="font-medium text-money-in">✓ Chốt ngày {formatDateTimeDMY(invoice.completedAt)}</span>
             : BigInt(invoice.remainingMinor)===0n
               ? <span className="text-money-in">Công nợ đã được xác nhận đầy đủ</span>
               : <span className="text-muted-foreground">
