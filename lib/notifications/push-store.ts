@@ -40,6 +40,15 @@ export async function subscribePush(userId:string,data:unknown) {
     [randomUUID(),userId,s.endpoint,s.keys.p256dh,s.keys.auth]);
   if(!r.rowCount)throw new NotificationInputError(400,"Thiết bị đã được gắn với tài khoản khác.");
 }
+/** Browser-side subscriptions alone are not proof of server delivery. */
+export async function hasSavedPushSubscription(userId:string,endpoint:unknown):Promise<boolean> {
+  if(!validUrl(endpoint))return false;
+  const result=await pool.query(
+    "SELECT 1 FROM push_subscriptions WHERE user_id=$1 AND endpoint=$2 LIMIT 1",
+    [userId,endpoint],
+  );
+  return Boolean(result.rowCount);
+}
 export async function unsubscribePush(userId:string,endpoint:unknown) {
   if(!validUrl(endpoint))throw new NotificationInputError(400,"Endpoint không hợp lệ.");
   await pool.query("DELETE FROM push_subscriptions WHERE user_id=$1 AND endpoint=$2",[userId,endpoint]);
