@@ -1970,7 +1970,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
        VALUES($1,$2,$3,$4,$5,$4,$6,1,250)`,
       [sc005OtherPending.body.id,sc003Group,sc003Pending.id,
         otherUser.id,registered.user.id,sc005Fresh.fingerprint]),
-      /foreign key constraint/);
+      /SC-005 repayment cannot bind invalid/);
     await assert.rejects(pool.query(
       `INSERT INTO group_settlement_cycle_repayments
        (settlement_id,group_id,cycle_id,debtor_id,creditor_id,
