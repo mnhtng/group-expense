@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
-import { getGroupDetails, getMemberRole, listMembers, listGroupNoteEvents } from "@/lib/groups/service";
-import { getExitEligibility, listMembershipNoteEvents } from "@/lib/groups/membership";
+import { getGroupDetails, getMemberRole, listMembers } from "@/lib/groups/service";
+import { getExitEligibility } from "@/lib/groups/membership";
 import { GroupMembershipManager } from "@/components/groups/group-membership-manager";
 import { GroupRenameForm } from "@/components/groups/group-rename-form";
 import { GroupArchiveForm } from "@/components/groups/group-archive-form";
@@ -19,11 +19,9 @@ export default async function ManageGroupPage({ params, searchParams }: {
   if (!role) notFound();
   const group = await getGroupDetails(groupId, user.id);
   if (!group) notFound();
-  const [members, eligibility, noteEvents, membershipNotes] = await Promise.all([
+  const [members, eligibility] = await Promise.all([
     listMembers(groupId, user.id),
     getExitEligibility(groupId, user.id),
-    listGroupNoteEvents(groupId, user.id),
-    listMembershipNoteEvents(groupId,user.id),
   ]);
   if (!eligibility) notFound();
 
@@ -46,7 +44,7 @@ export default async function ManageGroupPage({ params, searchParams }: {
 
     {canManage && <section aria-labelledby="rename-group" className="space-y-4 rounded-3xl border bg-card p-5">
       <h2 id="rename-group" className="text-lg font-semibold">Thông tin nhóm</h2>
-      <GroupRenameForm groupId={groupId} initialName={group.name} initialNotes={group.notes??""}/>
+      <GroupRenameForm groupId={groupId} initialName={group.name}/>
     </section>}
 
     <section aria-labelledby="members-heading" className="space-y-4">
@@ -59,24 +57,6 @@ export default async function ManageGroupPage({ params, searchParams }: {
       <h2 id="invite-heading" className="text-lg font-semibold">Mời thành viên</h2>
       <p className="text-sm text-muted-foreground">Link mời có hiệu lực 7 ngày.</p>
       <GroupInviteForm groupId={groupId} groupName={group.name} initialInviteUrl={inviteUrl ?? undefined}/>
-    </section>}
-
-    {membershipNotes.length>0&&<section className="space-y-3 rounded-3xl border bg-card p-5">
-      <h2 className="text-lg font-semibold">Ghi chú thay đổi thành viên</h2>
-      {membershipNotes.map(event=><div key={event.id} className="space-y-1 border-t pt-3 text-sm">
-        <p className="text-xs text-muted-foreground">
-          {event.actorName} · {event.memberName} · {new Intl.DateTimeFormat("vi-VN",{dateStyle:"medium",timeStyle:"short",timeZone:"Asia/Ho_Chi_Minh"}).format(new Date(event.recordedAt))}
-        </p>
-        <p className="whitespace-pre-wrap break-words">{event.note}</p>
-      </div>)}
-    </section>}
-
-    {noteEvents.some(event=>event.note)&&<section className="space-y-3 rounded-3xl border bg-card p-5">
-      <h2 className="text-lg font-semibold">Ghi chú và lịch sử nhóm</h2>
-      {noteEvents.filter(event=>event.note).map(event=><div key={event.id} className="space-y-1 border-t pt-3 text-sm">
-        <p className="text-xs text-muted-foreground">{event.actorName} · {new Intl.DateTimeFormat("vi-VN",{dateStyle:"medium",timeStyle:"short",timeZone:"Asia/Ho_Chi_Minh"}).format(new Date(event.recordedAt))}</p>
-        <p className="whitespace-pre-wrap break-words">{event.note}</p>
-      </div>)}
     </section>}
 
     {role === "owner" && <section aria-labelledby="archive-heading"
