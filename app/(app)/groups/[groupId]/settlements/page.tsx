@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatDateTimeDMY } from "@/lib/date-format";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails } from "@/lib/groups/service";
@@ -7,10 +8,6 @@ import { listGroupSettlements } from "@/lib/settlements/service";
 const vnd = (n: string) => new Intl.NumberFormat("vi-VN").format(BigInt(n)) + " ₫";
 const labels = { pending: "Chờ xác nhận", confirmed: "Đã xác nhận",
   rejected: "Đã từ chối", cancelled: "Đã hủy" } as const;
-const dateTime = (value: string) => new Intl.DateTimeFormat("vi-VN", {
-  day: "2-digit", month: "2-digit", year: "numeric",
-  hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh",
-}).format(new Date(value));
 
 export default async function SettlementsPage({ params }: { params: Promise<{ groupId: string }> }) {
   const { groupId } = await params;
@@ -35,7 +32,7 @@ export default async function SettlementsPage({ params }: { params: Promise<{ gr
         className="block space-y-2 rounded-2xl border bg-card p-4 transition-colors hover:bg-secondary/40">
         <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
           <span>{labels[x.status]}</span>
-          <span>{dateTime(x.createdAt)}</span>
+          <span>{formatDateTimeDMY(x.createdAt)}</span>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-sm font-medium">{x.debtorName} trả {x.creditorName}</span>
