@@ -298,17 +298,25 @@ CREATE TRIGGER sc004_guard_expenses BEFORE UPDATE OR DELETE ON expenses
  FOR EACH ROW EXECUTE FUNCTION sc004_guard_frozen_expense();
 
 CREATE FUNCTION sc004_guard_frozen_items() RETURNS trigger LANGUAGE plpgsql AS $sc004$
-DECLARE expense_ref uuid;
+DECLARE old_expense uuid; new_expense uuid;
 BEGIN
+  -- Check BOTH source and destination. Moving an item/share OUT of a frozen
+  -- invoice must not bypass immutable historical source constraints.
   IF TG_TABLE_NAME='expense_items' THEN
-    expense_ref=CASE WHEN TG_OP='DELETE' THEN OLD.expense_id ELSE NEW.expense_id END;
+    IF TG_OP<>'INSERT' THEN old_expense=OLD.expense_id; END IF;
+    IF TG_OP<>'DELETE' THEN new_expense=NEW.expense_id; END IF;
   ELSE
-    SELECT expense_id INTO expense_ref FROM expense_items
-      WHERE id=CASE WHEN TG_OP='DELETE' THEN OLD.item_id ELSE NEW.item_id END;
+    IF TG_OP<>'INSERT' THEN
+      SELECT expense_id INTO old_expense FROM expense_items WHERE id=OLD.item_id;
+    END IF;
+    IF TG_OP<>'DELETE' THEN
+      SELECT expense_id INTO new_expense FROM expense_items WHERE id=NEW.item_id;
+    END IF;
   END IF;
   IF EXISTS(SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
     JOIN group_settlement_cycles c ON c.id=se.cycle_id
-    WHERE se.expense_id=expense_ref AND c.state='locked') THEN
+    WHERE se.expense_id=ANY(ARRAY[old_expense,new_expense])
+      AND c.state='locked') THEN
     RAISE EXCEPTION 'Frozen invoice item shares cannot change';
   END IF;
   RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
