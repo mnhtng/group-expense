@@ -9,6 +9,7 @@ import {
 } from "@/lib/settlement-cycles/calendar";
 import type {ScheduleView} from "@/lib/settlement-cycles/schedule";
 import type {CycleRecord} from "@/lib/settlement-cycles/lifecycle";
+import {SettlementSnapshotPanel} from "@/components/groups/settlement-snapshot-panel";
 
 /** SC-003 metadata-only controls; not a cash/settlement or completion UI. */
 export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
@@ -134,6 +135,12 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
             className="min-h-11 rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-50">
             Chuyển sang chờ rà soát
           </button>}
+        {(cycle.state==="review"||cycle.state==="locked")&&
+          <SettlementSnapshotPanel key={cycle.id}
+            groupId={groupId} cycleId={cycle.id} version={cycle.version}
+            canManage={requestedEnabled&&schedule.canManage}
+            locked={cycle.state==="locked"}/>}
+
       </div>)}
     </div>}
     {message&&<p role="status" className="text-sm text-muted-foreground">{message}</p>}
