@@ -1527,6 +1527,75 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       "SELECT count(*)::int AS n FROM group_settlement_cycles WHERE group_id=$1",
       [sc003AutomaticGroup])).rows[0].n,5);
 
+    // Multi-revision cutover: old weekly stops EXACTLY where new
+    // biweekly starts. No gap, overlap or duplicated historical period.
+    const sc003RevisionsGroup=randomUUID();
+    const sc003OldRev=randomUUID(),sc003NewRev=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'SC003 revision boundary')",
+      [sc003RevisionsGroup,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
+      [sc003RevisionsGroup,registered.user.id]);
+    const revSettings=`${origin}/api/groups/${sc003RevisionsGroup}/settlement-cycle/settings`;
+    const revApi=`${origin}/api/groups/${sc003RevisionsGroup}/settlement-cycle/cycles`;
+    assert.equal((await expenseRequest("PATCH",revSettings,
+      config(0,true,false),jar)).response.status,200);
+    await pool.query(`UPDATE group_settlement_config_events SET recorded_at=$2::timestamptz
+      WHERE group_id=$1 AND event_type='settings_changed'`,
+      [sc003RevisionsGroup,sc003Date(-43)+"T00:00:00Z"]);
+    await pool.query(`INSERT INTO group_settlement_schedule_heads
+      (group_id,version,updated_by) VALUES($1,2,$2)`,
+      [sc003RevisionsGroup,registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,1,'weekly','UTC',$3,$4,$5)`,
+      [sc003OldRev,sc003RevisionsGroup,sc003Date(-42),
+        sc003Date(-42)+"T00:00:00Z",registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,2,'biweekly','UTC',$3,$4,$5)`,
+      [sc003NewRev,sc003RevisionsGroup,sc003Date(-14),
+        sc003Date(-14)+"T00:00:00Z",registered.user.id]);
+    const revRefresh=await expenseRequest("POST",revApi+"/refresh",{},jar);
+    assert.equal(revRefresh.response.status,200,JSON.stringify(revRefresh.body));
+    assert.equal(revRefresh.body.created,6);
+    assert.equal(revRefresh.body.reviewed,5);
+    const revRows=(await expenseRequest("GET",revApi,undefined,jar)).body.cycles
+      .sort((a,b)=>a.startAt.localeCompare(b.startAt));
+    assert.equal(revRows.length,6);
+    for(let i=1;i<revRows.length;i++)
+      assert.equal(revRows[i-1].endAt,revRows[i].startAt,
+        "revision cutover must preserve exact touching UTC boundaries");
+    assert.equal(revRows.filter(x=>x.scheduleRevisionId===sc003OldRev).length,4);
+    assert.equal(revRows.filter(x=>x.scheduleRevisionId===sc003NewRev).length,2);
+    assert.equal((await expenseRequest("POST",revApi+"/refresh",{},jar)).body.created,0);
+
+    // Opt-in AFTER past periods: the service must NEVER backfill those
+    // historical periods into a newly enabled group's metadata.
+    const sc003NewOptGroup=randomUUID(),sc003NewOptRev=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'SC003 late opt in')",
+      [sc003NewOptGroup,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
+      [sc003NewOptGroup,registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_heads
+      (group_id,updated_by) VALUES($1,$2)`,
+      [sc003NewOptGroup,registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,1,'weekly','UTC',$3,$4,$5)`,
+      [sc003NewOptRev,sc003NewOptGroup,sc003Date(-21),
+        sc003Date(-21)+"T00:00:00Z",registered.user.id]);
+    assert.equal((await expenseRequest("PATCH",
+      `${origin}/api/groups/${sc003NewOptGroup}/settlement-cycle/settings`,
+      config(0,true,false),jar)).response.status,200);
+    const freshRefresh=await expenseRequest("POST",
+      `${origin}/api/groups/${sc003NewOptGroup}/settlement-cycle/cycles/refresh`,{},jar);
+    assert.equal(freshRefresh.response.status,200);
+    assert.equal(freshRefresh.body.created,0,
+      "late opt-in must not create retroactive weekly cycles");
+    assert.equal((await pool.query(
+      "SELECT count(*)::int AS n FROM group_settlement_cycles WHERE group_id=$1",
+      [sc003NewOptGroup])).rows[0].n,0);
+
     const sc003CronSecret=process.env.CRON_SECRET;
     if(sc003CronSecret){
       // Existing Cron endpoint has an independent bearer secret, not session auth.
