@@ -34,7 +34,7 @@
 | ID | Priority | Deliverable | Dependencies | Status |
 |---|---|---|---|---|
 | SC-001 | P0 | Safe feature flags + owner/delegate grants + authz, default OFF, audit, backward compatibility; **NO financial calculation** | none | DONE ON FEATURE BRANCH — CI + HTTP/DB PASS; PR REVIEW PENDING |
-| SC-002 | P0 | Cycle configuration: timezone/anchor/frequency/ranges, versioning, safe future-only changes | SC-001 | TODO |
+| SC-002 | P0 | Cycle configuration: timezone/anchor/frequency/ranges, versioning, safe future-only changes | SC-001 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO ENGINE ACTIVATION |
 | SC-003 | P0 | Cycle state machine / immutable cycle identity + overlap prevention + manual/cron transitions | SC-002 | TODO |
 | SC-004 | P0 | Eligible obligation snapshots: date boundary, cash confirmed/pending, late bills, frozen versions, canonical SQL | SC-003 | TODO |
 | SC-005 | P0 | Same-direction batch repayment by pair, 50+ allocations, idempotent requests and scoped confirmation | SC-004 | TODO |
@@ -66,6 +66,29 @@
 - Invalid JSON, IDs, bad booleans, oversized bodies and unexpected fields fail with controlled 400 responses, not SQL 500.
 - No consumer enables actual money behavior until SC-003+SC-007 release gates are passed. Mark configuration as **preparation only** in UI.
 - CI green with an isolated test database and constraints checked; no action on `main`/production.
+
+## SC-002 — completed in second conversation (code in draft PR #16)
+
+**Scope:** versioned, future-only schedule metadata; weekly/biweekly/monthly/manual calendars,
+strict local date + IANA zone handling, half-open period boundaries, safe cutovers
+at existing period boundaries only, owner/delegate API authorization, audit,
+database immutability, and a preview-only UI panel.
+
+**Hard exclusions:** do not create cycle records or run a cycle engine (SC-003),
+do not calculate eligibility/snapshots (SC-004), do not create cash or set-off
+allocations (SC-005, BN-*), do not enable the engine release gate.
+
+**Acceptance:** first schedule may start only after the current local date.
+A running schedule is immutable; future changes must be aligned to the old
+period boundary, and timezone changes must preserve the exact UTC cutover.
+Previously scheduled, not-yet-effective changes may be superseded under
+group lock and expectedVersion; history/audit must be preserved.
+Invalid IANA zones/dates and ambiguous DST midnight rejected.
+Tests must exercise a 31st-day monthly anchor, a biweekly anchor, stale
+and concurrent updates, revoked/unauthorized delegates and a zero-mutation
+ledger assertion. The existing configuration and monetary behavior remain OFF.
+
+**Detailed operational contract:** [SC-002-SCHEDULE.md](./SC-002-SCHEDULE.md).
 
 ## Design debt & migration/release gates
 
