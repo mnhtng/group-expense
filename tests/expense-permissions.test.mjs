@@ -30,8 +30,8 @@ test("service enforces creator-only for PATCH and DELETE without owner/admin exc
 test("expense page and edit URL both enforce the same creator-only policy", () => {
   const detail = read("app/(app)/groups/[groupId]/expenses/[expenseId]/page.tsx");
   const edit = read("app/(app)/groups/[groupId]/expenses/[expenseId]/edit/page.tsx");
-  assert.match(detail, /canEdit\s*=\s*canModifyExpense\(expense\.createdBy, user\.id\)/);
-  assert.match(edit, /if \(!canModifyExpense\(expense\.createdBy, user\.id\)\) notFound\(\)/);
+  assert.match(detail, /canEdit\s*=\s*canModifyExpense\(expense\.createdBy,\s*user\.id\)/);
+  assert.match(edit, /if \(!canModifyExpense\(expense\.createdBy,\s*user\.id\)\) notFound\(\)/);
   for (const source of [detail, edit]) {
     assert.doesNotMatch(source, /role\s*===\s*["'](?:owner|admin)["']/);
     assert.doesNotMatch(source, /role\s*!==\s*["'](?:owner|admin)["']/);
