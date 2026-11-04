@@ -63,11 +63,11 @@ test("SC-003 isolated SQL: no overlapping cycles, immutable identity, legal tran
        "2026-11-01T00:00:00Z","2026-11-03T00:00:00Z",null,randomUUID()],
       "23514");
     await reject("UPDATE group_settlement_cycles SET period_end='2026-10-09' WHERE id=$1",
-      [cycleA],"Only OPEN to REVIEW");
+      [cycleA],"Invalid cycle state transition");
     await reject("DELETE FROM group_settlement_cycles WHERE id=$1",
       [cycleA],"Settlement cycles cannot be deleted");
     await reject("UPDATE group_settlement_cycles SET state='review',version=2,reviewed_at='2026-10-01T00:00:00Z' WHERE id=$1",
-      [cycleB],"Only OPEN to REVIEW");
+      [cycleB],"Invalid cycle state transition");
     const reviewed=await c.query(
       `UPDATE group_settlement_cycles SET state='review',version=version+1,
        reviewed_at=clock_timestamp(),updated_at=clock_timestamp()
@@ -75,9 +75,9 @@ test("SC-003 isolated SQL: no overlapping cycles, immutable identity, legal tran
       [cycleA]);
     assert.deepEqual(reviewed.rows[0],{state:"review",version:2});
     await reject("UPDATE group_settlement_cycles SET state='open',version=3,reviewed_at=NULL WHERE id=$1",
-      [cycleA],"Only OPEN to REVIEW");
+      [cycleA],"Invalid cycle state transition");
     await reject("UPDATE group_settlement_cycles SET state='locked',version=3 WHERE id=$1",
-      [cycleA],"Only OPEN to REVIEW");
+      [cycleA],"Invalid cycle state transition");
 
     const evt=randomUUID();
     await c.query(`INSERT INTO group_settlement_cycle_events
