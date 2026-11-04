@@ -141,13 +141,23 @@ export async function updateSettlementSchedule(
     }
     // The above guards run INSIDE the transaction after permission+group locks.
     // A planned revision can be replaced, but an active/historical one cannot.
+    // Re-check wall-clock time inside the locked transaction. A request that
+    // stalls across local midnight must NEVER backdate a schedule change.
+    const clock=await client.query<{future:boolean}>(
+      "SELECT $1::timestamptz > clock_timestamp() AS future",[effectiveAt],
+    );
+    if(!clock.rows[0]?.future)throw new SettlementSettingsError(409,
+      "Thời điểm áp dụng đã qua. Vui lòng tải lại và chọn ngày khác.");
     if(pending) {
-      await client.query(
+      const retired=await client.query(
         `UPDATE group_settlement_schedule_revisions
-         SET superseded_at=now() WHERE id=$1 AND superseded_at IS NULL
-           AND effective_at>now()`,
+         SET superseded_at=clock_timestamp()
+         WHERE id=$1 AND superseded_at IS NULL
+           AND effective_at>clock_timestamp()`,
         [pending.id],
       );
+      if(retired.rowCount!==1)throw new SettlementSettingsError(409,
+        "Lịch đang chờ đã bắt đầu. Tải lại trước khi thay đổi.");
     }
     const version=headVersion+1;
     if(!headVersion) {
