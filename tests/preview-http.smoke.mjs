@@ -880,6 +880,58 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal((await expenseRequest("POST",bLeave,undefined,otherJar)).response.status,409,
       "pending settlement still blocks exit");
     assert.equal((await expenseRequest("PATCH",finalizeUrl,{action:"confirm"},jar)).response.status,200);
+
+    // All debts fully confirmed -> creator must explicitly close each invoice.
+    const beforeClose=(await expenseRequest("GET",endpoint)).body.expenses;
+    const readyReceipt=beforeClose.find(x=>x.id===receipt2.body.id);
+    const readyReceipt3=beforeClose.find(x=>x.id===receipt3.body.id);
+    assert.equal(readyReceipt.remainingMinor,"0");
+    assert.equal(readyReceipt.pendingMinor,"0");
+    assert.equal(readyReceipt.completedAt,null,"payoff does not automatically close the invoice");
+    assert.equal(readyReceipt3.remainingMinor,"0");
+    const readyIds=beforeClose.filter(x=>!x.completedAt &&
+      x.remainingMinor==="0" && x.pendingMinor==="0").map(x=>x.id);
+    assert.equal(beforeClose[0].id,readyIds[0],"ready invoices are sorted to the top");
+    const closeUrl=`${endpoint}/${receipt2.body.id}/complete`;
+    assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:1},new Map())).response.status,401);
+    assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:1,note:"not the creator"},thirdJar))
+      .response.status,403,"group OWNER may not close an invoice created by someone else");
+    assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:1},otherJar))
+      .response.status,403,"debtor may not close creator's invoice");
+    assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:88},jar))
+      .response.status,409,"closing must check optimistic version");
+    const closed=await expenseRequest("POST",closeUrl,{expectedVersion:1,note:"Đã nhận đủ từ mọi người"},jar);
+    assert.equal(closed.response.status,200,JSON.stringify(closed.body));
+    assert.equal(closed.body.completed,true);
+    assert.equal(closed.body.version,2);
+    assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:1},jar))
+      .response.status,409,"closing twice is forbidden");
+    const completedDetail=await expenseRequest("GET",`${endpoint}/${receipt2.body.id}`,undefined,jar);
+    assert.equal(completedDetail.response.status,200);
+    assert.ok(completedDetail.body.expense.completedAt);
+    assert.equal(completedDetail.body.expense.completedBy,registered.user.id);
+    assert.equal(completedDetail.body.expense.completionNote,"Đã nhận đủ từ mọi người");
+    assert.equal((await expenseRequest("PATCH",`${endpoint}/${receipt2.body.id}`,{
+      expectedVersion:2,expense:debtDraft,
+    },jar)).response.status,409,"completed invoice cannot be edited");
+    assert.equal((await expenseRequest("DELETE",`${endpoint}/${receipt2.body.id}`,{
+      expectedVersion:2,
+    },jar)).response.status,409,"completed invoice cannot be deleted");
+    const closedEvent=await pool.query(
+      "SELECT actor_id,operation,version,snapshot->>'note' AS note FROM expense_events WHERE expense_id=$1 AND operation='completed'",
+      [receipt2.body.id],
+    );
+    assert.equal(closedEvent.rows.length,1);
+    assert.equal(closedEvent.rows[0].actor_id,registered.user.id);
+    assert.equal(closedEvent.rows[0].note,"Đã nhận đủ từ mọi người");
+    const afterClose=(await expenseRequest("GET",endpoint)).body.expenses;
+    assert.ok(afterClose.find(x=>x.id===receipt2.body.id).completedAt);
+    assert.equal(afterClose.find(x=>x.id===receipt3.body.id).completedAt,null,
+      "finalizing one invoice must not auto-complete unrelated invoices");
+    assert.equal((await expenseRequest("GET",debtEndpoint)).body.debts.find(
+      x=>x.expenseId===receipt2.body.id).outstandingMinor,"0",
+      "completion does not remove or rewrite settled debts");
+
     assert.equal((await expenseRequest("GET",bLeave,undefined,otherJar)).body.eligibility.canLeave,true);
     assert.equal((await expenseRequest("POST",bLeave,undefined,otherJar)).response.status,200);
     assert.equal((await expenseRequest("GET",debtEndpoint,undefined,otherJar)).response.status,404);
