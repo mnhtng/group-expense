@@ -35,7 +35,7 @@
 |---|---|---|---|---|
 | SC-001 | P0 | Safe feature flags + owner/delegate grants + authz, default OFF, audit, backward compatibility; **NO financial calculation** | none | DONE ON FEATURE BRANCH — CI + HTTP/DB PASS; PR REVIEW PENDING |
 | SC-002 | P0 | Cycle configuration: timezone/anchor/frequency/ranges, versioning, safe future-only changes | SC-001 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO ENGINE ACTIVATION |
-| SC-003 | P0 | Cycle state machine / immutable cycle identity + overlap prevention + manual/cron transitions | SC-002 | TODO |
+| SC-003 | P0 | Cycle state machine / immutable cycle identity + overlap prevention + manual/cron transitions | SC-002 | IMPLEMENTED — FINAL CI/HTTP VERIFICATION PENDING |
 | SC-004 | P0 | Eligible obligation snapshots: date boundary, cash confirmed/pending, late bills, frozen versions, canonical SQL | SC-003 | TODO |
 | SC-005 | P0 | Same-direction batch repayment by pair, 50+ allocations, idempotent requests and scoped confirmation | SC-004 | TODO |
 | BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | TODO |
@@ -89,6 +89,35 @@ and concurrent updates, revoked/unauthorized delegates and a zero-mutation
 ledger assertion. The existing configuration and monetary behavior remain OFF.
 
 **Detailed operational contract:** [SC-002-SCHEDULE.md](./SC-002-SCHEDULE.md).
+
+## SC-003 — lifecycle metadata and audit (third conversation)
+
+**Implementation scope (strictly this ticket):**
+- Metadata-only periods, half-open local/UTC ranges, immutable identity,
+  PostgreSQL `btree_gist` exclusion against overlapping periods across
+  revisions and timezones, one idempotent manual request per key.
+- `OPEN (v1) -> REVIEW (v2)` is the **only** allowed transition.
+  SC-004 alone will add financial review/snapshots and any LOCKED transition.
+- Owner/delegate may create manual cycles under a manual schedule, request
+  review after the period, or refresh automatically scheduled metadata.
+  Admin without delegation cannot.
+- Cron metadata processing is bounded and fair, catches up delayed periods
+  only from the group's most recent explicitly audited opt-in.
+  A disabled, archived, or never-enabled group cannot create new cycles.
+- Existing SC-001 financial engine flag stays OFF. There is no financial
+  attribution, repayment, set-off, invoice completion or real-money lock.
+- Snapshot creation, obligation eligibility and monetary calculations remain
+  **explicitly prohibited** in this ticket.
+
+**Required acceptance:** PostgreSQL schema/FK/unique/exclusion/immutability,
+no overlap and adjacent-boundary acceptance, delayed cron idempotency,
+two simultaneous manual creation requests, valid opt-in window, no
+retroactive import, safe old/new schedule cutover and no change to existing
+ledger tables. Validate session and owner/delegate permissions, revocations,
+stale versions, early reviews, and duplicate actions. Run CI + disposable
+Postgres/HTTP and record actual results in PROGRESS.md before marking DONE.
+
+See [SC-003-LIFECYCLE.md](./SC-003-LIFECYCLE.md) for all state semantics.
 
 ## Design debt & migration/release gates
 
