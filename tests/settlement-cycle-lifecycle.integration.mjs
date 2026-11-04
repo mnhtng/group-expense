@@ -45,8 +45,8 @@ test("SC-003 isolated SQL: no overlapping cycles, immutable identity, legal tran
     await c.query(insert,first);
     await reject(insert,manual(randomUUID(),"2026-10-07","2026-10-10",
       "2026-10-07T00:00:00Z","2026-10-10T00:00:00Z"),"23P01");
-    await reject(insert,manual(randomUUID(),"2026-10-01","2026-10-08",
-      "2026-10-01T00:00:00Z","2026-10-08T00:00:00Z"),"23P01");
+    await reject(insert,manual(randomUUID(),"2026-10-02","2026-10-06",
+      "2026-10-02T00:00:00Z","2026-10-06T00:00:00Z"),"23P01");
     // Adjacent [end,start) does NOT overlap.
     await c.query(insert,manual(cycleB,"2026-10-08","2026-10-15",
       "2026-10-08T00:00:00Z","2026-10-15T00:00:00Z"));
@@ -66,7 +66,7 @@ test("SC-003 isolated SQL: no overlapping cycles, immutable identity, legal tran
       [cycleA],"Only OPEN to REVIEW");
     await reject("DELETE FROM group_settlement_cycles WHERE id=$1",
       [cycleA],"Settlement cycles cannot be deleted");
-    await reject("UPDATE group_settlement_cycles SET state='review',version=2,reviewed_at=clock_timestamp() WHERE id=$1",
+    await reject("UPDATE group_settlement_cycles SET state='review',version=2,reviewed_at='2026-10-01T00:00:00Z' WHERE id=$1",
       [cycleB],"Only OPEN to REVIEW");
     const reviewed=await c.query(
       `UPDATE group_settlement_cycles SET state='review',version=version+1,
@@ -77,7 +77,7 @@ test("SC-003 isolated SQL: no overlapping cycles, immutable identity, legal tran
     await reject("UPDATE group_settlement_cycles SET state='open',version=3,reviewed_at=NULL WHERE id=$1",
       [cycleA],"Only OPEN to REVIEW");
     await reject("UPDATE group_settlement_cycles SET state='locked',version=3 WHERE id=$1",
-      [cycleA],"23514");
+      [cycleA],"Only OPEN to REVIEW");
 
     const evt=randomUUID();
     await c.query(`INSERT INTO group_settlement_cycle_events
