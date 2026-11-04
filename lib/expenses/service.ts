@@ -14,18 +14,51 @@ export class ExpenseAccessError extends Error {
   }
 }
 
-type ExpenseSummary = {
+export type ExpenseSummary = {
   id: string; title: string; totalMinor: string; occurredOn: string;
   payerId: string; payerName: string; version: number; itemCount: number;
+  createdBy: string; creatorName: string;
+  completedAt: string | null; completedBy: string | null;
+  debtorCount: number;
+  dueMinor: string; confirmedMinor: string; pendingMinor: string; remainingMinor: string;
 };
+export type ExpenseListFilter = "active" | "completed" | "all";
 type ExpenseItem = {
   id: string; name: string; quantity: number; unitPriceMinor: string;
   amountMinor: string; shares: { userId: string; userName: string; amountMinor: string }[];
 };
 export type ExpenseDetail = ExpenseSummary & {
-  groupId: string; notes: string; createdBy: string;
+  groupId: string; notes: string;
   items: ExpenseItem[];
 };
+
+
+/** Shared, read-only rollup. All amounts are PostgreSQL bigint/numeric -> text.
+ * Pending settlements are NOT paid. A bill is ready only when remaining is 0.
+ * Zero-obligation bills can be finalized by their creator without a payment.
+ */
+const expensePaymentProgress = `
+ LEFT JOIN LATERAL (
+   SELECT count(*)::int AS "debtorCount",
+     COALESCE(sum(o.amount_minor),0)::text AS "dueMinor",
+     COALESCE(sum(COALESCE(p.confirmed,0)),0)::text AS "confirmedMinor",
+     COALESCE(sum(COALESCE(p.pending,0)),0)::text AS "pendingMinor",
+     COALESCE(sum(o.amount_minor-COALESCE(p.confirmed,0)),0)::text AS "remainingMinor"
+   FROM obligations o
+   LEFT JOIN LATERAL (
+     SELECT COALESCE(sum(a.amount_minor) FILTER (WHERE st.status='confirmed'),0) AS confirmed,
+            COALESCE(sum(a.amount_minor) FILTER (WHERE st.status='pending'),0) AS pending
+     FROM settlement_allocations a
+     JOIN settlements st ON st.id=a.settlement_id
+     WHERE a.obligation_id=o.id
+   ) p ON true
+   WHERE o.expense_id=e.id AND o.voided_at IS NULL
+ ) progress ON true
+`;
+
+function completionReady(summary: { remainingMinor: string; pendingMinor: string }): boolean {
+  return BigInt(summary.remainingMinor) === 0n && BigInt(summary.pendingMinor) === 0n;
+}
 
 async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
@@ -90,7 +123,7 @@ async function writeItems(client: PoolClient, groupId: string, expenseId: string
 }
 
 async function recordEvent(client: PoolClient, groupId: string, expenseId: string,
-  actorId: string, operation: "created" | "updated" | "deleted", version: number, snapshot: unknown) {
+  actorId: string, operation: "created" | "updated" | "deleted" | "completed", version: number, snapshot: unknown) {
   await client.query(
     `INSERT INTO expense_events
      (id, group_id, expense_id, actor_id, operation, version, snapshot)
@@ -122,8 +155,8 @@ export async function updateExpense(groupId: string, expenseId: string, actorId:
   expectedVersion: number, data: ExpenseInput) {
   return withTransaction(async client => {
     const { members } = await lockGroupMembers(client, groupId, actorId);
-    const current = await client.query<{ version: number; created_by: string }>(
-      `SELECT version, created_by FROM expenses
+    const current = await client.query<{ version: number; created_by: string; completed_at: string | null }>(
+      `SELECT version, created_by, completed_at FROM expenses
        WHERE id = $1 AND group_id = $2 AND deleted_at IS NULL FOR UPDATE`,
       [expenseId, groupId],
     );
@@ -132,6 +165,7 @@ export async function updateExpense(groupId: string, expenseId: string, actorId:
     if (!canModifyExpense(expense.created_by, actorId)) {
       throw new ExpenseAccessError(403, "Bạn không có quyền sửa hóa đơn.");
     }
+    if (expense.completed_at) throw new ExpenseAccessError(409, "Hóa đơn đã hoàn thành, không thể sửa.");
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
       throw new ExpenseAccessError(409, "Hóa đơn đã được cập nhật; tải lại trước khi sửa.");
     }
@@ -159,8 +193,8 @@ export async function deleteExpense(groupId: string, expenseId: string, actorId:
   const note=optionalNote(rawNote);
   return withTransaction(async client => {
     await lockGroupMembers(client, groupId, actorId);
-    const current = await client.query<{ version: number; created_by: string }>(
-      `SELECT version, created_by FROM expenses
+    const current = await client.query<{ version: number; created_by: string; completed_at: string | null }>(
+      `SELECT version, created_by, completed_at FROM expenses
        WHERE id=$1 AND group_id=$2 AND deleted_at IS NULL FOR UPDATE`,
       [expenseId, groupId],
     );
@@ -169,6 +203,7 @@ export async function deleteExpense(groupId: string, expenseId: string, actorId:
     if (!canModifyExpense(expense.created_by, actorId)) {
       throw new ExpenseAccessError(403, "Bạn không có quyền xóa hóa đơn.");
     }
+    if (expense.completed_at) throw new ExpenseAccessError(409, "Hóa đơn đã hoàn thành, không thể xóa.");
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
       throw new ExpenseAccessError(409, "Hóa đơn đã thay đổi; tải lại trước khi xóa.");
     }
@@ -189,24 +224,95 @@ const groupMemberGate = `EXISTS(
   WHERE gm.group_id=e.group_id AND gm.user_id=$2 AND gm.status='active' AND gg.archived_at IS NULL
 )`;
 
-export async function listExpenses(groupId: string, actorId: string): Promise<ExpenseSummary[]> {
+
+/** Counts include all invoices, not only the 100 shown in a given filter. */
+export async function countExpenseStatuses(groupId: string, actorId: string) {
+  const result = await pool.query<{
+    active: number; completed: number;
+  }>(
+    `SELECT
+       count(*) FILTER (WHERE e.completed_at IS NULL)::int AS active,
+       count(*) FILTER (WHERE e.completed_at IS NOT NULL)::int AS completed
+     FROM expenses e
+     WHERE e.group_id=$1 AND e.deleted_at IS NULL AND ${groupMemberGate}`,
+    [groupId,actorId],
+  );
+  return result.rows[0] ?? {active:0,completed:0};
+}
+
+export async function listExpenses(groupId: string, actorId: string,
+  filter: ExpenseListFilter = "all"): Promise<ExpenseSummary[]> {
   const gate = await pool.query(
     `SELECT 1 FROM group_members m JOIN groups g ON g.id=m.group_id
      WHERE m.group_id=$1 AND m.user_id=$2 AND m.status='active' AND g.archived_at IS NULL`,
-    [groupId, actorId],
+    [groupId,actorId],
   );
   if (!gate.rowCount) throw new ExpenseAccessError(404, "Không tìm thấy nhóm.");
+  const visibility = filter === "active" ? "AND e.completed_at IS NULL"
+    : filter === "completed" ? "AND e.completed_at IS NOT NULL" : "";
   const result = await pool.query<ExpenseSummary>(
     `SELECT e.id, e.title, e.total_minor::text AS "totalMinor",
-      e.occurred_on::text AS "occurredOn", e.payer_id AS "payerId",
-      u.name AS "payerName", e.version,
-      (SELECT count(*)::int FROM expense_items i WHERE i.expense_id=e.id) AS "itemCount"
-     FROM expenses e JOIN "user" u ON u.id=e.payer_id
+       e.occurred_on::text AS "occurredOn", e.payer_id AS "payerId",
+       payer.name AS "payerName", e.created_by AS "createdBy",
+       author.name AS "creatorName", e.version,
+       e.completed_at::text AS "completedAt", e.completed_by AS "completedBy",
+       (SELECT count(*)::int FROM expense_items i WHERE i.expense_id=e.id) AS "itemCount",
+       progress.*
+     FROM expenses e
+     JOIN "user" payer ON payer.id=e.payer_id
+     JOIN "user" author ON author.id=e.created_by
+     ${expensePaymentProgress}
      WHERE e.group_id=$1 AND e.deleted_at IS NULL AND ${groupMemberGate}
+       ${visibility}
      ORDER BY e.occurred_on DESC, e.created_at DESC LIMIT 100`,
     [groupId, actorId],
   );
   return result.rows;
+}
+
+/**
+ * Creator finalizes an invoice after all active obligations have been
+ * confirmed. Settlement payments and creator approval are separate facts.
+ * Locking the group first matches the existing settlement write lock order.
+ */
+export async function completeExpense(groupId: string, expenseId: string, actorId: string,
+  expectedVersion: number, rawNote?: unknown) {
+  const note = optionalNote(rawNote);
+  return withTransaction(async client => {
+    await lockGroupMembers(client,groupId,actorId);
+    const result=await client.query<{
+      id:string; version:number; createdBy:string; completedAt:string|null;
+      remainingMinor:string; pendingMinor:string; debtorCount:number;
+    }>(
+      `SELECT e.id,e.version,e.created_by AS "createdBy",e.completed_at::text AS "completedAt",
+              progress."remainingMinor",progress."pendingMinor",progress."debtorCount"
+       FROM expenses e ${expensePaymentProgress}
+       WHERE e.id=$1 AND e.group_id=$2 AND e.deleted_at IS NULL FOR UPDATE OF e`,
+      [expenseId,groupId],
+    );
+    const invoice=result.rows[0];
+    if(!invoice)throw new ExpenseAccessError(404,"Không tìm thấy hóa đơn.");
+    if(!canModifyExpense(invoice.createdBy,actorId))
+      throw new ExpenseAccessError(403,"Chỉ người tạo hóa đơn được xác nhận hoàn thành.");
+    if(invoice.completedAt)throw new ExpenseAccessError(409,"Hóa đơn này đã hoàn thành.");
+    if(!Number.isSafeInteger(expectedVersion) || expectedVersion!==invoice.version)
+      throw new ExpenseAccessError(409,"Hóa đơn đã thay đổi. Tải lại trước khi xác nhận.");
+    if(!completionReady(invoice))
+      throw new ExpenseAccessError(409,"Chưa thể hoàn thành: vẫn còn tiền chưa xác nhận thanh toán.");
+
+    const version=invoice.version+1;
+    await client.query(
+      `UPDATE expenses SET completed_at=now(),completed_by=$3,
+       version=$4,updated_at=now()
+       WHERE id=$1 AND group_id=$2 AND completed_at IS NULL`,
+      [expenseId,groupId,actorId,version],
+    );
+    await recordEvent(client,groupId,expenseId,actorId,"completed",version,{
+      note,confirmedBy:actorId,debtorCount:invoice.debtorCount,
+      remainingMinor:invoice.remainingMinor,previousVersion:invoice.version,
+    });
+    return {id:expenseId,version,completed:true};
+  });
 }
 
 export async function getExpense(groupId: string, expenseId: string, actorId: string): Promise<ExpenseDetail | null> {
@@ -216,9 +322,14 @@ export async function getExpense(groupId: string, expenseId: string, actorId: st
     const head = await client.query<ExpenseDetail>(
       `SELECT e.id, e.group_id AS "groupId", e.title, coalesce(e.notes,'') AS notes,
        e.total_minor::text AS "totalMinor", e.occurred_on::text AS "occurredOn",
-       e.payer_id AS "payerId", u.name AS "payerName", e.created_by AS "createdBy",
-       e.version, (SELECT count(*)::int FROM expense_items WHERE expense_id=e.id) AS "itemCount"
+       e.payer_id AS "payerId", u.name AS "payerName",
+       e.created_by AS "createdBy", author.name AS "creatorName",
+       e.completed_at::text AS "completedAt", e.completed_by AS "completedBy",
+       e.version, (SELECT count(*)::int FROM expense_items WHERE expense_id=e.id) AS "itemCount",
+       progress.*
        FROM expenses e JOIN "user" u ON u.id=e.payer_id
+       JOIN "user" author ON author.id=e.created_by
+       ${expensePaymentProgress}
        WHERE e.group_id=$1 AND e.id=$3 AND e.deleted_at IS NULL AND ${groupMemberGate}`,
       [groupId, actorId, expenseId],
     );
