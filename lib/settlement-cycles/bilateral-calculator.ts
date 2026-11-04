@@ -61,6 +61,9 @@ export type BilateralCalculatorInput = Readonly<{
   groupId: string;
   cycleId: string;
   cycleState: "locked";
+  /** Immutable local [start,end) of the locked source cycle. */
+  periodStart: string;
+  periodEnd: string;
   currency: "VND";
   partyAId: string;
   partyBId: string;
@@ -95,6 +98,8 @@ export type BilateralCalculation = Readonly<{
   kind: "BN-001_CALCULATION_ONLY";
   groupId: string;
   cycleId: string;
+  periodStart: string;
+  periodEnd: string;
   currency: "VND";
   partyAId: string;
   partyBId: string;
@@ -147,7 +152,7 @@ function checkedMinor(value: unknown, label: string, positive = false): bigint {
 }
 function validDay(value: unknown): value is string {
   return typeof value === "string" && ISO_DAY.test(value) &&
-    value !== "0000-00-00" && (() => {
+    !value.startsWith("0000-") && (() => {
       const date = new Date(`${value}T00:00:00.000Z`);
       return !Number.isNaN(date.getTime()) &&
         date.toISOString().slice(0, 10) === value;
@@ -222,8 +227,11 @@ export function calculateBilateralSetoff(input: BilateralCalculatorInput): Bilat
   const partyAId = identifier(input.partyAId, "partyAId");
   const partyBId = identifier(input.partyBId, "partyBId");
   if (partyAId === partyBId || input.currency !== "VND" ||
-      input.cycleState !== "locked" || !Array.isArray(input.obligations)) {
-    invalid("INVALID_SCOPE", "Only two distinct members in one locked VND cycle are supported.");
+      input.cycleState !== "locked" || !Array.isArray(input.obligations) ||
+      !validDay(input.periodStart) || !validDay(input.periodEnd) ||
+      input.periodStart >= input.periodEnd) {
+    invalid("INVALID_SCOPE",
+      "Only two distinct members in one valid locked [start,end) VND cycle are supported.");
   }
 
   const seen = new Set<string>();
@@ -249,6 +257,11 @@ export function calculateBilateralSetoff(input: BilateralCalculatorInput): Bilat
         !validDay(raw.occurredOn)) {
       invalid("STALE_OR_INELIGIBLE_SOURCE",
         `Obligation ${obligationId} has invalid/stale source provenance.`);
+    }
+    if (raw.occurredOn < input.periodStart ||
+        raw.occurredOn >= input.periodEnd) {
+      invalid("INVALID_SCOPE",
+        `Obligation ${obligationId} is outside the cycle's local [start,end) range.`);
     }
     const original = checkedMinor(raw.originalMinor,
       `${obligationId}.originalMinor`, true);
@@ -284,8 +297,9 @@ export function calculateBilateralSetoff(input: BilateralCalculatorInput): Bilat
   const bOwesA = direction(bRows, partyBId, partyAId, offset);
   return {
     kind: "BN-001_CALCULATION_ONLY",
-    groupId, cycleId, currency: "VND",
-    partyAId, partyBId, hasOffset: offset > 0n,
+    groupId, cycleId,
+    periodStart: input.periodStart, periodEnd: input.periodEnd,
+    currency: "VND", partyAId, partyBId, hasOffset: offset > 0n,
     offsetMinor: offset.toString(),
     aOwesB, bOwesA,
   };
