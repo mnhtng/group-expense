@@ -180,8 +180,13 @@ export async function listCycleBatchRepayments(groupId:string,cycleId:string,
       .filter(x=>BigInt(x.availableMinor)>0n)
       .sort((a,b)=>a.debtorId.localeCompare(b.debtorId,"en")||
         a.creditorId.localeCompare(b.creditorId,"en"));
+    const flags=await client.query<{requested_enabled:boolean}>(
+      "SELECT requested_enabled FROM group_settlement_settings WHERE group_id=$1",
+      [groupId],
+    );
     await client.query("COMMIT");
-    return {pairs,enabled:isBatchRepaymentWritable(),scope:"one_cycle_one_direction"};
+    return {pairs,enabled:isBatchRepaymentWritable() &&
+      flags.rows[0]?.requested_enabled===true,scope:"one_cycle_one_direction"};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
 }
