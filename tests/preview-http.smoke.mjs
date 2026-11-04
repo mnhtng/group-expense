@@ -1366,6 +1366,173 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       `${monthlyApi}/${futureRule.body.id}/generate`,{},jar)).body.generated,0,
       "a future due date must not generate a bill early");
 
+    // SC-003 metadata-only lifecycle: no financial snapshot or settlement writes.
+    const sc003Group=randomUUID(),sc003ManualRevision=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'SC003 manual cycle')",
+      [sc003Group,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
+      [sc003Group,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
+      [sc003Group,otherUser.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'admin')",
+      [sc003Group,thirdUser.id]);
+    const sc003Today=new Date().toISOString().slice(0,10);
+    const sc003Date=days=>new Date(Date.parse(sc003Today+"T00:00:00Z")+
+      days*86400000).toISOString().slice(0,10);
+    const sc003Api=`${origin}/api/groups/${sc003Group}/settlement-cycle/cycles`;
+    const sc003SettingUrl=`${origin}/api/groups/${sc003Group}/settlement-cycle/settings`;
+    const sc003ScheduleUrl=`${origin}/api/groups/${sc003Group}/settlement-cycle/schedule`;
+    const sc003Init=(key,start=sc003Date(-3),end=sc003Date(-1))=>({
+      expectedScheduleVersion:1,requestKey:key,startDate:start,endDate:end,
+    });
+    assert.equal((await expenseRequest("GET",sc003Api,undefined,new Map())).response.status,401);
+    assert.equal((await expenseRequest("GET",sc003Api,undefined,jar)).body.cycles.length,0);
+    assert.equal((await expenseRequest("GET",sc003Api,undefined,thirdJar)).response.status,200);
+    await pool.query(
+      "INSERT INTO group_settlement_schedule_heads(group_id,updated_by) VALUES($1,$2)",
+      [sc003Group,registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,1,'manual','UTC',$3,$4,$5)`,
+      [sc003ManualRevision,sc003Group,sc003Date(-6),sc003Date(-6)+"T00:00:00Z",
+        registered.user.id]);
+    assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID()),jar))
+      .response.status,409,"default OFF cannot create a manual cycle");
+    assert.equal((await expenseRequest("PATCH",sc003SettingUrl,
+      config(0,true,false),jar)).response.status,200);
+    assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID()),thirdJar))
+      .response.status,403,"group admin has no cycle-manager power");
+    const sc003FirstKey=randomUUID();
+    const sc003First=await expenseRequest("POST",sc003Api,sc003Init(sc003FirstKey),jar);
+    assert.equal(sc003First.response.status,201,JSON.stringify(sc003First.body));
+    assert.equal(sc003First.body.cycle.state,"open");
+    assert.equal(sc003First.body.cycle.version,1);
+    const sc003FirstId=sc003First.body.cycle.id;
+    assert.equal((await expenseRequest("POST",sc003Api,sc003Init(sc003FirstKey),jar))
+      .body.cycle.id,sc003FirstId,"lost response retry must preserve cycle ID");
+    assert.equal((await expenseRequest("POST",sc003Api,sc003Init(sc003FirstKey,
+      sc003Date(-3),sc003Today),jar)).response.status,409,
+      "a reused idempotency key cannot represent another period");
+    assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID(),
+      sc003Date(-2),sc003Today),jar)).response.status,409,
+      "overlapping manual range cannot be inserted");
+    assert.equal((await expenseRequest("POST",sc003Api,{
+      ...sc003Init(randomUUID()),unexpected:true,
+    },jar)).response.status,400);
+    assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID(),
+      "2026-02-30",sc003Today),jar)).response.status,400);
+
+    const sc003ReviewUrl=`${sc003Api}/${sc003FirstId}/review`;
+    assert.equal((await expenseRequest("POST",sc003ReviewUrl,
+      {expectedVersion:1},thirdJar)).response.status,403);
+    const sc003Reviewed=await expenseRequest("POST",sc003ReviewUrl,
+      {expectedVersion:1},jar);
+    assert.equal(sc003Reviewed.response.status,200,JSON.stringify(sc003Reviewed.body));
+    assert.equal(sc003Reviewed.body.cycle.state,"review");
+    assert.equal(sc003Reviewed.body.cycle.version,2);
+    assert.equal((await expenseRequest("POST",sc003ReviewUrl,
+      {expectedVersion:1},jar)).response.status,409);
+    assert.equal((await expenseRequest("POST",sc003ReviewUrl,
+      {expectedVersion:2},jar)).response.status,409,
+      "review is terminal for SC-003; locking requires SC-004");
+
+    const sc003GrantUrl=`${origin}/api/groups/${sc003Group}/settlement-cycle/managers`;
+    assert.equal((await expenseRequest("POST",sc003GrantUrl,
+      {memberId:otherUser.id,action:"grant"},jar)).response.status,200);
+    const sc003OverlapStart=sc003Date(-1),sc003OverlapEnd=sc003Date(2);
+    const sc003Race=await Promise.all([
+      expenseRequest("POST",sc003Api,sc003Init(randomUUID(),
+        sc003OverlapStart,sc003OverlapEnd),jar),
+      expenseRequest("POST",sc003Api,sc003Init(randomUUID(),
+        sc003OverlapStart,sc003OverlapEnd),otherJar),
+    ]);
+    assert.deepEqual(sc003Race.map(x=>x.response.status).sort(),[201,409],
+      "simultaneous owner/delegate creation must produce one cycle");
+    const sc003Pending=sc003Race.find(x=>x.response.status===201).body.cycle;
+    assert.equal((await expenseRequest("POST",
+      `${sc003Api}/${sc003Pending.id}/review`,{expectedVersion:1},jar))
+      .response.status,409,"future end cannot be reviewed early");
+    assert.equal((await expenseRequest("PATCH",sc003ScheduleUrl,{
+      expectedVersion:1,frequency:"weekly",timeZone:"UTC",
+      anchorDate:sc003Date(1),
+    },jar)).response.status,409,
+      "schedule cutover cannot split an existing manual cycle");
+    const sc003Events=await pool.query(
+      `SELECT event_type,initiator,actor_id FROM group_settlement_cycle_events
+       WHERE group_id=$1 ORDER BY recorded_at,id`,[sc003Group]);
+    assert.equal(sc003Events.rows.length,3,"exactly two creates and one review event");
+    assert.equal(sc003Events.rows.filter(e=>e.event_type==="created").length,2);
+    assert.equal(sc003Events.rows.filter(e=>e.event_type==="review_requested").length,1);
+    assert.ok(sc003Events.rows.every(e=>e.actor_id));
+    for(const table of ["expenses","obligations","settlements","settlement_allocations"]){
+      assert.equal((await pool.query(
+        `SELECT count(*)::int AS n FROM ${table} WHERE group_id=$1`,
+        [sc003Group])).rows[0].n,0,"metadata-only lifecycle never writes money");
+    }
+
+    // Catch-up: an existing opted-in group has five weeks worth of periods.
+    // The historical setting event is a disposable SQL fixture, NEVER a
+    // backdated production mutation.
+    const sc003AutomaticGroup=randomUUID(),sc003AutoRevision=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'SC003 automatic')",
+      [sc003AutomaticGroup,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
+      [sc003AutomaticGroup,registered.user.id]);
+    const sc003AutoSettings=`${origin}/api/groups/${sc003AutomaticGroup}/settlement-cycle/settings`;
+    const sc003AutoApi=`${origin}/api/groups/${sc003AutomaticGroup}/settlement-cycle/cycles`;
+    assert.equal((await expenseRequest("PATCH",sc003AutoSettings,
+      config(0,true,false),jar)).response.status,200);
+    await pool.query(`UPDATE group_settlement_config_events
+       SET recorded_at=$2::timestamptz
+       WHERE group_id=$1 AND event_type='settings_changed'`,
+      [sc003AutomaticGroup,sc003Date(-29)+"T00:00:00Z"]);
+    await pool.query(
+      "INSERT INTO group_settlement_schedule_heads(group_id,updated_by) VALUES($1,$2)",
+      [sc003AutomaticGroup,registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,1,'weekly','UTC',$3,$4,$5)`,
+      [sc003AutoRevision,sc003AutomaticGroup,sc003Date(-28),
+        sc003Date(-28)+"T00:00:00Z",registered.user.id]);
+    const sc003Refresh=`${sc003AutoApi}/refresh`;
+    assert.equal((await expenseRequest("POST",sc003Refresh,{},thirdJar))
+      .response.status,404,"non-member cannot manually refresh group");
+    const sc003FirstRefresh=await expenseRequest("POST",sc003Refresh,{},jar);
+    assert.equal(sc003FirstRefresh.response.status,200,JSON.stringify(sc003FirstRefresh.body));
+    assert.equal(sc003FirstRefresh.body.created,5);
+    assert.equal(sc003FirstRefresh.body.reviewed,4);
+    const sc003SecondRefresh=await expenseRequest("POST",sc003Refresh,{},jar);
+    assert.equal(sc003SecondRefresh.response.status,200);
+    assert.equal(sc003SecondRefresh.body.created,0);
+    assert.equal(sc003SecondRefresh.body.reviewed,0);
+    const sc003AutoRows=(await expenseRequest("GET",sc003AutoApi,undefined,jar)).body.cycles;
+    assert.equal(sc003AutoRows.length,5);
+    assert.equal(sc003AutoRows.filter(x=>x.state==="review").length,4);
+    assert.equal(sc003AutoRows.filter(x=>x.state==="open").length,1);
+    assert.equal(sc003AutoRows[0].endAt,sc003Date(7)+"T00:00:00.000Z");
+    assert.equal((await expenseRequest("PATCH",sc003AutoSettings,
+      config(1,false,false),jar)).response.status,200);
+    assert.equal((await expenseRequest("POST",sc003Refresh,{},jar))
+      .body.disabled,true,"disabled groups cannot generate cycles");
+    assert.equal((await pool.query(
+      "SELECT count(*)::int AS n FROM group_settlement_cycles WHERE group_id=$1",
+      [sc003AutomaticGroup])).rows[0].n,5);
+
+    const sc003CronSecret=process.env.CRON_SECRET;
+    if(sc003CronSecret){
+      // Existing Cron endpoint has an independent bearer secret, not session auth.
+      const cron=await fetch(`${origin}/api/internal/push-drain`,{
+        headers:{authorization:`Bearer ${sc003CronSecret}`},
+        signal:AbortSignal.timeout(20_000),
+      });
+      assert.equal(cron.status,200,"valid CI-only Cron bearer must work");
+      const data=await cron.json();
+      assert.equal(data.cycles.metadataOnly,true);
+      assert.equal(data.cycles.errors,0);
+    }
+    assert.equal((await expenseRequest("GET",sc003AutoApi,undefined,new Map()))
+      .response.status,401);
+
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
