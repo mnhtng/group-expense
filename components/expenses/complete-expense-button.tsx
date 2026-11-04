@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { InlineConfirmation } from "@/components/ui/inline-confirmation";
 
 /** Only rendered for the authenticated invoice creator when every debt is paid. */
-export function CompleteExpenseButton({groupId,expenseId,version}:{
-  groupId:string;expenseId:string;version:number;
+export function CompleteExpenseButton({groupId,expenseId,version,compact=false}:{
+  groupId:string;expenseId:string;version:number;compact?:boolean;
 }) {
   const router=useRouter();
   const [confirming,setConfirming]=useState(false);
@@ -45,8 +45,8 @@ export function CompleteExpenseButton({groupId,expenseId,version}:{
     {!confirming &&
       <button type="button" disabled={busy}
         onClick={()=>{setConfirming(true);setError("");}}
-        className="min-h-12 rounded-xl bg-money-in px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
-        Xác nhận hoàn thành hóa đơn
+        className={`min-h-12 rounded-xl bg-money-in px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 ${compact?"w-full sm:w-auto":""}`}>
+        {compact?"✓ Xác nhận hoàn thành":"Xác nhận hoàn thành hóa đơn"}
       </button>}
     {confirming&&<InlineConfirmation
       title="Chốt hoàn thành hóa đơn?"
