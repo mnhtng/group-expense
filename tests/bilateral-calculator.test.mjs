@@ -8,7 +8,8 @@ import {
 const id=n=>`00000000-0000-4000-8000-${n.toString(16).padStart(12,"0")}`;
 const GROUP=id(1),CYCLE=id(2),A="person-a",B="person-b";
 const input=(obligations=[],props={})=>({
-  groupId:GROUP,cycleId:CYCLE,cycleState:"locked",currency:"VND",
+  groupId:GROUP,cycleId:CYCLE,cycleState:"locked",
+  periodStart:"2026-10-01",periodEnd:"2026-11-01",currency:"VND",
   partyAId:A,partyBId:B,obligations,...props,
 });
 const obligation=(n,debtor=A,creditor=B,props={})=>({
@@ -164,11 +165,28 @@ test("BN-001 rejects group, cycle, currency, third party, self and nonlocked sco
   for(const tampered of [
     {cycleState:"review"},{cycleState:"open"},{cycleState:"complete"},
     {currency:"USD"},{partyBId:A},{obligations:null},
+    {periodStart:"2026-11-01"},{periodEnd:"2026-10-01"},
+    {periodStart:"2026-02-30"},{periodEnd:"2026-13-01"},
   ])check(()=>calculateBilateralSetoff(input([good],tampered)),"INVALID_SCOPE");
   check(()=>calculateBilateralSetoff(null),"INVALID_INPUT");
   check(()=>calculateBilateralSetoff(input([null])),"INVALID_INPUT");
   check(()=>calculateBilateralSetoff(input([good,obligation(71,B,A),
     obligation(72,"person-c",A)])),"INVALID_SCOPE");
+});
+
+test("BN-001 exact local [start,end) period rejects older and end-boundary invoices",()=>{
+  const first=obligation(730,A,B,{occurredOn:"2026-10-01"});
+  const last=obligation(731,B,A,{occurredOn:"2026-10-31"});
+  const good=calculateBilateralSetoff(input([first,last]));
+  assert.equal(good.offsetMinor,"100");
+  const invalid=[
+    obligation(732,A,B,{occurredOn:"2026-09-30"}),
+    obligation(733,B,A,{occurredOn:"2026-11-01"}),
+  ];
+  for(const o of invalid)check(
+    ()=>calculateBilateralSetoff(input([first,last,o])),"INVALID_SCOPE");
+  assert.equal(calculateBilateralSetoff(input([])).periodStart,"2026-10-01");
+  assert.equal(calculateBilateralSetoff(input([])).periodEnd,"2026-11-01");
 });
 
 test("BN-001 rejects duplicate obligation IDs across both directions",()=>{
@@ -188,6 +206,7 @@ test("BN-001 fails closed for stale, voided, deleted or foreign invoice sources"
     {snapshotExpenseVersion:2},{snapshotExpenseVersion:0},
     {currentExpenseVersion:0},{currentExpenseVersion:1.5},
     {occurredOn:"2026-02-30"},{occurredOn:"2026-13-01"},
+    {occurredOn:"0000-01-01"},
     {occurredOn:"2026-2-2"},{occurredOn:"2026-11-05T00:00:00Z"},
     {occurredOn:""},{occurredOn:null},
   ])check(()=>calculateBilateralSetoff(input([{...row,...change}])),
