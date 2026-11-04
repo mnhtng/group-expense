@@ -18,6 +18,7 @@ export type ExpenseSummary = {
   id: string; title: string; totalMinor: string; occurredOn: string;
   payerId: string; payerName: string; version: number; itemCount: number;
   createdBy: string; creatorName: string;
+  recurringRuleId: string | null; recurringPeriod: string | null;
   completedAt: string | null; completedBy: string | null;
   debtorCount: number;
   dueMinor: string; confirmedMinor: string; pendingMinor: string; remainingMinor: string;
@@ -269,12 +270,14 @@ export async function listExpenses(groupId: string, actorId: string,
        e.occurred_on::text AS "occurredOn", e.payer_id AS "payerId",
        payer.name AS "payerName", e.created_by AS "createdBy",
        author.name AS "creatorName", e.version,
+       recurrence.rule_id AS "recurringRuleId",recurrence.period::text AS "recurringPeriod",
        e.completed_at::text AS "completedAt", e.completed_by AS "completedBy",
        (SELECT count(*)::int FROM expense_items i WHERE i.expense_id=e.id) AS "itemCount",
        progress.*
      FROM expenses e
      JOIN "user" payer ON payer.id=e.payer_id
      JOIN "user" author ON author.id=e.created_by
+     LEFT JOIN recurring_expense_occurrences recurrence ON recurrence.expense_id=e.id
      ${expensePaymentProgress}
      WHERE e.group_id=$1 AND e.deleted_at IS NULL AND ${groupMemberGate}
        ${visibility}
@@ -353,6 +356,8 @@ export async function getExpense(groupId: string, expenseId: string, actorId: st
        e.total_minor::text AS "totalMinor", e.occurred_on::text AS "occurredOn",
        e.payer_id AS "payerId", u.name AS "payerName",
        e.created_by AS "createdBy", author.name AS "creatorName",
+       recurrence.rule_id AS "recurringRuleId",
+       recurrence.period::text AS "recurringPeriod",
        e.completed_at::text AS "completedAt", e.completed_by AS "completedBy",
        e.version, (SELECT count(*)::int FROM expense_items WHERE expense_id=e.id) AS "itemCount",
        (SELECT ev.note FROM expense_completion_events ev
@@ -360,6 +365,7 @@ export async function getExpense(groupId: string, expenseId: string, actorId: st
        progress.*
        FROM expenses e JOIN "user" u ON u.id=e.payer_id
        JOIN "user" author ON author.id=e.created_by
+       LEFT JOIN recurring_expense_occurrences recurrence ON recurrence.expense_id=e.id
        ${expensePaymentProgress}
        WHERE e.group_id=$1 AND e.id=$3 AND e.deleted_at IS NULL AND ${groupMemberGate}`,
       [groupId, actorId, expenseId],
