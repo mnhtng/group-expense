@@ -61,6 +61,25 @@ async function isEnabled(client:PoolClient,groupId:string):Promise<boolean>{
     [groupId]);
   return r.rows[0]?.requested_enabled===true;
 }
+/**
+ * Latest OFF -> ON audit event is the only authority for the current opt-in
+ * window. Manual or scheduled cycles must NOT begin before that instant.
+ * This prevents retroactive import after disabling and later re-enabling.
+ */
+async function activationEpoch(client:PoolClient,groupId:string):Promise<number>{
+  const activated=await client.query<{recorded_at:Date}>(
+    `SELECT recorded_at FROM group_settlement_config_events
+      WHERE group_id=$1 AND event_type='settings_changed'
+        AND details->'before'->>'enabled'='false'
+        AND details->'after'->>'enabled'='true'
+      ORDER BY recorded_at DESC,id DESC LIMIT 1`,
+    [groupId],
+  );
+  const since=activated.rows[0]?.recorded_at?.getTime();
+  if(since===undefined)throw error(409,
+    "Không có mốc kích hoạt được ghi nhận. Tạm dừng sinh kỳ để bảo toàn lịch sử.");
+  return since;
+}
 async function versions(client:PoolClient,groupId:string) {
   const head=await client.query<{version:number}>(
     "SELECT version FROM group_settlement_schedule_heads WHERE group_id=$1",
@@ -202,6 +221,9 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
       throw error(409,"Ngày bắt đầu nằm trước lịch hiện hành.");
     const startAt=localMidnightInstant(input.startDate,active.timeZone);
     const endAt=localMidnightInstant(input.endDate,active.timeZone);
+    if(Date.parse(startAt)<await activationEpoch(client,groupId))
+      throw error(409,
+        "Không thể tạo kỳ bắt đầu trước lần kích hoạt hiện tại của nhóm.");
     if(Date.parse(startAt)<active.effectiveAt.getTime()||Date.parse(startAt)>now)
       throw error(409,"Kỳ phải bắt đầu trong thời gian lịch đã có hiệu lực.");
     if(next&&Date.parse(endAt)>next.effectiveAt.getTime())
@@ -254,17 +276,7 @@ async function workCyclesForGroup(client:PoolClient,groupId:string,cap:number):P
 
   // Never retroactively attribute a period that began before this group's
   // most recent explicit opt-in (includes disable/re-enable gaps).
-  const activated=await client.query<{recorded_at:Date}>(
-    `SELECT recorded_at FROM group_settlement_config_events
-      WHERE group_id=$1 AND event_type='settings_changed'
-        AND details->'before'->>'enabled'='false'
-        AND details->'after'->>'enabled'='true'
-      ORDER BY recorded_at DESC,id DESC LIMIT 1`,
-    [groupId],
-  );
-  const enabledSince=activated.rows[0]?.recorded_at?.getTime();
-  if(enabledSince===undefined)throw error(409,
-    "Không có mốc kích hoạt được ghi nhận. Tạm dừng sinh kỳ để bảo toàn lịch sử.");
+  const enabledSince=await activationEpoch(client,groupId);
   const schedules=(await versions(client,groupId)).rules;
   let created=0;
   for(let i=0;i<schedules.length&&remaining>0;i++) {
