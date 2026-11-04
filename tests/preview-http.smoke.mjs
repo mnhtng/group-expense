@@ -918,7 +918,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       expectedVersion:2,
     },jar)).response.status,409,"completed invoice cannot be deleted");
     const closedEvent=await pool.query(
-      "SELECT actor_id,operation,version,snapshot->>'note' AS note FROM expense_events WHERE expense_id=$1 AND operation='completed'",
+      "SELECT actor_id,expense_version AS version,note FROM expense_completion_events WHERE expense_id=$1",
       [receipt2.body.id],
     );
     assert.equal(closedEvent.rows.length,1);
