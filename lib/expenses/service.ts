@@ -123,7 +123,7 @@ async function writeItems(client: PoolClient, groupId: string, expenseId: string
 }
 
 async function recordEvent(client: PoolClient, groupId: string, expenseId: string,
-  actorId: string, operation: "created" | "updated" | "deleted" | "completed", version: number, snapshot: unknown) {
+  actorId: string, operation: "created" | "updated" | "deleted", version: number, snapshot: unknown) {
   await client.query(
     `INSERT INTO expense_events
      (id, group_id, expense_id, actor_id, operation, version, snapshot)
@@ -320,10 +320,12 @@ export async function completeExpense(groupId: string, expenseId: string, actorI
        WHERE id=$1 AND group_id=$2 AND completed_at IS NULL`,
       [expenseId,groupId,actorId,version],
     );
-    await recordEvent(client,groupId,expenseId,actorId,"completed",version,{
-      note,confirmedBy:actorId,debtorCount:invoice.debtorCount,
-      remainingMinor:invoice.remainingMinor,previousVersion:invoice.version,
-    });
+    await client.query(
+      `INSERT INTO expense_completion_events
+         (id,group_id,expense_id,actor_id,expense_version,note)
+       VALUES($1,$2,$3,$4,$5,$6)`,
+      [randomUUID(),groupId,expenseId,actorId,version,note],
+    );
     return {id:expenseId,version,completed:true};
   });
 }
@@ -339,9 +341,8 @@ export async function getExpense(groupId: string, expenseId: string, actorId: st
        e.created_by AS "createdBy", author.name AS "creatorName",
        e.completed_at::text AS "completedAt", e.completed_by AS "completedBy",
        e.version, (SELECT count(*)::int FROM expense_items WHERE expense_id=e.id) AS "itemCount",
-       (SELECT ev.snapshot->>'note' FROM expense_events ev
-         WHERE ev.expense_id=e.id AND ev.operation='completed'
-         ORDER BY ev.recorded_at DESC LIMIT 1) AS "completionNote",
+       (SELECT ev.note FROM expense_completion_events ev
+         WHERE ev.expense_id=e.id) AS "completionNote",
        progress.*
        FROM expenses e JOIN "user" u ON u.id=e.payer_id
        JOIN "user" author ON author.id=e.created_by
