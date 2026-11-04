@@ -27,7 +27,7 @@ test("completion requires original creator, confirmed zero outstanding, and immu
   const service=read("lib/expenses/service.ts");
   assert.match(service,/canModifyExpense\(invoice\.createdBy,actorId\)/);
   assert.match(service,/completionReady\(invoice\)/);
-  assert.match(service,/recordEvent\(client,groupId,expenseId,actorId,"completed"/);
+  assert.match(service,/INSERT INTO expense_completion_events/);
   assert.match(service,/FOR UPDATE OF e/);
   assert.match(service,/Hóa đơn đã hoàn thành, không thể sửa/);
   assert.match(service,/Hóa đơn đã hoàn thành, không thể xóa/);
