@@ -1,12 +1,10 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { OptionalNoteField } from "@/components/ui/optional-note-field";
 
 export function AcceptInviteForm({token}:{token:string}){
   const router=useRouter();
   const [busy,setBusy]=useState(false);
-  const [note,setNote]=useState("");
   const [error,setError]=useState("");
   async function accept(){
     if(busy)return;
@@ -15,7 +13,7 @@ export function AcceptInviteForm({token}:{token:string}){
       const res=await fetch("/api/invites/accept",{
         method:"POST",credentials:"same-origin",cache:"no-store",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({token,note}),
+        body:JSON.stringify({token}),
       });
       const body=await res.json();
       if(!res.ok)throw Error(body.error??"Không thể tham gia nhóm.");
@@ -25,7 +23,6 @@ export function AcceptInviteForm({token}:{token:string}){
     finally{setBusy(false);}
   }
   return <div className="space-y-3">
-    <OptionalNoteField value={note} onChange={setNote} placeholder="Lời nhắn khi tham gia nhóm..."/>
     <button type="button" disabled={busy} onClick={()=>void accept()}
       className="min-h-12 rounded-xl bg-primary px-5 py-3 text-primary-foreground disabled:opacity-50">
       {busy?"Đang tham gia...":"Tham gia nhóm"}
