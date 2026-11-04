@@ -171,7 +171,6 @@ export async function listCycleBatchRepayments(groupId:string,cycleId:string,
     await cycleGate(client,groupId,cycleId,false);
     const r=await sourceRows(client,cycleId,groupId);
     const unique=new Map<string,{debtorId:string;creditorId:string}>();
-    for(const o of r.rows??r)void o;
     for(const row of r){
       const key=JSON.stringify([row.debtorId,row.creditorId]);
       if(!unique.has(key))unique.set(key,{debtorId:row.debtorId,creditorId:row.creditorId});
