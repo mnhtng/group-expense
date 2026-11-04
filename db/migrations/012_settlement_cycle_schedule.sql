@@ -45,7 +45,7 @@ CREATE INDEX group_settlement_schedule_event_history
 -- Protect schedule revision identity. The ONLY allowed mutation is marking
 -- an as-yet-unactivated future revision as superseded ONCE.
 CREATE FUNCTION settlement_schedule_guard_revision() RETURNS trigger
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $sc002$
 BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'Schedule revisions cannot be deleted';
@@ -58,17 +58,17 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$sc002$;
 CREATE TRIGGER settlement_schedule_guard_revision
   BEFORE UPDATE OR DELETE ON group_settlement_schedule_revisions
   FOR EACH ROW EXECUTE FUNCTION settlement_schedule_guard_revision();
 
 CREATE FUNCTION settlement_schedule_guard_event() RETURNS trigger
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $sc002$
 BEGIN
   RAISE EXCEPTION 'Schedule audit events are append-only';
 END;
-$;
+$sc002$;
 CREATE TRIGGER settlement_schedule_guard_event
   BEFORE UPDATE OR DELETE ON group_settlement_schedule_events
   FOR EACH ROW EXECUTE FUNCTION settlement_schedule_guard_event();
