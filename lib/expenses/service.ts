@@ -104,6 +104,20 @@ async function assertNoActiveSettlements(client: PoolClient, expenseId: string) 
     "Hóa đơn có thanh toán đang chờ hoặc đã xác nhận; cần điều chỉnh bằng nghiệp vụ riêng.");
 }
 
+/** An invoice sourced by a LOCKED snapshot cannot have its historical
+ * costs/date/shares edited. Completion remains creator-only after confirmed cash.
+ * Database triggers in migration 014 enforce the same rule for SQL bypasses.
+ */
+async function assertExpenseNotFrozen(client: PoolClient, expenseId: string) {
+  const frozen=await client.query(
+    `SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+     JOIN group_settlement_cycles c ON c.id=se.cycle_id
+     WHERE se.expense_id=$1 AND c.state='locked' LIMIT 1`,[expenseId],
+  );
+  if(frozen.rowCount)throw new ExpenseAccessError(409,
+    "Hóa đơn thuộc kỳ đã khóa. Không thể sửa hoặc xóa; cần ghi điều chỉnh ở kỳ sau.");
+}
+
 async function writeItems(client: PoolClient, groupId: string, expenseId: string, prepared: PreparedExpense) {
   for (const [position, item] of prepared.items.entries()) {
     const itemId = randomUUID();
@@ -184,6 +198,7 @@ export async function updateExpense(groupId: string, expenseId: string, actorId:
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
       throw new ExpenseAccessError(409, "Hóa đơn đã được cập nhật; tải lại trước khi sửa.");
     }
+    await assertExpenseNotFrozen(client, expenseId);
     await assertNoActiveSettlements(client, expenseId);
     const prepared = prepareExpense(data, members);
     const version = expense.version + 1;
@@ -222,6 +237,7 @@ export async function deleteExpense(groupId: string, expenseId: string, actorId:
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
       throw new ExpenseAccessError(409, "Hóa đơn đã thay đổi; tải lại trước khi xóa.");
     }
+    await assertExpenseNotFrozen(client, expenseId);
     await assertNoActiveSettlements(client, expenseId);
     const version = expense.version + 1;
     await client.query(
