@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatDateDMY } from "@/lib/date-format";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails, getMemberRole } from "@/lib/groups/service";
@@ -23,7 +24,7 @@ export default async function ExpenseDetailPage({ params }: {
   return <main className="app-page space-y-5">
     <Link href={`/groups/${groupId}`} className="text-sm text-muted-foreground">← {group.name}</Link>
     <header className="rounded-2xl border bg-card p-5">
-      <p className="text-sm text-muted-foreground">{expense.occurredOn} · {expense.items.length} món</p>
+      <p className="text-sm text-muted-foreground">{formatDateDMY(expense.occurredOn)} · {expense.items.length} món</p>
       <h1 className="mt-2 text-2xl font-semibold">{expense.title}</h1>
       <p className="mt-3 text-3xl font-bold tabular-nums text-money-out">−{vnd(expense.totalMinor)}</p>
       <p className="mt-2 text-sm text-muted-foreground">Người trả: {expense.payerName}</p>
