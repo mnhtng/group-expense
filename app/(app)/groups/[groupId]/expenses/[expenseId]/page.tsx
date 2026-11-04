@@ -50,6 +50,11 @@ export default async function ExpenseDetailPage({params}:{
         </span>
       </div>
       <h1 className="break-words text-2xl font-semibold">{expense.title}</h1>
+      {expense.recurringRuleId&&<Link
+        href={`/groups/${groupId}/recurring/${expense.recurringRuleId}`}
+        className="inline-flex min-h-11 items-center rounded-xl border px-3 text-sm font-medium">
+        ↻ Hóa đơn tự động hằng tháng · Xem mẫu định kỳ
+      </Link>}
       <p className="text-3xl font-bold tabular-nums">{vnd(expense.totalMinor)}</p>
       <p className="text-sm text-muted-foreground">
         Người tạo: {expense.creatorName} · Người ứng tiền: {expense.payerName}
