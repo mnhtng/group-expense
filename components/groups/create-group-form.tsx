@@ -1,12 +1,10 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState,type FormEvent } from "react";
-import { OptionalNoteField } from "@/components/ui/optional-note-field";
 
 export function CreateGroupForm(){
   const router=useRouter();
   const [name,setName]=useState("");
-  const [note,setNote]=useState("");
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   async function submit(event:FormEvent<HTMLFormElement>){
@@ -16,7 +14,7 @@ export function CreateGroupForm(){
     try{
       const response=await fetch("/api/groups",{
         method:"POST",credentials:"same-origin",cache:"no-store",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({name,note}),
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({name}),
       });
       const result=await response.json();
       if(!response.ok)throw Error(result.error??"Không thể tạo nhóm.");
@@ -33,7 +31,6 @@ export function CreateGroupForm(){
       className="h-14 w-full min-w-0 rounded-2xl border bg-card px-4 text-base
         shadow-sm outline-none placeholder:text-muted-foreground/70
         focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/15"/>
-    <div className="sm:col-span-2"><OptionalNoteField value={note} onChange={setNote}/></div>
     <button type="submit" disabled={busy}
       className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl
         bg-primary px-6 text-base font-semibold text-primary-foreground
