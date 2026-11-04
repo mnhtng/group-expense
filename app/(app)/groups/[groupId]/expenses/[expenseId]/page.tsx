@@ -2,7 +2,8 @@ import Link from "next/link";
 import { formatDateDMY } from "@/lib/date-format";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
-import { getGroupDetails, getMemberRole } from "@/lib/groups/service";
+import { getGroupDetails } from "@/lib/groups/service";
+import { canModifyExpense } from "@/lib/expenses/permissions";
 import { getExpense } from "@/lib/expenses/service";
 import { listExpenseDebts } from "@/lib/debts/service";
 import { DeleteExpenseButton } from "@/components/expenses/delete-expense-button";
@@ -19,8 +20,7 @@ export default async function ExpenseDetailPage({ params }: {
   const expense = await getExpense(groupId, expenseId, user.id);
   if (!expense) notFound();
   const debts = (await listExpenseDebts(groupId, expenseId, user.id)) ?? [];
-  const role = await getMemberRole(groupId, user.id);
-  const canEdit = expense.createdBy === user.id || role === "owner" || role === "admin";
+  const canEdit = canModifyExpense(expense.createdBy, user.id);
   return <main className="app-page space-y-5">
     <Link href={`/groups/${groupId}`} className="text-sm text-muted-foreground">← {group.name}</Link>
     <header className="rounded-2xl border bg-card p-5">
@@ -55,6 +55,7 @@ export default async function ExpenseDetailPage({ params }: {
         </strong>
       </Link>)}
     </section>
+    {!canEdit && <p className="text-sm text-muted-foreground">Chỉ người tạo hóa đơn mới có quyền sửa hoặc xóa hóa đơn.</p>}
     {canEdit && <div className="flex items-center gap-4">
       <Link href={`/groups/${groupId}/expenses/${expenseId}/edit`}
         className="rounded-xl bg-primary px-4 py-3 text-sm text-primary-foreground">Sửa hóa đơn</Link>
