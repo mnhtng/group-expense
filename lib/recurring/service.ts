@@ -11,6 +11,8 @@ import {
 import { createExpenseInTransaction } from "@/lib/expenses/service";
 import { dueDatesThrough, nextDueDate } from "@/lib/recurring/schedule";
 
+export type RecurringItem = Omit<ItemInput,"shares"> & {shares:NonNullable<ItemInput["shares"]>};
+
 export type RecurringDraft = {
   title: string; notes?: string; payerId: string;
   dayOfMonth: number; startsOn: string; items: ItemInput[];
@@ -18,7 +20,7 @@ export type RecurringDraft = {
 export type RecurringRule = {
   id:string;groupId:string;title:string;notes:string;
   payerId:string;payerName:string;createdBy:string;creatorName:string;
-  dayOfMonth:number;startsOn:string;items:ItemInput[];
+  dayOfMonth:number;startsOn:string;items:RecurringItem[];
   totalMinor:string;status:"active"|"paused";pauseReason:string|null;
   version:number;createdAt:string;lastPeriod:string|null;
 };
@@ -34,7 +36,7 @@ export class RecurringError extends Error {
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function normalized(draft:RecurringDraft,members:string[]):{
-  template:RecurringDraft;prepared:PreparedExpense;
+  template:Omit<RecurringDraft,"items"> & {items:RecurringItem[]};prepared:PreparedExpense;
 } {
   if(!draft||typeof draft!=="object")throw new ExpenseValidationError("Dữ liệu định kỳ không hợp lệ.");
   if(!Number.isInteger(draft.dayOfMonth)||draft.dayOfMonth<1||draft.dayOfMonth>31)
@@ -53,7 +55,7 @@ function normalized(draft:RecurringDraft,members:string[]):{
   );
   // Freeze the exact per-person amounts. Changes to the roster don't
   // silently change a bill's original monetary split.
-  const items:ItemInput[]=prepared.items.map(item=>({
+  const items:RecurringItem[]=prepared.items.map(item=>({
     name:item.name,quantity:item.quantity,unitPriceMinor:item.unitPriceMinor,
     participants:item.shares.map(share=>share.userId),
     shares:item.shares.map(({userId,amountMinor})=>({userId,amountMinor})),
@@ -235,7 +237,7 @@ export async function generateDueRecurringExpenses(
         const row=await client.query<{
           id:string;group_id:string;created_by:string;payer_id:string;
           title:string;notes:string;day_of_month:number;starts_on:string;
-          items:ItemInput[];status:string;
+          items:RecurringItem[];status:string;
         }>(
           `SELECT id,group_id,created_by,payer_id,title,notes,day_of_month,
            starts_on::text,items,status
