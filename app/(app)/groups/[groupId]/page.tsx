@@ -6,6 +6,7 @@ import {
 import Link from "next/link";
 import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
 import { notFound, redirect } from "next/navigation";
+import { CompleteExpenseButton } from "@/components/expenses/complete-expense-button";
 
 const vnd=(minor:string)=>new Intl.NumberFormat("vi-VN").format(BigInt(minor))+" ₫";
 
@@ -80,10 +81,16 @@ export default async function GroupPage({params,searchParams}:{
           ?"Chưa có hóa đơn nào được chủ hóa đơn xác nhận hoàn thành."
           :"Không có hóa đơn đang xử lý."}
       </p>}
-      {expenses.map(invoice=><Link key={invoice.id}
-        href={`/groups/${groupId}/expenses/${invoice.id}`}
-        className={`block rounded-3xl border p-4 transition-colors hover:bg-secondary/40 active:bg-secondary/60 sm:p-5
-          ${invoice.completedAt?"border-money-in/30 bg-money-in/5":"bg-card"}`}>
+      {expenses.map(invoice=>{
+        const ready = !invoice.completedAt &&
+          BigInt(invoice.remainingMinor)===0n && BigInt(invoice.pendingMinor)===0n;
+        const creatorCanClose = ready && invoice.createdBy===user.id;
+        return <article key={invoice.id}
+          className={`overflow-hidden rounded-3xl border
+            ${ready?"border-money-in/40 bg-money-in/5":
+              invoice.completedAt?"border-money-in/30 bg-money-in/5":"bg-card"}`}>
+          <Link href={`/groups/${groupId}/expenses/${invoice.id}`}
+            className="block p-4 transition-colors hover:bg-secondary/40 active:bg-secondary/60 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1 space-y-2">
             <h3 className="break-words font-semibold">{invoice.title}</h3>
@@ -105,7 +112,14 @@ export default async function GroupPage({params,searchParams}:{
                 </span>}
           <span className="font-medium">Chi tiết →</span>
         </div>
-      </Link>)}
+          </Link>
+          {creatorCanClose && <div className="space-y-2 border-t border-money-in/20 px-4 py-4 sm:px-5">
+            <p className="text-xs text-money-in">Đã nhận đủ tiền, bạn có thể chốt hóa đơn này.</p>
+            <CompleteExpenseButton groupId={groupId} expenseId={invoice.id}
+              version={invoice.version} compact />
+          </div>}
+        </article>;
+      })}
       {expenses.length===100&&<p className="text-xs text-muted-foreground">
         Hiển thị 100 hóa đơn gần nhất trong mục này.
       </p>}
