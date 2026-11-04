@@ -281,7 +281,69 @@ No BN-* offset, no SC-006 adjustment attribution, no SC-008 full mobile UI.
 - CI-only testing exception must never become a user-facing release switch;
   production finance remains OFF pending a separate audited rollout.
 
-## NEXT CONVERSATION: BN-001 ONLY
+## 2026-11-05 — BN-001: IMPLEMENTED, OFFICIAL CI/DB-HTTP VERIFICATION PENDING
+
+**Ticket:** Pure two-member BigInt noncash offset calculator. STRICTLY
+no proposal, approval, ledger, SQL migration, external API, UI or release
+flag changes.
+
+**Scope files:**
+- `lib/settlement-cycles/bilateral-calculator.ts`: independently
+  callable pure function, no imports, no IO/DB/clock/side effects.
+  Requires EXACT two people, one group, one locked cycle, local
+  `[periodStart,periodEnd)`, VND, original source ID/version and explicit
+  same-cycle snapshot eligibility/active invoice/obligation flags.
+  Checks valid integer minor amounts (PG bigint bound per source), tracks
+  confirmed cash and confirmed setoff separately from pending cash and
+  pending setoff reservations, rejects any invalid or third-person source.
+  Computes `min(available_A_to_B,available_B_to_A)` exactly using
+  BigInt and assigns equal hypothetical noncash amounts to both directions
+  by stable local invoice date then source obligation UUID.
+  Returned amounts are strings and never imply payment/approval.
+- `tests/bilateral-calculator.test.mjs`: 16 test groups, tests
+  for equal/unequal/zero directions, partial confirmed & pending balances,
+  old reservations cancelled, reversed party labels, safe upper
+  precision, exact local date boundaries and role/group/cycle/third-person
+  rejection, immutable original input, deterministic per-source ordering,
+  1,200 seeded property cases and 10,000 source rows.
+- `docs/settlement-cycles/BN-001-CALCULATOR.md`: complete domain
+  assumptions, exact conservation invariants and exclusions.
+- `BACKLOG.md`: status remains pending until official CI acceptance.
+
+**Test evidence:**
+- Independent JavaScript-equivalent execution of the exact algorithm and
+  its 16 scenario groups completed **16/16 PASS** (including seeded
+  properties and 10k rows). This is NOT a substitute for native Node
+  TypeScript test runner, Next.js typecheck/build and full PostgreSQL/HTTP
+  regressions.
+- Latest financial application regression before BN-001:
+  [CI passed](https://github.com/mnhtng/group-expense/actions/runs/41875625725)
+  and [PostgreSQL/HTTP passed](https://github.com/mnhtng/group-expense/actions/runs/41875625586).
+- **New BN-001 CI run is still QUEUED**, not yet a pass:
+  https://github.com/mnhtng/group-expense/actions/runs/41878181217
+- **New BN-001 PostgreSQL/HTTP regression is still QUEUED**:
+  https://github.com/mnhtng/group-expense/actions/runs/41878181224
+- Preserve status `IMPLEMENTED — UNIT/CI VERIFICATION PENDING`
+  until code+tests HEAD is accepted; failures must be fixed within
+  BN-001 and nothing beyond it may be started.
+
+**Prohibitions and release gate:**
+- No financial schema migration or any writes to original
+  `obligations`, `expenses`, `settlements`,
+  `settlement_allocations`, cycle snapshot or cash ledger.
+- No proposals (BN-002), approval API (BN-003), ledger offset (BN-004),
+  future cycle adjustments (SC-006) or payment/completion automation.
+- `SETTLEMENT_CYCLE_ENGINE_READY=false`; `develop` and `main`
+  untouched. No staging/prod deployment or shared Neon migrations.
+- PR #16 remains DRAFT and never merged automatically.
+
+## NEXT CONVERSATION: VERIFY BN-001 CI UNTIL COMPLETE; THEN BN-002 ONLY
+
+If CI/DB-HTTP is still QUEUED/FAIL, complete BN-001 acceptance first and
+do not start BN-002. After BOTH suites pass, a separate conversation
+may implement ONLY BN-002 (persist immutable one-pair proposal with
+fingerprint). NEVER apply noncash offsets or unlock real money in BN-002.
+
 
 **Ticket:** Pure BigInt calculator for STRICT pairwise bilateral offsets,
 deterministic allocation and eligibility (only TWO persons, no third-party
