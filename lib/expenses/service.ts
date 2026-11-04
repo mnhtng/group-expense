@@ -264,7 +264,18 @@ export async function listExpenses(groupId: string, actorId: string,
      ${expensePaymentProgress}
      WHERE e.group_id=$1 AND e.deleted_at IS NULL AND ${groupMemberGate}
        ${visibility}
-     ORDER BY e.occurred_on DESC, e.created_at DESC LIMIT 100`,
+     ORDER BY
+       CASE
+         WHEN e.completed_at IS NULL AND
+              (progress."remainingMinor")::numeric = 0 AND
+              (progress."pendingMinor")::numeric = 0 AND e.created_by=$2 THEN 0
+         WHEN e.completed_at IS NULL AND
+              (progress."remainingMinor")::numeric = 0 AND
+              (progress."pendingMinor")::numeric = 0 THEN 1
+         ELSE 2
+       END,
+       CASE WHEN e.completed_at IS NOT NULL THEN e.completed_at ELSE NULL END DESC NULLS LAST,
+       e.occurred_on DESC, e.created_at DESC LIMIT 100`,
     [groupId, actorId],
   );
   return result.rows;
