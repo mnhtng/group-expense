@@ -182,12 +182,47 @@ BEGIN
           WHERE e.cycle_id=NEW.id
             AND (e.occurred_on<NEW.period_start OR e.occurred_on>=NEW.period_end)
         )
+        AND s.cutoff_at>=OLD.reviewed_at AND s.cutoff_at<=NEW.locked_at
+        AND s.expense_count=(
+          SELECT count(*) FROM expenses live
+          WHERE live.group_id=NEW.group_id AND live.deleted_at IS NULL
+            AND live.occurred_on>=NEW.period_start AND live.occurred_on<NEW.period_end
+            AND live.created_at<=s.cutoff_at)
+        AND s.obligation_count=(
+          SELECT count(*) FROM obligations live
+          JOIN expenses e ON e.id=live.expense_id AND e.group_id=NEW.group_id
+          WHERE live.group_id=NEW.group_id AND live.voided_at IS NULL
+            AND e.deleted_at IS NULL AND e.occurred_on>=NEW.period_start
+            AND e.occurred_on<NEW.period_end
+            AND e.created_at<=s.cutoff_at AND live.created_at<=s.cutoff_at)
+        AND NOT EXISTS(
+          SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+          JOIN expenses live ON live.id=se.expense_id
+          WHERE se.cycle_id=NEW.id
+            AND (se.occurred_on<NEW.period_start OR se.occurred_on>=NEW.period_end
+               OR live.deleted_at IS NOT NULL OR live.version<>se.expense_version
+               OR live.total_minor<>se.total_minor
+               OR live.occurred_on<>se.occurred_on
+               OR live.payer_id<>se.payer_id
+               OR live.created_by<>se.created_by)
+        )
         AND NOT EXISTS(
           SELECT 1 FROM group_settlement_cycle_snapshot_obligations o
           JOIN obligations base ON base.id=o.obligation_id
-          WHERE o.cycle_id=NEW.id AND
-            (base.voided_at IS NOT NULL OR base.amount_minor<>o.original_minor
-              OR base.expense_version<>o.expense_version)
+          LEFT JOIN LATERAL (
+            SELECT COALESCE(sum(a.amount_minor) FILTER(WHERE st.status='confirmed'),0)
+               AS confirmed,
+              COALESCE(sum(a.amount_minor) FILTER(WHERE st.status='pending'),0)
+               AS pending
+            FROM settlement_allocations a
+            JOIN settlements st ON st.id=a.settlement_id
+            WHERE a.obligation_id=o.obligation_id
+          ) paid ON true
+          WHERE o.cycle_id=NEW.id AND (
+            base.voided_at IS NOT NULL OR base.amount_minor<>o.original_minor
+            OR base.expense_version<>o.expense_version
+            OR o.confirmed_cash_minor<>paid.confirmed
+            OR o.pending_cash_minor<>paid.pending)
         )
     ) INTO snapshot_exists;
     IF snapshot_exists THEN RETURN NEW; END IF;
