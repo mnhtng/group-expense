@@ -7,6 +7,12 @@ import { DateDMYInput } from "@/components/ui/date-dmy-input";
 import { todayVietnamISO } from "@/lib/date-format";
 
 type Member = { id: string; name: string; role: string };
+export type StoredRecurring = {
+  id:string;title:string;notes:string;startsOn:string;dayOfMonth:number;
+  payerId:string;version:number;
+  items:{name:string;quantity:number;unitPriceMinor:string;
+    shares:{userId:string;amountMinor:string}[]}[];
+};
 export type StoredExpense = {
   id: string; title: string; notes: string; occurredOn: string; payerId: string;
   version: number;
@@ -28,16 +34,21 @@ function fromStored(item: StoredExpense["items"][number]): Row {
     participants: item.shares.map(s => s.userId), mode: "manual",
     custom: Object.fromEntries(item.shares.map(s => [s.userId, s.amountMinor])) };
 }
-export function ExpenseForm({ groupId, members, expense }: {
+export function ExpenseForm({ groupId, members, expense, recurringMode=false, recurringRule }: {
   groupId: string; members: Member[]; expense?: StoredExpense;
+  recurringMode?:boolean;recurringRule?:StoredRecurring;
 }) {
   const router = useRouter();
-  const [title, setTitle] = useState(expense?.title ?? "");
-  const [notes, setNotes] = useState(expense?.notes ?? "");
-  const [occurredOn, setOccurredOn] = useState(expense?.occurredOn ?? todayVietnamISO());
-  const [payerId, setPayerId] = useState(expense?.payerId ?? members[0]?.id ?? "");
-  const [rows, setRows] = useState<Row[]>(
-    () => expense?.items.map(fromStored) ?? [nextRow(members)]);
+  const recurring=recurringMode || Boolean(recurringRule);
+  const [title, setTitle] = useState(recurringRule?.title ?? expense?.title ?? "");
+  const [notes, setNotes] = useState(recurringRule?.notes ?? expense?.notes ?? "");
+  const [occurredOn, setOccurredOn] = useState(recurringRule?.startsOn ?? expense?.occurredOn ?? todayVietnamISO());
+  const [dayOfMonth,setDayOfMonth] = useState(recurringRule?.dayOfMonth ??
+    Number(todayVietnamISO().slice(8,10)));
+  const [payerId, setPayerId] = useState(recurringRule?.payerId ?? expense?.payerId ?? members[0]?.id ?? "");
+  const [rows, setRows] = useState<Row[]>(() => recurringRule
+    ? recurringRule.items.map((item,index)=>fromStored({...item,id:`recurring-${index}`}))
+    : expense?.items.map(fromStored) ?? [nextRow(members)]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [removeRowKey,setRemoveRowKey] = useState<string|null>(null);
@@ -65,22 +76,32 @@ export function ExpenseForm({ groupId, members, expense }: {
       })),
     };
     try {
-      const path = `/api/groups/${groupId}/expenses${expense ? `/${expense.id}` : ""}`;
+      const path=recurring
+        ? `/api/groups/${groupId}/recurring${recurringRule?`/${recurringRule.id}`:""}`
+        : `/api/groups/${groupId}/expenses${expense ? `/${expense.id}` : ""}`;
       const response = await fetch(path, {
-        method: expense ? "PATCH" : "POST",
+        method: (recurringRule || expense) ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         cache: "no-store",
-        body: JSON.stringify(expense
-          ? { expectedVersion: expense.version, expense: payload }
-          : payload),
+        body:JSON.stringify(recurring
+          ? (recurringRule
+            ? {expectedVersion:recurringRule.version,rule:{
+                title,notes,startsOn:occurredOn,dayOfMonth,payerId,items:payload.items,
+              }}
+            : {title,notes,startsOn:occurredOn,dayOfMonth,payerId,items:payload.items})
+          : expense
+            ? {expectedVersion:expense.version,expense:payload}
+            : payload),
       });
       const result = await response.json();
       if (!response.ok) {
         setError(result?.error ?? "Không thể lưu hóa đơn.");
         return;
       }
-      router.push(`/groups/${groupId}/expenses/${result.id}`);
+      router.push(recurring
+        ? `/groups/${groupId}/recurring`
+        : `/groups/${groupId}/expenses/${result.id}`);
       router.refresh();
     } catch {
       setError("Lỗi kết nối. Kiểm tra mạng rồi thử lại.");
@@ -94,7 +115,8 @@ export function ExpenseForm({ groupId, members, expense }: {
           placeholder="Ví dụ: Mua đồ ăn tối" className="mt-1 w-full rounded-xl border bg-background p-3"/>
       </label>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <DateDMYInput value={occurredOn} onChange={setOccurredOn} />
+        <DateDMYInput value={occurredOn} onChange={setOccurredOn}
+          label={recurring?"Bắt đầu từ":"Ngày chi tiêu"} />
         <label className="text-sm font-medium">Người trả tiền
           <select required value={payerId} onChange={e => setPayerId(e.target.value)}
             className="mt-1 w-full min-w-0 rounded-xl border bg-background p-3">
@@ -102,6 +124,21 @@ export function ExpenseForm({ groupId, members, expense }: {
           </select>
         </label>
       </div>
+      {recurring&&<div className="space-y-2 rounded-xl bg-secondary/70 p-4">
+        <label className="block text-sm font-medium">Lặp lại vào ngày
+          <select value={dayOfMonth} onChange={event=>setDayOfMonth(Number(event.target.value))}
+            className="mt-1 min-h-12 w-full rounded-xl border bg-background p-3 text-base">
+            {Array.from({length:31},(_,index)=><option key={index+1} value={index+1}>
+              Ngày {index+1} hằng tháng
+            </option>)}
+          </select>
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Ngày 29–31 sẽ chuyển về ngày cuối tháng nếu tháng đó ngắn hơn.
+          Mẫu chỉ tự tạo hóa đơn đến hạn, không phát sinh trước ngày bắt đầu.
+          Công nợ vẫn cần được xác nhận bình thường.
+        </p>
+      </div>}
       <label className="block text-sm font-medium">Ghi chú (không bắt buộc)
         <textarea maxLength={1000} rows={2} value={notes} onChange={e => setNotes(e.target.value)}
           className="mt-1 w-full rounded-xl border bg-background p-3"/>
@@ -191,10 +228,13 @@ export function ExpenseForm({ groupId, members, expense }: {
     <div className="expense-save-footer sticky -mx-5 flex flex-wrap items-center justify-between gap-4 border-t bg-background/95 px-5 py-3 backdrop-blur"
       style={{bottom:"calc(var(--app-tabbar-content-height, 76px) + var(--app-tabbar-safe-bottom, 12px))"}}>
       <div><p className="text-xs text-muted-foreground">Tổng hóa đơn</p>
-        <p className="text-lg font-bold tabular-nums">{formatVnd(total)}</p></div>
+        <p className="text-lg font-bold tabular-nums">{formatVnd(total)}</p>
+        {recurring&&<p className="text-xs text-muted-foreground">Mỗi tháng</p>}</div>
       <button type="submit" disabled={saving || !members.length}
         className="rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-50">
-        {saving ? "Đang lưu..." : expense ? "Lưu thay đổi" : "Tạo hóa đơn"}
+        {saving?"Đang lưu...":recurring
+          ? recurringRule?"Lưu mẫu định kỳ":"Tạo chi phí hằng tháng"
+          : expense?"Lưu thay đổi":"Tạo hóa đơn"}
       </button>
     </div>
   </form>;
