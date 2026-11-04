@@ -119,7 +119,7 @@ export function PushSettings() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    queueMicrotask(() => { void refresh(); });
     // The user may change permission in iOS Settings while this PWA is paused.
     const onResume = () => { if (!document.hidden) void refresh(); };
     document.addEventListener("visibilitychange", onResume);
