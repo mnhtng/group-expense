@@ -54,6 +54,16 @@ export default async function GroupPage({params,searchParams}:{
         + Hóa đơn
       </Link>
     </div>
+    <Link href={`/groups/${groupId}/recurring`}
+      className="flex min-h-[88px] items-center justify-between gap-4 rounded-3xl border bg-card p-5 transition-colors hover:bg-secondary/40">
+      <span>
+        <strong className="block">Chi phí cố định hằng tháng</strong>
+        <span className="mt-1 block text-sm text-muted-foreground">
+          Tạo lịch tự động: tiền nhà, internet, điện nước…
+        </span>
+      </span>
+      <span aria-hidden="true">→</span>
+    </Link>
     <Link href={`/groups/${groupId}/debts`}
       className="flex min-h-[88px] items-center justify-between gap-4 rounded-3xl border bg-secondary p-5">
       <span><strong className="block">Công nợ</strong></span>
