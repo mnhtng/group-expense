@@ -2,7 +2,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/pool";
-import { optionalNote } from "@/lib/notes";
 
 export class MembershipError extends Error {
   constructor(public statusCode: 400 | 403 | 404 | 409, message: string) {
@@ -99,8 +98,7 @@ kind:"left"|"removed"|"rejoined"|"ownership_transferred",details:object={}) {
 }
 
 /** Rejects deletion if ANY financial obligation in either direction remains. */
-export async function departGroup(groupId:string,actorId:string,targetId:string,mode:"left"|"removed",rawNote?:string) {
-  const note=optionalNote(rawNote);
+export async function departGroup(groupId:string,actorId:string,targetId:string,mode:"left"|"removed") {
   return transaction(async client=>{
     const group=await lockGroup(client,groupId);
     const actorRole=await activeRole(client,groupId,actorId);
@@ -128,13 +126,12 @@ export async function departGroup(groupId:string,actorId:string,targetId:string,
       [groupId,targetId,mode,actorId],
     );
     if(r.rowCount!==1)throw new MembershipError(409,"Thành viên đã thay đổi trạng thái.");
-    await recordEvent(client,groupId,targetId,actorId,mode,{note});
+    await recordEvent(client,groupId,targetId,actorId,mode);
     return {status:mode};
   });
 }
 
-export async function transferGroupOwnership(groupId:string,actorId:string,targetId:string,rawNote?:string) {
-  const note=optionalNote(rawNote);
+export async function transferGroupOwnership(groupId:string,actorId:string,targetId:string) {
   return transaction(async client=>{
     const group=await lockGroup(client,groupId);
     if(group.owner_id!==actorId || !(await activeRole(client,groupId,actorId)))
@@ -150,7 +147,7 @@ export async function transferGroupOwnership(groupId:string,actorId:string,targe
     await client.query("UPDATE groups SET owner_id=$2,updated_at=now() WHERE id=$1",
       [groupId,targetId]);
     await recordEvent(client,groupId,targetId,actorId,"ownership_transferred",
-      {previousOwnerId:actorId,newOwnerId:targetId,note});
+      {previousOwnerId:actorId,newOwnerId:targetId});
     return {ownerId:targetId};
   });
 }
@@ -176,27 +173,4 @@ export async function rejoinExistingMember(client:PoolClient,groupId:string,user
     [groupId,userId],
   );
   return true;
-}
-
-export type MembershipNoteEvent = {
-  id:string; kind:string; note:string; recordedAt:string; actorName:string; memberName:string;
-};
-
-/** Only active members can inspect note-bearing membership actions. */
-export async function listMembershipNoteEvents(groupId:string, userId:string):Promise<MembershipNoteEvent[]> {
-  const result=await pool.query<MembershipNoteEvent>(
-    `SELECT e.id,e.kind,e.details->>'note' AS note,
-      e.recorded_at::text AS "recordedAt",
-      actor.name AS "actorName", member.name AS "memberName"
-     FROM group_membership_events e
-     JOIN "user" actor ON actor.id=e.actor_id
-     JOIN "user" member ON member.id=e.user_id
-     WHERE e.group_id=$1 AND NULLIF(btrim(e.details->>'note'),'') IS NOT NULL
-       AND EXISTS(SELECT 1 FROM group_members gm
-         JOIN groups g ON g.id=gm.group_id
-         WHERE gm.group_id=e.group_id AND gm.user_id=$2 AND gm.status='active'
-           AND g.archived_at IS NULL)
-     ORDER BY e.recorded_at DESC LIMIT 30`,[groupId,userId],
-  );
-  return result.rows;
 }
