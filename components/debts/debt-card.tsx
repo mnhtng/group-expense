@@ -1,9 +1,9 @@
 import Link from "next/link";
+import { formatDateDMY } from "@/lib/date-format";
 import type { DebtRow } from "@/lib/debts/service";
 
 const vnd = (amount: string) =>
   new Intl.NumberFormat("vi-VN").format(BigInt(amount)) + " ₫";
-const shortDate = (date: string) => date.split("-").reverse().join("/");
 
 export function DebtCard({
   debt, viewerId, showGroup = false,
@@ -37,7 +37,7 @@ export function DebtCard({
       <div className="min-w-0 flex-1">
         <p className="font-semibold break-words">{debt.expenseTitle}</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {showGroup ? `${debt.groupName} · ` : ""}{shortDate(debt.occurredOn)} · {debt.sourceCount} món liên quan
+          {showGroup ? `${debt.groupName} · ` : ""}{formatDateDMY(debt.occurredOn)} · {debt.sourceCount} món liên quan
         </p>
       </div>
       <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">
