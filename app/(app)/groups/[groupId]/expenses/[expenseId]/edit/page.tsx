@@ -16,6 +16,7 @@ export default async function EditExpensePage({ params }: {
   const expense = await getExpense(groupId, expenseId, user.id);
   if (!expense) notFound();
   if (!canModifyExpense(expense.createdBy, user.id)) notFound();
+  if (expense.completedAt || BigInt(expense.confirmedMinor)>0n || BigInt(expense.pendingMinor)>0n) notFound();
   const members = await listMembers(groupId, user.id);
   return <main className="app-page">
     <Link href={`/groups/${groupId}/expenses/${expenseId}`} className="text-sm text-muted-foreground">← Chi tiết hóa đơn</Link>
