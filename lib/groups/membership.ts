@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/pool";
+import { revokeSettlementManagersWithMembership } from "@/lib/settlement-cycles/settings";
 
 export class MembershipError extends Error {
   constructor(public statusCode: 400 | 403 | 404 | 409, message: string) {
@@ -126,6 +127,8 @@ export async function departGroup(groupId:string,actorId:string,targetId:string,
       [groupId,targetId,mode,actorId],
     );
     if(r.rowCount!==1)throw new MembershipError(409,"Thành viên đã thay đổi trạng thái.");
+    // Revoke BEFORE COMMIT: a future rejoin must never restore previous delegation.
+    await revokeSettlementManagersWithMembership(client,groupId,actorId,"member_departed",targetId);
     await recordEvent(client,groupId,targetId,actorId,mode);
     return {status:mode};
   });
@@ -146,6 +149,8 @@ export async function transferGroupOwnership(groupId:string,actorId:string,targe
       WHERE group_id=$1 AND user_id=$2 AND status='active'`,[groupId,targetId]);
     await client.query("UPDATE groups SET owner_id=$2,updated_at=now() WHERE id=$1",
       [groupId,targetId]);
+    // All old grants are revoked; new owner can explicitly re-authorize managers.
+    await revokeSettlementManagersWithMembership(client,groupId,actorId,"ownership_transferred");
     await recordEvent(client,groupId,targetId,actorId,"ownership_transferred",
       {previousOwnerId:actorId,newOwnerId:targetId});
     return {ownerId:targetId};
