@@ -1400,6 +1400,15 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       .response.status,409,"default OFF cannot create a manual cycle");
     assert.equal((await expenseRequest("PATCH",sc003SettingUrl,
       config(0,true,false),jar)).response.status,200);
+    assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID()),jar))
+      .response.status,409,
+      "manual periods before the opt-in instant cannot be imported retroactively");
+    // SQL-only fixture: simulate a group that explicitly opted in last week.
+    // Never backdate production settings, and never rewrite financial history.
+    await pool.query(`UPDATE group_settlement_config_events
+      SET recorded_at=$2::timestamptz
+      WHERE group_id=$1 AND event_type='settings_changed'`,
+      [sc003Group,sc003Date(-7)+"T00:00:00Z"]);
     assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID()),thirdJar))
       .response.status,403,"group admin has no cycle-manager power");
     const sc003FirstKey=randomUUID();
