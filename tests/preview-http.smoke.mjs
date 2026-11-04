@@ -1638,6 +1638,23 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       [sc004Invoice])).rows[0];
     assert.equal(sc004Obligation.amount_minor,"100000");
 
+    // A bill exactly at the exclusive end is NOT part of this cycle.
+    const sc004Boundary=await expenseRequest("POST",sc004ExpensesApi,{
+      ...sc004BillDraft,occurredOn:sc003Date(-1),
+      title:"SC004 next period boundary",
+      items:[{...sc004BillDraft.items[0],unitPriceMinor:"1000"}],
+    },jar);
+    assert.equal(sc004Boundary.response.status,201);
+    // Deleted invoices must not enter the canonical snapshot.
+    const sc004Deleted=await expenseRequest("POST",sc004ExpensesApi,{
+      ...sc004BillDraft,title:"SC004 void before snapshot",
+      items:[{...sc004BillDraft.items[0],unitPriceMinor:"1000"}],
+    },jar);
+    assert.equal(sc004Deleted.response.status,201);
+    assert.equal((await expenseRequest("DELETE",
+      `${sc004ExpensesApi}/${sc004Deleted.body.id}`,{expectedVersion:1},jar))
+      .response.status,200);
+
     // 550 additional obligations: proves the canonical SQL ignores the
     // 100-invoice and 500-obligation caps of the existing UI lists.
     await pool.query(`INSERT INTO expenses
@@ -1789,6 +1806,29 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(stillFrozen.confirmedCashMinor,"50000");
     assert.equal(stillFrozen.pendingCashMinor,"10000");
     assert.equal(stillFrozen.fingerprint,stored.fingerprint);
+    // Creator-only completion still works AFTER all actual cash is confirmed.
+    // Neither the snapshot nor group-manager authorization can complete an
+    // invoice in place of its original creator.
+    const sc004LastCash=await expenseRequest("POST",sc004PaymentsApi,{
+      requestKey:randomUUID(),
+      allocations:[{obligationId:sc004Obligation.id,amountMinor:"40000"}],
+    },otherJar);
+    assert.equal(sc004LastCash.response.status,201,JSON.stringify(sc004LastCash.body));
+    assert.equal((await expenseRequest("PATCH",
+      `${sc004PaymentsApi}/${sc004LastCash.body.id}`,{action:"confirm"},jar))
+      .response.status,200);
+    const sc004CompleteUrl=`${sc004ExpensesApi}/${sc004Invoice}/complete`;
+    assert.equal((await expenseRequest("POST",sc004CompleteUrl,
+      {expectedVersion:1},otherJar)).response.status,403,
+      "debtor cannot complete another person's invoice");
+    const sc004Completed=await expenseRequest("POST",sc004CompleteUrl,
+      {expectedVersion:1},jar);
+    assert.equal(sc004Completed.response.status,200,JSON.stringify(sc004Completed.body));
+    assert.equal(sc004Completed.body.completed,true);
+    assert.equal((await expenseRequest("GET",sc004Url,undefined,jar))
+      .body.snapshot.fingerprint,stored.fingerprint,
+      "creator completion cannot rewrite a frozen expense snapshot");
+
     assert.equal((await pool.query(
       `SELECT count(*)::int AS n FROM group_settlement_cycle_events
        WHERE cycle_id=$1 AND event_type='snapshot_locked'`,
