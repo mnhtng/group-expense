@@ -28,8 +28,7 @@ export default async function GroupPage({ params, searchParams }: {
     </Link>
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="min-w-0 flex-1"><h1 className="break-words text-2xl font-semibold">{group.name}</h1>
-        <p className="text-xs text-muted-foreground">{group.currency}</p>
-        {group.notes&&<p className="mt-2 whitespace-pre-wrap break-words text-sm text-muted-foreground">{group.notes}</p>}</div>
+        <p className="text-xs text-muted-foreground">{group.currency}</p></div>
       <Link href={`/groups/${groupId}/expenses/new`} className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">
         + Hóa đơn
       </Link>
