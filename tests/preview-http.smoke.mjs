@@ -395,6 +395,102 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
       [groupId, thirdUser.id]);
 
+    // Monthly fixed expenses are independent of ordinary group test balances.
+    const recurringGroupId=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,$3)",
+      [recurringGroupId,registered.user.id,"Monthly bills test"]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
+      [recurringGroupId,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
+      [recurringGroupId,otherUser.id]);
+    const dateParts=new Intl.DateTimeFormat("en-US",{
+      timeZone:"Asia/Ho_Chi_Minh",year:"numeric",month:"2-digit",day:"2-digit",
+    }).formatToParts(new Date());
+    const dateValue=kind=>dateParts.find(p=>p.type===kind).value;
+    const monthlyToday=`${dateValue("year")}-${dateValue("month")}-${dateValue("day")}`;
+    const monthlyApi=`${origin}/api/groups/${recurringGroupId}/recurring`;
+    const monthlyDraft={
+      title:"Tiền internet hàng tháng",notes:"Cố định 12.000đ",
+      payerId:registered.user.id,startsOn:monthlyToday,
+      dayOfMonth:Number(dateValue("day")),
+      items:[{name:"Cước mạng",quantity:1,unitPriceMinor:"12000",
+        participants:[otherUser.id]}],
+    };
+    assert.equal((await expenseRequest("POST",monthlyApi,monthlyDraft,new Map()))
+      .response.status,401,"recurring rules require login");
+    assert.equal((await expenseRequest("POST",monthlyApi,monthlyDraft,thirdJar))
+      .response.status,404,"other group member cannot create recurring bills");
+    const recurringCreated=await expenseRequest("POST",monthlyApi,monthlyDraft,jar);
+    assert.equal(recurringCreated.response.status,201,JSON.stringify(recurringCreated.body));
+    const monthlyId=recurringCreated.body.id;
+    const monthlyDetailUrl=`${monthlyApi}/${monthlyId}`;
+    const generatedUrl=monthlyDetailUrl+"/generate";
+    const monthlyRows=(await expenseRequest("GET",monthlyApi,undefined,jar)).body.rules;
+    assert.equal(monthlyRows.length,1);
+    assert.equal(monthlyRows[0].totalMinor,"12000");
+    assert.equal(monthlyRows[0].createdBy,registered.user.id);
+    assert.equal((await expenseRequest("POST",generatedUrl,{},otherJar))
+      .response.status,403,"only schedule creator may generate due bills");
+    const firstRun=await expenseRequest("POST",generatedUrl,{},jar);
+    assert.equal(firstRun.response.status,200,JSON.stringify(firstRun.body));
+    assert.equal(firstRun.body.generated,1,"due bill generates once");
+    const secondRun=await expenseRequest("POST",generatedUrl,{},jar);
+    assert.equal(secondRun.response.status,200);
+    assert.equal(secondRun.body.generated,0,"repeated cron/manual trigger is idempotent");
+    const occurrences=await pool.query(
+      `SELECT o.period::text,o.scheduled_on::text,e.id,e.created_by,e.total_minor::text
+       FROM recurring_expense_occurrences o JOIN expenses e ON e.id=o.expense_id
+       WHERE o.rule_id=$1`,[monthlyId]);
+    assert.equal(occurrences.rowCount,1);
+    const monthlyInvoiceId=occurrences.rows[0].id;
+    assert.equal(occurrences.rows[0].scheduled_on,monthlyToday);
+    assert.equal(occurrences.rows[0].created_by,registered.user.id);
+    assert.equal(occurrences.rows[0].total_minor,"12000");
+    const monthlyObligation=await pool.query(
+      "SELECT debtor_id,creditor_id,amount_minor::text FROM obligations WHERE expense_id=$1 AND voided_at IS NULL",
+      [monthlyInvoiceId]);
+    assert.equal(monthlyObligation.rowCount,1);
+    assert.equal(monthlyObligation.rows[0].debtor_id,otherUser.id);
+    assert.equal(monthlyObligation.rows[0].creditor_id,registered.user.id);
+    assert.equal(monthlyObligation.rows[0].amount_minor,"12000");
+
+    const adjusted={...monthlyDraft,items:[{...monthlyDraft.items[0],unitPriceMinor:"18000"}]};
+    assert.equal((await expenseRequest("PATCH",monthlyDetailUrl,
+      {expectedVersion:1,rule:adjusted},otherJar)).response.status,403,
+      "non-creator cannot edit monthly rule");
+    const changed=await expenseRequest("PATCH",monthlyDetailUrl,
+      {expectedVersion:1,rule:adjusted},jar);
+    assert.equal(changed.response.status,200,JSON.stringify(changed.body));
+    assert.equal(changed.body.version,2);
+    const originalInvoice=await pool.query(
+      "SELECT total_minor::text FROM expenses WHERE id=$1",[monthlyInvoiceId]);
+    assert.equal(originalInvoice.rows[0].total_minor,"12000",
+      "editing template must never rewrite an already generated invoice");
+    assert.equal((await expenseRequest("POST",monthlyDetailUrl,
+      {expectedVersion:2,action:"pause"},otherJar)).response.status,403);
+    const pause=await expenseRequest("POST",monthlyDetailUrl,
+      {expectedVersion:2,action:"pause"},jar);
+    assert.equal(pause.response.status,200);
+    assert.equal((await expenseRequest("POST",generatedUrl,{},jar))
+      .response.status,409,"paused schedule cannot create bills");
+    const resume=await expenseRequest("POST",monthlyDetailUrl,
+      {expectedVersion:3,action:"resume"},jar);
+    assert.equal(resume.response.status,200);
+    assert.equal((await expenseRequest("POST",generatedUrl,{},jar)).body.generated,0,
+      "resuming must not duplicate the current month");
+    assert.equal((await pool.query(
+      "SELECT count(*)::int AS count FROM recurring_expense_occurrences WHERE rule_id=$1",
+      [monthlyId])).rows[0].count,1);
+
+    const futureDay=Number(dateValue("day"))<31
+      ? Number(dateValue("day"))+1:1;
+    const futureRule=await expenseRequest("POST",monthlyApi,
+      {...monthlyDraft,title:"Kỳ chưa đến hạn",dayOfMonth:futureDay},jar);
+    assert.equal(futureRule.response.status,201);
+    assert.equal((await expenseRequest("POST",
+      `${monthlyApi}/${futureRule.body.id}/generate`,{},jar)).body.generated,0,
+      "a future due date must not generate a bill early");
+
     // Creator-only invoice authorization: no owner, admin or payer exception.
     // B creates an invoice; C is its payer and is temporarily promoted to admin.
     const memberCreatedDraft = {
