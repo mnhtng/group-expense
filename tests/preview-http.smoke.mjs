@@ -2018,11 +2018,32 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const sc005Residual=(await expenseRequest("GET",sc005Url,undefined,jar)).body.pairs[0];
     assert.equal(sc005Residual.availableMinor,"250");
     assert.equal(sc005Residual.allocationCount,1);
-    const sc005CreditorRequest=await expenseRequest("POST",sc005Url,
-      sc005Request(randomUUID(),sc005Residual.fingerprint,"Residual cash"),
+    // A rejected batch does not discharge money; reservations become
+    // available for a NEW request, never implicitly reuse the rejected one.
+    const rejectedBatch=await expenseRequest("POST",sc005Url,
+      sc005Request(randomUUID(),sc005Residual.fingerprint,"First residual"),
       jar);
-    assert.equal(sc005CreditorRequest.response.status,201,
-      JSON.stringify(sc005CreditorRequest.body));
+    assert.equal(rejectedBatch.response.status,201);
+    assert.equal((await expenseRequest("PATCH",
+      `${sc004PaymentsApi}/${rejectedBatch.body.id}`,
+      {action:"reject"},otherJar)).response.status,200);
+    const afterRejection=(await expenseRequest("GET",sc005Url,undefined,jar)).body.pairs[0];
+    assert.equal(afterRejection.availableMinor,"250");
+    assert.equal(afterRejection.allocationCount,1);
+
+    // Concurrent identical request keys (double click/lost first response)
+    // must produce ONE settlement and return its same id to both callers.
+    const residualKey=randomUUID();
+    const residualRequests=await Promise.all([
+      expenseRequest("POST",sc005Url,
+        sc005Request(residualKey,afterRejection.fingerprint,"Residual cash"),jar),
+      expenseRequest("POST",sc005Url,
+        sc005Request(residualKey,afterRejection.fingerprint,"Residual cash"),jar),
+    ]);
+    assert.deepEqual(residualRequests.map(x=>x.response.status).sort(),[200,201],
+      "concurrent same-key requests are exactly once");
+    assert.equal(residualRequests[0].body.id,residualRequests[1].body.id);
+    const sc005CreditorRequest=residualRequests.find(x=>x.response.status===201);
     assert.equal(sc005CreditorRequest.body.amountMinor,"250");
     assert.equal(sc005CreditorRequest.body.allocationCount,1);
     assert.equal((await expenseRequest("PATCH",
@@ -2037,7 +2058,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       .body.pairs.length,0,"all live same-direction cash now confirmed");
     assert.equal((await pool.query(
       `SELECT count(*)::int AS n FROM group_settlement_cycle_repayments
-       WHERE cycle_id=$1`,[sc003FirstId])).rows[0].n,2);
+       WHERE cycle_id=$1`,[sc003FirstId])).rows[0].n,3);
 
     // Disabling a group denies NEW locking, but a lost-response retry must
     // still read the EXACT immutable receipt that committed previously.
