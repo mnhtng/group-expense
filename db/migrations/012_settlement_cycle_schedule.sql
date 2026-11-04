@@ -42,4 +42,35 @@ CREATE TABLE group_settlement_schedule_events (
 CREATE INDEX group_settlement_schedule_event_history
   ON group_settlement_schedule_events(group_id,recorded_at DESC);
 
+-- Protect schedule revision identity. The ONLY allowed mutation is marking
+-- an as-yet-unactivated future revision as superseded ONCE.
+CREATE FUNCTION settlement_schedule_guard_revision() RETURNS trigger
+LANGUAGE plpgsql AS $
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Schedule revisions cannot be deleted';
+  END IF;
+  IF OLD.superseded_at IS NOT NULL OR NEW.superseded_at IS NULL
+     OR OLD.effective_at <= clock_timestamp()
+     OR (to_jsonb(NEW) - 'superseded_at') <>
+        (to_jsonb(OLD) - 'superseded_at') THEN
+    RAISE EXCEPTION 'Only an unactivated future schedule can be superseded';
+  END IF;
+  RETURN NEW;
+END;
+$;
+CREATE TRIGGER settlement_schedule_guard_revision
+  BEFORE UPDATE OR DELETE ON group_settlement_schedule_revisions
+  FOR EACH ROW EXECUTE FUNCTION settlement_schedule_guard_revision();
+
+CREATE FUNCTION settlement_schedule_guard_event() RETURNS trigger
+LANGUAGE plpgsql AS $
+BEGIN
+  RAISE EXCEPTION 'Schedule audit events are append-only';
+END;
+$;
+CREATE TRIGGER settlement_schedule_guard_event
+  BEFORE UPDATE OR DELETE ON group_settlement_schedule_events
+  FOR EACH ROW EXECUTE FUNCTION settlement_schedule_guard_event();
+
 -- No touch to expenses, obligations, settlements, feature gate or production.
