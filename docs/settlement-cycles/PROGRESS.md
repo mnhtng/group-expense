@@ -214,11 +214,78 @@ execution (SC-006).
 - Draft PR #16, no merge into `develop`/`main`, no staging/production
   deployment or shared Neon migration. Financial P0 release gate remains CLOSED.
 
-## NEXT CONVERSATION: SC-005 ONLY
+## 2026-11-04 — SC-005: DONE (feature branch; no real-money rollout)
 
-**Ticket:** Same-direction batch repayment by pair, 50+ allocation support,
-idempotent requests and existing two-party confirmation, rechecking actual
-remaining and reserved balances rather than trusting old snapshot totals.
-Read all files in `docs/settlement-cycles/`, preserve
-`feat/settlement-cycles-bilateral`, keep PR Draft, test on disposable DB.
-**NO BN-* set-off or SC-006 member/recurring adjustments in SC-005.**
+**One-ticket scope:** same-direction, single-pair, single locked-cycle cash
+batch using original settlements/allocations and original two-party confirm.
+No BN-* offset, no SC-006 adjustment attribution, no SC-008 full mobile UI.
+
+**Delivered**
+- `015_settlement_cycle_batch_repayments.sql`: immutable
+  `group_settlement_cycle_repayments` provenance with composite group,
+  cycle snapshot and cash-settlement FKs; DB verifies complete source
+  allocation membership, exact row count, cash sum and pending status.
+  Later direct SQL cannot edit/delete provenance, reassign batch allocation
+  rows, alter original amount/counterparties or replay settlement events.
+  Exactly the existing counterparties may confirm/reject/cancel.
+- `lib/settlement-cycles/repayments.ts`: complete canonical snapshot
+  source query (no 100/500 UI cap), validated live confirmed/pending
+  allocations, precise BigInt VND sums; deterministic per-direction
+  fingerprint includes original obligation ID/version and live remaining.
+  The `POST` transaction locks group→cycle→sorted original obligations,
+  rechecks current balances, rejects stale preview (409), inserts one
+  `settlements` PENDING row, all allocations through typed UNNEST,
+  immutable cycle provenance, existing settlement audit and notification.
+  Existing legacy/manual payment path remains unchanged.
+- Session-authenticated `GET/POST
+  /api/groups/:groupId/settlement-cycle/cycles/:cycleId/repayments`:
+  active group member can preview; only actual debtor/creditor may
+  request. Both endpoints reject nonlocked or other-cycle scope;
+  idempotent request key survives lost responses and opt-out; fresh
+  requests after opt-out rejected.
+- Existing `PATCH /api/groups/:groupId/settlements/:settlementId`
+  remains the ONLY confirm/reject/cancel mechanism. New pending batch
+  never counts as confirmed cash; neither owner nor cycle manager may
+  confirm on someone else's behalf.
+- **Production safety:** `SETTLEMENT_CYCLE_ENGINE_READY=false`
+  unchanged. Only disposable PG17 GitHub CI may exercise this unreleased
+  money code when `CI=true`, `SC005_TEST_ONLY=isolated-pg17`
+  and DATABASE_URL equals the exact localhost fixture URL. Normal
+  developer/Preview/staging/production requests fail closed (HTTP 409).
+- `SC-005-BATCH-REPAYMENTS.md` documents the exact model and release gate.
+
+**Test evidence (latest financial code/test commit `0322270f1cd464a104f8da4883bd913e42c7935f`)**
+- [CI lint/typecheck/unit/build — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41875114919)
+- [Disposable PostgreSQL 17 migration twice + integration + HTTP — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41875114912)
+- HTTP test: 550 obligations from 550 snapshot sources in ONE PENDING
+  cash request; a separate partial pending reservation makes previous
+  fingerprint stale and reduces available cash by exactly 250 VND.
+  Two different-key concurrent attempts yield [201,409], identical-key
+  simultaneous retries [201,200], no double count. Wrong-cycle,
+  reversed pair, nonparty admin, self confirmation, other unrelated
+  approver, stale/unknown fields and changed note are denied.
+  Original other party confirms all 550 allocations in ONE transition.
+  A second rejected batch frees availability, new request covers exact
+  residual, and *opposite initiator* requires confirmation by the debtor.
+  Direct SQL tampering with allocations, batch metadata, settlement amount,
+  event history and association with nonlocked cycle is rejected.
+  Disabled group disallows new cash but still reads old idempotent receipt.
+- All Postgres/HTTP tests use temporary GitHub Actions PG17, NOT shared
+  Neon branches. No development/main branch change, no production data
+  changes, no deployment. PR #16 remains Draft against `develop`.
+
+**Deferred by contract**
+- No noncash offset or multi-person debt simplification (BN-*).
+- No late invoice reattribution (SC-006), no full mobile finance UI (SC-008)
+  or final financial release gates (SC-007/SC-010).
+- CI-only testing exception must never become a user-facing release switch;
+  production finance remains OFF pending a separate audited rollout.
+
+## NEXT CONVERSATION: BN-001 ONLY
+
+**Ticket:** Pure BigInt calculator for STRICT pairwise bilateral offsets,
+deterministic allocation and eligibility (only TWO persons, no third-party
+simplification, no real set-off, no proposal persistence or financial ledger
+mutation). Read all `docs/settlement-cycles/*.md` first. Work only on
+`feat/settlement-cycles-bilateral`; maintain Draft PR, test before claiming
+completion. No BN-002, SC-006 or deployment in this next conversation.
