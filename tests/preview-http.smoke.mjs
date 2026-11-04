@@ -1837,6 +1837,135 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       `SELECT count(*)::int AS n FROM group_settlement_cycle_snapshots
        WHERE cycle_id=$1`,[sc003FirstId])).rows[0].n,1);
 
+    // SC-005: 550 same-direction source obligations become ONE pending
+    // standard settlement, with 550 allocation rows and ordinary two-party
+    // confirmation. Only CI's exact disposable localhost PG runs the write.
+    const sc005Url=`${sc003Api}/${sc003FirstId}/repayments`;
+    const sc005Unauthorized=await expenseRequest("GET",sc005Url,undefined,new Map());
+    assert.equal(sc005Unauthorized.response.status,401);
+    const sc005Preview=await expenseRequest("GET",sc005Url,undefined,jar);
+    assert.equal(sc005Preview.response.status,200,JSON.stringify(sc005Preview.body));
+    assert.equal(sc005Preview.body.enabled,true,
+      "only the known isolated PostgreSQL CI fixture exercises unreleased money writes");
+    assert.equal(sc005Preview.body.scope,"one_cycle_one_direction");
+    assert.equal(sc005Preview.body.pairs.length,1);
+    const sc005Pair=sc005Preview.body.pairs[0];
+    assert.equal(sc005Pair.debtorId,otherUser.id);
+    assert.equal(sc005Pair.creditorId,registered.user.id);
+    assert.equal(sc005Pair.allocationCount,550);
+    assert.equal(sc005Pair.availableMinor,"550000");
+    assert.equal(sc005Pair.pendingMinor,"0");
+    const sc005Request=(key,fp=sc005Pair.fingerprint,note="Periodic meal costs")=>({
+      expectedCycleVersion:3,requestKey:key,
+      debtorId:otherUser.id,creditorId:registered.user.id,
+      expectedFingerprint:fp,note,
+    });
+    assert.equal((await expenseRequest("POST",sc005Url,sc005Request(randomUUID()),
+      new Map())).response.status,401);
+    assert.equal((await expenseRequest("POST",sc005Url,sc005Request(randomUUID()),
+      thirdJar)).response.status,403,
+      "a manager or admin who is not a counterparty cannot request cash");
+    assert.equal((await expenseRequest("POST",sc005Url,{
+      ...sc005Request(randomUUID()),debtorId:registered.user.id,
+      creditorId:otherUser.id,
+    },otherJar)).response.status,409,
+      "cash obligations cannot be reversed between the pair");
+    assert.equal((await expenseRequest("POST",sc005Url,{
+      ...sc005Request(randomUUID()),unexpected:true,
+    },otherJar)).response.status,400);
+    assert.equal((await expenseRequest("POST",sc005Url,{
+      ...sc005Request(randomUUID()),expectedCycleVersion:2,
+    },otherJar)).response.status,400,
+      "must be exactly the locked cycle version");
+    assert.equal((await expenseRequest("POST",`${sc003Api}/${sc003Pending.id}/repayments`,
+      sc005Request(randomUUID()),otherJar)).response.status,409,
+      "open cycle cannot authorize cash");
+
+    const sc005BulkDebt=(await pool.query(
+      `SELECT o.id FROM obligations o JOIN expenses e ON e.id=o.expense_id
+       WHERE o.group_id=$1 AND e.title LIKE 'SC004 Bulk %'
+       ORDER BY o.id LIMIT 1`,
+      [sc003Group])).rows[0].id;
+    const sc005OtherPending=await expenseRequest("POST",sc004PaymentsApi,{
+      requestKey:randomUUID(),
+      allocations:[{obligationId:sc005BulkDebt,amountMinor:"250"}],
+    },otherJar);
+    assert.equal(sc005OtherPending.response.status,201);
+    assert.equal((await expenseRequest("POST",sc005Url,
+      sc005Request(randomUUID()),otherJar)).response.status,409,
+      "pending cash reservation changed: stale pair fingerprint must fail");
+    const sc005NewPreview=await expenseRequest("GET",sc005Url,undefined,otherJar);
+    assert.equal(sc005NewPreview.response.status,200);
+    const sc005Fresh=sc005NewPreview.body.pairs[0];
+    assert.equal(sc005Fresh.allocationCount,550);
+    assert.equal(sc005Fresh.availableMinor,"549750");
+    assert.equal(sc005Fresh.pendingMinor,"250");
+    assert.notEqual(sc005Fresh.fingerprint,sc005Pair.fingerprint);
+
+    const sc005KeyA=randomUUID(),sc005KeyB=randomUUID();
+    const sc005Race=await Promise.all([
+      expenseRequest("POST",sc005Url,
+        sc005Request(sc005KeyA,sc005Fresh.fingerprint),otherJar),
+      expenseRequest("POST",sc005Url,
+        sc005Request(sc005KeyB,sc005Fresh.fingerprint),otherJar),
+    ]);
+    assert.deepEqual(sc005Race.map(x=>x.response.status).sort(),[201,409],
+      "concurrent same-pair requests cannot double reserve cash");
+    const sc005Winner=sc005Race.findIndex(x=>x.response.status===201);
+    const sc005Created=sc005Race[sc005Winner].body;
+    const sc005WinnerKey=sc005Winner===0?sc005KeyA:sc005KeyB;
+    assert.equal(sc005Created.status,"pending");
+    assert.equal(sc005Created.amountMinor,"549750");
+    assert.equal(sc005Created.allocationCount,550);
+    const sc005Stored=(await pool.query(
+      `SELECT count(*)::int AS count,
+         COALESCE(sum(amount_minor),0)::text AS amount
+       FROM settlement_allocations WHERE settlement_id=$1`,
+      [sc005Created.id])).rows[0];
+    assert.deepEqual(sc005Stored,{count:550,amount:"549750"});
+    assert.equal((await pool.query(
+      `SELECT count(*)::int AS n
+       FROM group_settlement_cycle_repayments
+       WHERE settlement_id=$1 AND cycle_id=$2`,
+      [sc005Created.id,sc003FirstId])).rows[0].n,1);
+    const sc005Again=await expenseRequest("POST",sc005Url,
+      sc005Request(sc005WinnerKey,sc005Fresh.fingerprint),otherJar);
+    assert.equal(sc005Again.response.status,200,
+      "lost response: same idempotency key retrieves original batch");
+    assert.equal(sc005Again.body.id,sc005Created.id);
+    assert.equal((await expenseRequest("POST",sc005Url,
+      sc005Request(sc005WinnerKey,sc005Fresh.fingerprint,"Changed note"),
+      otherJar)).response.status,409,
+      "same idempotency key with modified note is a conflict");
+
+    const sc005PaymentUrl=`${sc004PaymentsApi}/${sc005Created.id}`;
+    const sc005Owed=(await pool.query(
+      `SELECT amount_minor::text, status FROM settlements WHERE id=$1`,
+      [sc005Created.id])).rows[0];
+    assert.deepEqual(sc005Owed,{amount_minor:"549750",status:"pending"},
+      "batch request reserves cash, it does NOT discharge the debt");
+    assert.equal((await expenseRequest("PATCH",sc005PaymentUrl,
+      {action:"confirm"},otherJar)).response.status,403,
+      "initiator cannot confirm their own batch payment");
+    assert.equal((await expenseRequest("PATCH",sc005PaymentUrl,
+      {action:"confirm"},thirdJar)).response.status,403,
+      "admin cannot impersonate either counterparty");
+    assert.equal((await expenseRequest("PATCH",sc005PaymentUrl,
+      {action:"confirm"},jar)).response.status,200,
+      "actual creditor confirms all 550 allocations together");
+    assert.equal((await expenseRequest("PATCH",sc005PaymentUrl,
+      {action:"confirm"},jar)).response.status,409,
+      "one batch cannot be confirmed twice");
+    assert.equal((await pool.query(
+      "SELECT status FROM settlements WHERE id=$1",
+      [sc005Created.id])).rows[0].status,"confirmed");
+    assert.equal((await expenseRequest("GET",sc004Url,undefined,jar))
+      .body.snapshot.fingerprint,stored.fingerprint,
+      "batch repayment cannot modify immutable SC-004 snapshot");
+    assert.equal((await pool.query(
+      `SELECT count(*)::int AS n FROM group_settlement_cycle_repayments
+       WHERE cycle_id=$1`,[sc003FirstId])).rows[0].n,1);
+
     // Disabling a group denies NEW locking, but a lost-response retry must
     // still read the EXACT immutable receipt that committed previously.
     assert.equal((await expenseRequest("PATCH",sc003SettingUrl,
