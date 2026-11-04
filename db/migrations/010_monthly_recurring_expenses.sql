@@ -12,6 +12,7 @@ CREATE TABLE recurring_expense_rules (
   items jsonb NOT NULL CHECK(jsonb_typeof(items)='array'),
   total_minor bigint NOT NULL CHECK(total_minor > 0),
   status text NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused')),
+  pause_reason varchar(200),
   version integer NOT NULL DEFAULT 1 CHECK(version >= 1),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
