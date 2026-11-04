@@ -83,5 +83,70 @@ CREATE TRIGGER sc005_repayment_history_guard
   BEFORE UPDATE OR DELETE ON group_settlement_cycle_repayments
   FOR EACH ROW EXECUTE FUNCTION sc005_repayment_immutable();
 
+-- Once a batch provenance record exists, an allocation is immutable.
+-- A later confirmation changes ONLY settlement status; it may never move
+-- allocations to another cycle, add rows or silently increase cash.
+CREATE FUNCTION sc005_guard_allocation() RETURNS trigger LANGUAGE plpgsql AS $sc005$
+DECLARE old_id uuid; new_id uuid;
+BEGIN
+  IF TG_OP<>'INSERT' THEN old_id=OLD.settlement_id; END IF;
+  IF TG_OP<>'DELETE' THEN new_id=NEW.settlement_id; END IF;
+  IF EXISTS (
+    SELECT 1 FROM group_settlement_cycle_repayments r
+    WHERE r.settlement_id=ANY(ARRAY[old_id,new_id])
+  ) THEN
+    RAISE EXCEPTION 'SC-005 batch allocations are immutable';
+  END IF;
+  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END;
+$sc005$;
+CREATE TRIGGER sc005_allocations_immutable
+  BEFORE INSERT OR UPDATE OR DELETE ON settlement_allocations
+  FOR EACH ROW EXECUTE FUNCTION sc005_guard_allocation();
+
+-- SC-005 inherits existing two-party confirmation. Protect the original
+-- amount, pair, actor and idempotency fingerprint even from SQL bypasses.
+CREATE FUNCTION sc005_guard_settlement() RETURNS trigger LANGUAGE plpgsql AS $sc005$
+DECLARE is_batch boolean;
+BEGIN
+  SELECT EXISTS(SELECT 1 FROM group_settlement_cycle_repayments
+    WHERE settlement_id=OLD.id) INTO is_batch;
+  IF NOT is_batch THEN
+    RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+  END IF;
+  IF TG_OP='UPDATE' AND OLD.status='pending'
+     AND NEW.status IN ('confirmed','rejected','cancelled')
+     AND NEW.resolved_at IS NOT NULL
+     AND NEW.resolved_at>=OLD.created_at
+     AND (
+       (NEW.status='cancelled' AND NEW.resolved_by=OLD.initiated_by)
+       OR (NEW.status IN ('confirmed','rejected') AND
+           NEW.resolved_by IN (OLD.debtor_id,OLD.creditor_id) AND
+           NEW.resolved_by<>OLD.initiated_by)
+     )
+     AND (to_jsonb(NEW)-'status'-'resolved_at'-'resolved_by')
+       = (to_jsonb(OLD)-'status'-'resolved_at'-'resolved_by')
+  THEN RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'SC-005 batch payment cannot be altered outside two-party transition';
+END;
+$sc005$;
+CREATE TRIGGER sc005_settlement_transition_guard
+  BEFORE UPDATE OR DELETE ON settlements
+  FOR EACH ROW EXECUTE FUNCTION sc005_guard_settlement();
+
+CREATE FUNCTION sc005_guard_settlement_event() RETURNS trigger LANGUAGE plpgsql AS $sc005$
+BEGIN
+  IF EXISTS(SELECT 1 FROM group_settlement_cycle_repayments r
+            WHERE r.settlement_id=OLD.settlement_id) THEN
+    RAISE EXCEPTION 'SC-005 settlement events are append-only';
+  END IF;
+  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END;
+$sc005$;
+CREATE TRIGGER sc005_batch_events_immutable
+  BEFORE UPDATE OR DELETE ON settlement_events
+  FOR EACH ROW EXECUTE FUNCTION sc005_guard_settlement_event();
+
 -- Original settlements, allocations and approval events remain canonical.
 -- Both parties must still confirm via the existing cash-settlement API.
