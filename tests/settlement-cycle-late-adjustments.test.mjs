@@ -40,9 +40,9 @@ test("SC-006 requires manager authority, first next reviewed period and no forge
 });
 
 test("SC-006 cron waits for recurring catch-up, and member departure pauses implicated templates",()=>{
-  const cron=read("app/api/internal/push-drain/route.ts");
-  assert.ok(cron.indexOf("generateDueRecurringExpenses")<cron.indexOf("processCycleMetadataCron(30,24)"));
-  assert.match(cron,/recurring\.value\.errors===0 && recurring\.value\.generated<20/);
+  const cron=read("lib/settlement-cycles/ops-runner.ts");
+  assert.ok(cron.indexOf("generateDueRecurringExpenses")<cron.indexOf("processCycleMetadataCron(OPS_LIMITS.groups,OPS_LIMITS.perGroup)"));
+  assert.match(cron,/recurring\.value\.errors===0&&[\s\S]*recurring\.value\.generated<OPS_LIMITS\.recurring/);
   const member=read("lib/groups/membership.ts");
   assert.match(member,/uncompletedInvoiceCount/);
   assert.match(member,/creator_confirmation/);
