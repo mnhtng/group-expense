@@ -614,12 +614,83 @@ execution remains CI-only with all `CI=true`,
 `DATABASE_URL=postgresql://test:test@localhost:5432/group_expense`.
 Do NOT implement SC-006 without separate user request.
 
-## NEXT CONVERSATION: SC-006 ONLY
+## 2026-11-05 — SC-006 DONE on feature branch, NOT released
 
-Study all settlement-cycles docs, especially the frozen-source
-adjustment/recurrence, invoice and member-leave lifecycle rules.
-Implement only SC-006 against the same feature branch with
-full standalone CI + PostgreSQL HTTP acceptance.
-Never merge, deploy or enable real-money behavior automatically.
-Keep PR #16 Draft.
+**Scope:** immutable late original invoice attribution and exact
+recurring/cycle ordering, creator-only membership exit responsibility
+and group archival gates. No historical snapshot unlocking and no
+financial ledger rewrite, original obligation duplication or
+third-party debt simplification.
+
+**Implementation**
+- `021_settlement_cycle_late_adjustments.sql` adds unique immutable
+  original invoice attribution linking one LOCKED original historical
+  cycle to the chronologically first subsequent eligible REVIEW cycle,
+  original invoice version, manager actor, per-manager idempotent key
+  and note. PostgreSQL independently denies wrong group/role, wrong
+  period, old snapshot source or edited invoice, sealed/invalid target,
+  double assignment and mutation of audit. SQL frozen expense,
+  item/share and obligation guards cover attributed sources immediately.
+- Original SC-004 snapshot preview/insert and SQL REVIEW→LOCKED
+  completeness guard now admit a historical date only when the
+  immutable original invoice has explicit target assignment. Prior
+  LOCKED snapshot AS-OF remains unchanged, new snapshot includes the
+  ORIGINAL obligation IDs only once, and stale preview hashes deny lock.
+- `lib/settlement-cycles/adjustments.ts` and authenticated
+  `GET/POST .../cycles/:originCycleId/late-adjustments` support
+  audit listing, recorded source recurring `ruleId/period`,
+  earliest target suggestion and authorized owner/delegate posting,
+  with same-key idempotent retry, source version check and no
+  client-supplied monetary allocations. Creator-only edit/delete
+  service returns controlled 409 on assigned historical source.
+- The existing daily Vercel cron now finishes recurring catch-up
+  BEFORE cycle metadata processing. Any recurring error or
+  max-20 batch reached defers cycle metadata safely; the existing
+  UNIQUE(rule_id,period) still forbids duplicate recurring invoice.
+- Membership leave/removal blocks the original creator with any
+  uncompleted frozen/attributed/late invoice even after the original
+  debt is zero. A successful member departure atomically PAUSES
+  active recurring templates involving that member (creator, payer
+  or split participant) and revokes cycle-manager delegation.
+  The member UI renders the independent creator confirmation reason.
+- Group archiving refuses OPEN/REVIEW cycle, unresolved original
+  frozen debt/pending, uncompleted frozen source invoice and
+  unassigned late original historical invoices, while allowing an
+  otherwise fully resolved immutable LOCKED period to be archived.
+
+**Acceptance:** Real disposable PostgreSQL 17 migrates schema
+001–021 twice with SHA verification. Authenticated HTTP fixture
+creates a locked origin, late original invoice, adjacent REVIEW
+cycle, concurrently idempotent manager assignment, denied unrelated
+admin/creator/forged amounts, immutable pre-seal original,
+fingerprint invalidation, and later sealed snapshot with exactly ONE
+original invoice/obligation. A separate zero-debt self-paid invoice
+fixture proves creator-only finalization before leaving, successful
+departure pauses a monthly template and permits archive when all
+sources resolved. Unit contract tests cover SQL/manager/cron scope.
+Existing SC-001…BN-006 cash and NONCASH tests unchanged.
+
+**Verified at code commit `b235e2b743f5a6c9b110744e3ca02be122a04909`:**
+- [CI SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41984321612)
+- [PostgreSQL17/HTTP SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41984321562)
+- [SC-006 contract](./SC-006-LIFECYCLE-ADJUSTMENTS.md).
+
+**Safety:** `SETTLEMENT_CYCLE_ENGINE_READY=false` unchanged,
+Neon shared branches not migrated, no Vercel deploy, no production
+money movement or PR merge. PR #16 remains **DRAFT**.
+
+**Known scope limit:** No direct compensation/refund amount for a
+previously PAID frozen invoice. Such a disputed original needs a
+separately audited future monetary-adjustment ticket; SC-006 only
+permits a previously UNRECORDED late original invoice to be
+attributed for subsequent settlement. No SC-007 release gate,
+SC-008 mobile UI or SC-009 notifications implemented here.
+
+## NEXT CONVERSATION: SC-007 ONLY
+
+Implement comprehensive financial concurrency, permission,
+property-based and E2E regression tests, including explicit
+release-readiness review. Do not enable financial engine, merge,
+migrate shared Neon, or deploy staging/production without a separate
+explicit release decision. Keep PR #16 Draft.
 
