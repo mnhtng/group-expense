@@ -232,7 +232,9 @@ artifacts.
 **Do not run this script on Neon**. It deliberately
 exits before any DB calls for a shared/unknown URL.
 
-### Actual Neon rehearsal status (2026-11-05)
+### Actual Neon rehearsal status at SC-010 completion (2026-11-05)
+
+**Historical snapshot:** the table below describes the state when SC-010 code was completed. Subsequent RR-001 authorized child-only migration evidence is recorded in [RR-001](../release-readiness/RR-001-NEON-MIGRATION-EVIDENCE.md) and in the addendum at the end. Do not treat the earlier pending child migration row as the current database state.
 
 | Item | Status |
 |---|---|
@@ -359,3 +361,12 @@ Before an authorized Neon schema rehearsal:
 **Current state:** documentation and CI instrumented,
 not a production rollout. Only an explicit future
 authorization can move any pending gate forward.
+
+
+## 7. Post-SC-010 addendum — RR-001 isolated-Neon migration (2026-11-05)
+
+A separately requested and authorized **RR-001** rehearsal has now applied versioned SQL migrations **011–023** to the dedicated `sc010-rehearsal-20261105` child (`br-curly-rice-b3xenws6`) **only**. Child now records 23 matching SHA-256 migration checksums; `development` remains at 10, `production` at 6. All 8 independent SC-007 original-source read-only queries return 0 violations and full-row SHA-256 values of original `expenses` and `obligations` are unchanged. The executed SQL was applied through isolated branch-pinned Neon transactions; a separate `pnpm db:migrate` command was **not** run against Neon. Noncash/locked-snapshot/dispute rows on this baseline child are empty, so those positive paths remain proven in disposable PG17 CI, not on managed Neon.
+
+**This completes the isolated child schema-migration prerequisite only.** It does NOT establish provider-managed Neon backup/PITR restore, full role/privacy browser E2E, production monitoring, finance signoff, staging acceptance or production release authorization. The release decision stays **NO-GO**, engine compile-time OFF, and PR #16 stays Draft. No schema change was made on either shared Neon branch, and no original financial ledger entry was written.
+
+Evidence: [RR-001 execution and limitations](../release-readiness/RR-001-NEON-MIGRATION-EVIDENCE.md) · [RR-001–RR-005 backlog](../release-readiness/BACKLOG.md).
