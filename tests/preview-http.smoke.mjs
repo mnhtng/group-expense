@@ -2182,8 +2182,11 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(bnLive.body.writable,true);
     assert.equal(bnLive.body.currentVersion,0);
     assert.equal(bnLive.body.current,null);
-    assert.equal(bnLive.body.calculation.aOwesB.availableBeforeMinor,"80000");
-    assert.equal(bnLive.body.calculation.bOwesA.availableBeforeMinor,"130000");
+    assert.deepEqual([
+      bnLive.body.calculation.aOwesB.availableBeforeMinor,
+      bnLive.body.calculation.bOwesA.availableBeforeMinor,
+    ].sort(),["130000","80000"].sort(),
+      "canonical unordered pair must not depend on Better Auth user ID sort");
 
     const bnRejectedInput=await expenseRequest("POST",bnProposalUrl,{
       ...bnPayload(0,randomUUID(),bnLive.body.fingerprint),
