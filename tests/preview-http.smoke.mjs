@@ -3474,6 +3474,24 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     },"no duplicate original invoice, obligation or frozen snapshot");
     assert.equal((await expenseRequest("GET",lateApi,undefined,jar))
       .body.lateInvoices[0].assignedTargetId,sc006Target);
+    // SC-007 release regression: a late invoice's ORIGINAL occurred_on
+    // precedes the target cycle, but a proven SC-006 attribution in its
+    // sealed snapshot MUST remain eligible for two-person noncash preview.
+    // Merely falsifying a date without audited source does not work.
+    assert.equal((await expenseRequest("PATCH",sc006Settings,
+      config(1,true,true),jar)).response.status,200);
+    const adjustedNettingUrl=`${sc006Api}/${sc006Target}/bilateral-proposals?partyAId=${encodeURIComponent(registered.user.id)}&partyBId=${encodeURIComponent(otherUser.id)}`;
+    const adjustedPreview=await expenseRequest("GET",
+      adjustedNettingUrl,undefined,otherJar);
+    assert.equal(adjustedPreview.response.status,200,
+      "audited SC-006 late source must NOT block BN-002 pair netting: "+
+        JSON.stringify(adjustedPreview.body));
+    assert.equal(adjustedPreview.body.eligibleSourceCount,2);
+    assert.equal(adjustedPreview.body.calculation.offsetMinor,"3000");
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_applications
+      WHERE group_id=$1`,[sc006Group])).rows[0].n,0,
+      "preview must not create any NONCASH application automatically");
     // SC-006: zero-debt creator responsibility is independent of ledger
     // balances. One cannot abandon an invoice frozen in a cycle and make
     // it impossible for the only creator to confirm completion.
