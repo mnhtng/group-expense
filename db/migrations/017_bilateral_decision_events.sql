@@ -150,4 +150,116 @@ CREATE TRIGGER bn003_event_guard BEFORE INSERT
  ON group_settlement_bilateral_decision_events FOR EACH ROW
  EXECUTE FUNCTION bn003_guard_event();
 
+-- Durable invalidation at the EXACT commit that changes source money.
+-- A proposal must NEVER become valid again if pending cash was created and
+-- later cancelled back to the original fingerprint: its old approvals
+-- were invalidated at the first write. Every cash writer already holds
+-- the group row lock. The proposal lock serializes these events with
+-- direct SQL decision inserts as well.
+CREATE FUNCTION bn003_auto_invalidate(gid uuid, source_id uuid)
+RETURNS void LANGUAGE plpgsql AS $bn003$
+BEGIN
+  INSERT INTO group_settlement_bilateral_decision_events
+    (id,proposal_id,group_id,cycle_id,party_low,party_high,
+     actor_id,event_type,request_key,request_digest,source_fingerprint)
+  SELECT gen_random_uuid(),p.id,p.group_id,p.cycle_id,p.party_low,p.party_high,
+    NULL,'invalidated',gen_random_uuid(),
+    md5('bn003-auto-v1:'||p.id::text)||md5('invalidate:'||p.id::text),
+    p.source_fingerprint
+  FROM group_settlement_bilateral_heads h
+  JOIN group_settlement_bilateral_proposals p
+    ON p.id=h.current_proposal_id AND p.group_id=h.group_id
+  WHERE h.group_id=gid
+    AND (source_id IS NULL OR EXISTS (
+      SELECT 1 FROM group_settlement_bilateral_sources x
+      WHERE x.proposal_id=p.id AND x.obligation_id=source_id))
+    AND NOT EXISTS(SELECT 1 FROM group_settlement_bilateral_decision_events e
+      WHERE e.proposal_id=p.id AND e.event_type IN
+        ('reject','revoke','invalidated','expired'))
+  ON CONFLICT DO NOTHING;
+END;
+$bn003$;
+
+CREATE FUNCTION bn003_allocation_invalidation() RETURNS trigger LANGUAGE plpgsql AS $bn003$
+DECLARE oid uuid; gid uuid; cash_status text;
+BEGIN
+  IF TG_OP IN ('UPDATE','DELETE') THEN
+    SELECT st.status INTO cash_status FROM settlements st
+     WHERE st.id=OLD.settlement_id;
+    IF cash_status IN ('pending','confirmed') THEN
+      PERFORM bn003_auto_invalidate(OLD.group_id,OLD.obligation_id);
+    END IF;
+  END IF;
+  IF TG_OP IN ('INSERT','UPDATE') THEN
+    SELECT st.status INTO cash_status FROM settlements st
+     WHERE st.id=NEW.settlement_id;
+    IF cash_status IN ('pending','confirmed') THEN
+      PERFORM bn003_auto_invalidate(NEW.group_id,NEW.obligation_id);
+    END IF;
+  END IF;
+  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END;
+$bn003$;
+CREATE TRIGGER bn003_allocation_changed
+  AFTER INSERT OR UPDATE OR DELETE ON settlement_allocations
+  FOR EACH ROW EXECUTE FUNCTION bn003_allocation_invalidation();
+
+CREATE FUNCTION bn003_settlement_cash_invalidation() RETURNS trigger LANGUAGE plpgsql AS $bn003$
+DECLARE obligation_row record;
+BEGIN
+  IF OLD.status IS DISTINCT FROM NEW.status THEN
+    FOR obligation_row IN
+      SELECT DISTINCT obligation_id FROM settlement_allocations
+      WHERE settlement_id=NEW.id
+    LOOP
+      PERFORM bn003_auto_invalidate(NEW.group_id,obligation_row.obligation_id);
+    END LOOP;
+  END IF;
+  RETURN NEW;
+END;
+$bn003$;
+CREATE TRIGGER bn003_cash_status_changed
+  AFTER UPDATE OF status ON settlements FOR EACH ROW
+  EXECUTE FUNCTION bn003_settlement_cash_invalidation();
+
+-- Opting out or losing either signatory's active membership invalidates
+-- existing consent irreversibly, even if a group later re-enables the
+-- feature or the same person rejoins.
+CREATE FUNCTION bn003_settings_invalidation() RETURNS trigger LANGUAGE plpgsql AS $bn003$
+BEGIN
+  IF (OLD.requested_enabled OR OLD.requested_bilateral_netting)
+    AND (NOT NEW.requested_enabled OR NOT NEW.requested_bilateral_netting)
+  THEN PERFORM bn003_auto_invalidate(NEW.group_id,NULL); END IF;
+  RETURN NEW;
+END;
+$bn003$;
+CREATE TRIGGER bn003_cycle_optout_changed
+  AFTER UPDATE OF requested_enabled,requested_bilateral_netting
+  ON group_settlement_settings FOR EACH ROW
+  EXECUTE FUNCTION bn003_settings_invalidation();
+
+CREATE FUNCTION bn003_member_invalidation() RETURNS trigger LANGUAGE plpgsql AS $bn003$
+BEGIN
+  IF OLD.status='active' AND NEW.status<>'active' THEN
+    PERFORM bn003_auto_invalidate(NEW.group_id,NULL);
+  END IF;
+  RETURN NEW;
+END;
+$bn003$;
+CREATE TRIGGER bn003_member_left
+  AFTER UPDATE OF status ON group_members FOR EACH ROW
+  EXECUTE FUNCTION bn003_member_invalidation();
+
+CREATE FUNCTION bn003_archive_invalidation() RETURNS trigger LANGUAGE plpgsql AS $bn003$
+BEGIN
+  IF OLD.archived_at IS NULL AND NEW.archived_at IS NOT NULL THEN
+    PERFORM bn003_auto_invalidate(NEW.id,NULL);
+  END IF;
+  RETURN NEW;
+END;
+$bn003$;
+CREATE TRIGGER bn003_group_archived
+  AFTER UPDATE OF archived_at ON groups FOR EACH ROW
+  EXECUTE FUNCTION bn003_archive_invalidation();
+
 -- Deliberately NO approval/apply table and NO changes to financial sources.
