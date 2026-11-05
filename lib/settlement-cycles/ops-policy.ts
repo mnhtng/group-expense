@@ -3,10 +3,12 @@
  * Only numeric counters and stage status may be persisted.
  */
 export type OpsCounters={
-  recurring:{generated:number;ignored:number;paused:number;errors:number}|null;
+  recurring:{generated:number;ignored:number;paused:number;errors:number;
+    checked?:number;hasMoreRules?:boolean}|null;
   push:{claimed:number;sent:number;disabled:boolean}|null;
   cycles:{groups:number;created:number;reviewed:number;
-    skipped:number;errors:number;metadataOnly:boolean}|null;
+    skipped:number;errors:number;metadataOnly:boolean;
+    hasMoreGroups?:boolean;atCapacityGroups?:number}|null;
   reminders:{disabled:boolean;candidates:number;attempted:number;inserted:number}|null;
   reminderPush:{claimed:number;sent:number;disabled:boolean}|null;
 };
@@ -38,8 +40,14 @@ export function classifyOpsOutcome(
   // caller must verify backlog before marking an operational gate green.
   if(counters.recurring&&counters.recurring.generated>=OPS_LIMITS.recurring)
     warnings.push("RECURRING_AT_CAP");
+  if(counters.recurring?.hasMoreRules)
+    warnings.push("RECURRING_SCAN_INCOMPLETE");
   if(counters.cycles&&counters.cycles.groups>=OPS_LIMITS.groups)
     warnings.push("CYCLES_AT_CAP");
+  if(counters.cycles?.hasMoreGroups)
+    warnings.push("CYCLE_GROUP_SCAN_INCOMPLETE");
+  if((counters.cycles?.atCapacityGroups??0)>0)
+    warnings.push("CYCLE_PERIODS_AT_CAP");
   if(counters.push&&!counters.push.disabled&&
      counters.push.claimed>=OPS_LIMITS.push)
     warnings.push("PUSH_AT_CAP");
