@@ -204,6 +204,13 @@ export async function decideBilateralProposal(groupId:string,cycleId:string,
       return {decisionId:previous.rows[0].id,alreadyRecorded:true,
         status:view.view.status,view:view.view,conflict:false};
     }
+    const reused=await client.query(
+      `SELECT proposal_id FROM group_settlement_bilateral_decision_events
+       WHERE group_id=$1 AND actor_id=$2 AND request_key=$3
+         AND proposal_id<>$4 LIMIT 1`,
+      [groupId,actorId,input.requestKey,p.id]);
+    if(reused.rowCount)throw error(409,
+      "Mã yêu cầu đã sử dụng ở phiên bản đề xuất khác.");
     const c=await cycle(client,groupId,cycleId,true);
     if(c.snapshotFingerprint!==p.snapshotFingerprint)
       throw error(409,"Bản snapshot của kỳ không còn khớp.");
