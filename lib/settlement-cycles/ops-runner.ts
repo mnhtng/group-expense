@@ -135,6 +135,7 @@ export async function readSettlementOpsHealth(){
     const metrics=await client.query<{
       staleRunning:number;failedCheckpoints:number;deadPushJobs:number;
       pendingPushJobs:number;overdueReviews:number;activeCycleGroups:number;
+      recurringFailedCheckpoints:number;activeRecurringRules:number;
     }>(`SELECT
       (SELECT count(*)::int FROM settlement_cycle_operational_runs
        WHERE status='running' AND started_at<now()-interval '25 minutes')
@@ -142,6 +143,11 @@ export async function readSettlementOpsHealth(){
       (SELECT count(*)::int FROM group_settlement_cycle_cron_checkpoints
        WHERE last_error_at>now()-interval '7 days')
        AS "failedCheckpoints",
+      (SELECT count(*)::int FROM recurring_cron_checkpoints
+       WHERE last_error_at>now()-interval '7 days')
+       AS "recurringFailedCheckpoints",
+      (SELECT count(*)::int FROM recurring_expense_rules
+       WHERE status='active') AS "activeRecurringRules",
       (SELECT count(*)::int FROM notification_push_jobs
        WHERE status='dead') AS "deadPushJobs",
       (SELECT count(*)::int FROM notification_push_jobs
@@ -162,6 +168,7 @@ export async function readSettlementOpsHealth(){
       latestCompletedAt:latest?.completedAt?.toISOString()??null,
       latestStatus:latest?.status??null,
       staleRunning:m.staleRunning,failedCheckpoints:m.failedCheckpoints,
+      recurringFailedCheckpoints:m.recurringFailedCheckpoints,
       deadPushJobs:m.deadPushJobs,overdueReviews:m.overdueReviews,
       nowMs:Date.now(),
     });
