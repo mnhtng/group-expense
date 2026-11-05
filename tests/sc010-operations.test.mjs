@@ -108,6 +108,24 @@ test("SC-010 bearer-only operations are auditable, non-overlapping and never ena
   assert.match(read("lib/settlement-cycles/settings.ts"),
     /SETTLEMENT_CYCLE_ENGINE_READY = false/);
 });
+test("SC-010 recurring >200 and cycle >30 work are explicitly flagged instead of silently starved",()=>{
+  const recurring=read("lib/recurring/service.ts");
+  const cycle=read("lib/settlement-cycles/lifecycle.ts");
+  const runner=read("lib/settlement-cycles/ops-runner.ts");
+  const sql=read("db/migrations/023_settlement_cycle_operational_runs.sql");
+  assert.match(recurring,/LEFT JOIN recurring_cron_checkpoints cp/);
+  assert.match(recurring,/ORDER BY cp\.last_checked_at ASC NULLS FIRST/);
+  assert.match(recurring,/LIMIT 201/);
+  assert.match(recurring,/rows\.rows\.slice\(0,200\)/);
+  assert.match(recurring,/hasMoreRules=rows\.rows\.length>result\.checked/);
+  assert.match(recurring,/unnest\(\$1::uuid\[\],\$2::boolean\[\]\)/);
+  assert.match(cycle,/LIMIT \$1\`,\[maxGroups\+1\]\)/);
+  assert.match(cycle,/hasMoreGroups:candidates\.rows\.length>maxGroups/);
+  assert.match(cycle,/atCapacityGroups\+\+/);
+  assert.match(runner,/!recurring\.value\.hasMoreRules/);
+  assert.match(sql,/CREATE TABLE recurring_cron_checkpoints/);
+});
+
 test("SC-010 real restore command rejects every non-disposable URL and cannot target Neon",()=>{
   const bash=read("scripts/sc010-restore-drill.sh");
   const checker=read("db/sc010-restore-verify.mjs");
