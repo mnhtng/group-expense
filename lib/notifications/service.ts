@@ -11,6 +11,9 @@ export type NotificationKind =
   | "late_invoice_attributed" | "cycle_dispute_opened"
   | "cycle_dispute_responded" | "cycle_dispute_closed"
   | "cycle_reminder";
+export type SettlementNotificationKind=Extract<NotificationKind,
+  "settlement_requested"|"settlement_confirmed"|
+  "settlement_rejected"|"settlement_cancelled">;
 export type AppNotification = {
   id: string; kind: NotificationKind; title: string; body: string;
   href: string; readAt: string | null; createdAt: string;
@@ -24,7 +27,7 @@ const uuid = (x: unknown): x is string =>
 
 /** The caller MUST hold the settlement's transaction and group lock. */
 export async function notifySettlement(
-  client: PoolClient, settlementId: string, actorId: string, kind: NotificationKind,
+  client: PoolClient, settlementId: string, actorId: string, kind: SettlementNotificationKind,
 ) {
   const result = await client.query<{
     id: string; group_id: string; debtor_id: string;
@@ -43,13 +46,13 @@ export async function notifySettlement(
     : settlement.initiated_by;
   if (recipient === actorId) throw new Error("A notification cannot target its actor");
   const money = new Intl.NumberFormat("vi-VN").format(BigInt(settlement.amount_minor));
-  const titles: Record<NotificationKind, string> = {
+  const titles: Record<SettlementNotificationKind, string> = {
     settlement_requested: "Có yêu cầu xác nhận thanh toán",
     settlement_confirmed: "Thanh toán đã được xác nhận",
     settlement_rejected: "Yêu cầu thanh toán bị từ chối",
     settlement_cancelled: "Yêu cầu thanh toán đã bị hủy",
   };
-  const descriptions: Record<NotificationKind, string> = {
+  const descriptions: Record<SettlementNotificationKind, string> = {
     settlement_requested: `Bạn có yêu cầu xác nhận ${money} ₫ trong nhóm ${settlement.group_name}.`,
     settlement_confirmed: `Khoản thanh toán ${money} ₫ đã được hai bên xác nhận.`,
     settlement_rejected: `Yêu cầu thanh toán ${money} ₫ đã bị từ chối.`,
