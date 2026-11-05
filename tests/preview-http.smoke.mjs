@@ -2670,6 +2670,25 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const expiredGet=await expenseRequest("GET",expiredUrl,undefined,jar);
     assert.equal(expiredGet.response.status,200);
     assert.equal(expiredGet.body.status,"expired");
+    // A direct SQL client cannot disguise expired consent as a timely
+    // signatory rejection, nor revoke a historical signature after expiry.
+    for(const action of ["reject","revoke"]){
+      await assert.rejects(pool.query(`
+        INSERT INTO group_settlement_bilateral_decision_events
+          (id,proposal_id,group_id,cycle_id,party_low,party_high,
+           actor_id,event_type,request_key,request_digest,source_fingerprint)
+        SELECT $2,p.id,p.group_id,p.cycle_id,p.party_low,p.party_high,
+          $3,$4,$5,$6,p.source_fingerprint
+        FROM group_settlement_bilateral_proposals p WHERE p.id=$1`,
+        [expiredId,randomUUID(),registered.user.id,action,
+         randomUUID(),"a".repeat(64)]),
+        /BN-003 (rejection|revocation) denied for stale or expired state/,
+        "expired proposal cannot accept direct SQL signatory decision");
+    }
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_decision_events WHERE proposal_id=$1`,
+      [expiredId])).rows[0].n,0,
+      "attempted expired decisions leave no audit or finance mutations");
     assert.equal(expiredGet.body.approvalCount,0);
     const expiredPost=await expenseRequest("POST",expiredUrl,
       decisionBody("approve",7,sixth.sourceFingerprint),jar);
