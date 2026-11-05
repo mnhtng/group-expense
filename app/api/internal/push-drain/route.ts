@@ -2,7 +2,7 @@ import {authorizedOpsRequest} from "@/lib/settlement-cycles/ops-auth";
 import {runDailySettlementOperations}
   from "@/lib/settlement-cycles/ops-runner";
 
-export const dynamic="force-dynamic";
+
 const noStore={"Cache-Control":"private, no-store",
   "X-Content-Type-Options":"nosniff"};
 
