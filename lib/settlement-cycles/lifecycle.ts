@@ -182,6 +182,22 @@ export async function listSettlementCycles(groupId:string,actorId:string,
     effectiveEnabled:false};
 }
 
+/** Direct cycle lookup: a historic link must not disappear merely
+ * because it is older than the first 50/100 cycles returned by a list.
+ * Membership and group availability are independently checked.
+ */
+export async function getSettlementCycleById(
+  groupId:string,cycleId:string,actorId:string,
+):Promise<CycleRecord|null>{
+  assertUuid(groupId);assertUuid(cycleId);
+  await getSettlementSettings(groupId,actorId);
+  const r=await pool.query<RawCycle>(
+    `${qCycle} WHERE group_id=$1 AND id=$2 LIMIT 1`,
+    [groupId,cycleId],
+  );
+  return r.rows[0]?publicCycle(r.rows[0]):null;
+}
+
 export async function createManualSettlementCycle(groupId:string,actorId:string,
   input:ManualInput):Promise<CycleRecord>{
   assertUuid(groupId);
