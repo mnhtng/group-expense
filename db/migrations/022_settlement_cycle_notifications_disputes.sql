@@ -169,6 +169,22 @@ CREATE TRIGGER sc009_no_disputed_cash BEFORE INSERT
  ON group_settlement_cycle_repayments
  FOR EACH ROW EXECUTE FUNCTION sc009_no_disputed_money();
 
+-- The ordinary manual-cash API must not bypass a disputed ORIGINAL
+-- source via settlement_allocations, even if no SC-005 cycle link exists.
+CREATE FUNCTION sc009_no_disputed_allocation()
+RETURNS trigger LANGUAGE plpgsql AS $sc009$
+BEGIN
+ IF EXISTS(SELECT 1 FROM sc009_dispute_states d
+   WHERE d.obligation_id=NEW.obligation_id
+     AND d.status IN('open','awaiting_reporter'))
+ THEN RAISE EXCEPTION 'SC-009 disputed source cannot receive new cash allocations';
+ END IF;
+ RETURN NEW;
+END;$sc009$;
+CREATE TRIGGER sc009_no_disputed_allocation
+ BEFORE INSERT OR UPDATE ON settlement_allocations
+ FOR EACH ROW EXECUTE FUNCTION sc009_no_disputed_allocation();
+
 -- Even an already-created PENDING cash request must not become
 -- CONFIRMED while an ORIGINAL allocated obligation is disputed.
 -- It stays pending until the two real people settle the dispute first.
