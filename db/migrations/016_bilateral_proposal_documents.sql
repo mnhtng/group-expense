@@ -153,7 +153,8 @@ CREATE TRIGGER bn002_sources_insert_guard
 -- live confirmed/pending cash, original source version, and immutable
 -- manifest identity. No approval status exists and no ledger is touched.
 CREATE FUNCTION bn002_guard_head() RETURNS trigger LANGUAGE plpgsql AS $bn002$
-DECLARE p record; a numeric; b numeric; src_count integer; alloc_count integer;
+DECLARE p record; a numeric; b numeric; max_offset numeric;
+  src_count integer; alloc_count integer;
 BEGIN
   IF TG_OP='DELETE' THEN RAISE EXCEPTION 'BN-002 pair history cannot be deleted'; END IF;
   IF TG_OP='INSERT' THEN
@@ -196,7 +197,15 @@ BEGIN
       WHERE debtor_id=NEW.party_high AND creditor_id=NEW.party_low),0)
   INTO src_count,alloc_count,a,b
   FROM group_settlement_bilateral_sources WHERE proposal_id=p.id;
+  SELECT LEAST(
+    COALESCE(sum(available_before_minor) FILTER(
+      WHERE debtor_id=NEW.party_low AND creditor_id=NEW.party_high),0),
+    COALESCE(sum(available_before_minor) FILTER(
+      WHERE debtor_id=NEW.party_high AND creditor_id=NEW.party_low),0))
+  INTO max_offset
+  FROM group_settlement_bilateral_sources WHERE proposal_id=p.id;
   IF src_count<>p.source_count OR alloc_count<>p.allocation_count OR
+     p.offset_minor<>max_offset OR
      a<>p.offset_minor OR b<>p.offset_minor OR p.offset_minor<=0
      OR NOT EXISTS(SELECT 1 FROM group_settlement_bilateral_sources x
           WHERE x.proposal_id=p.id AND x.debtor_id=NEW.party_low AND x.creditor_id=NEW.party_high
@@ -205,6 +214,35 @@ BEGIN
           WHERE x.proposal_id=p.id AND x.debtor_id=NEW.party_high AND x.creditor_id=NEW.party_low
             AND x.proposed_minor>0)
   THEN RAISE EXCEPTION 'BN-002 proposal sums are not bilaterally conserved'; END IF;
+  -- Equal opposite-side sums alone are NOT sufficient: source rows MUST
+  -- follow the pure BN-001 FIFO algorithm (local invoice date, source UUID).
+  IF EXISTS (
+    SELECT 1 FROM (
+      SELECT proposed_minor,
+        LEAST(available_before_minor,
+          GREATEST(p.offset_minor-
+            COALESCE(sum(available_before_minor) OVER (
+              PARTITION BY debtor_id
+              ORDER BY occurred_on,obligation_id
+              ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0),0))
+          AS expected_minor
+      FROM group_settlement_bilateral_sources
+      WHERE proposal_id=p.id
+    ) expected WHERE proposed_minor<>expected_minor
+  ) THEN
+    RAISE EXCEPTION 'BN-002 noncanonical source allocation order';
+  END IF;
+  IF NOT EXISTS(
+      SELECT 1 FROM group_members m
+      WHERE m.group_id=NEW.group_id AND m.user_id=p.created_by
+        AND m.status='active' AND m.user_id IN (NEW.party_low,NEW.party_high))
+     OR (
+       SELECT count(*) FROM group_members m WHERE m.group_id=NEW.group_id
+         AND m.user_id IN (NEW.party_low,NEW.party_high)
+         AND m.status='active'
+     )<>2 THEN
+    RAISE EXCEPTION 'BN-002 proposal parties must be active';
+  END IF;
   IF src_count<>(SELECT count(*)::int
      FROM group_settlement_cycle_snapshot_obligations src
      WHERE src.cycle_id=NEW.cycle_id AND src.group_id=NEW.group_id
