@@ -559,10 +559,67 @@ SC-006 late-source/leave-invoice lifecycle enhancements,
 SC-008 full mobile UI, notifications or settlement cycle completion.
 The existing settlement cash flow is tested for compatibility only.
 
-## NEXT CONVERSATION: BN-006 ONLY
+## 2026-11-05 — BN-006 DONE, safe by default (NO real financial release)
 
-Read the full canonical docs on the same feature branch. Implement only
-the residual cash workflow through the original two-counterparty
-confirmation after BN-005, with strict separate CI acceptance and no
-real-money release. Never start automatically in this conversation.
-Keep PR #16 Draft and no shared database/deployment.
+**Ticket boundary:** the original two real people may explicitly request
+payment of ONLY the live post-BN-004/BN-005 cash residual on the
+ORIGINAL locked-cycle obligations. BN-004 noncash proof and BN-005
+balances remain independent. No synthetic cash, no auto-confirm.
+
+**Source files:**
+- `020_bilateral_residual_cash_repayments.sql`: immutable provenance
+  binding original SC-005 ordinary cash settlement to the already
+  APPLIED BN-004 noncash application. SQL checks exact live remaining
+  amount, one original debtor→creditor direction, zero opposite
+  outstanding, no older pending cash, all original source allocations
+  and active pair/snapshot. No updates/deletes of audit records.
+- `lib/settlement-cycles/residual-repayments.ts`: full original-source
+  fingerprint and BigInt validation, group→cycle→obligation row locks,
+  actor authorization and immutable request digest idempotency; exact
+  one-transaction insertion of pending cash settlement, source
+  allocations, SC-005 and BN-006 provenance, existing event and
+  in-app notification.
+- Authenticated `GET/POST .../cycles/:cycleId/bilateral-applications/:applicationId/residual`.
+  POST requires expectedCycleVersion=3, SHA fingerprint, UUID request
+  key and optional financial note; never client-supplied cash amount,
+  receiver, debtor, source allocations or payment confirmation.
+- Existing `PATCH /settlements/:id` is unchanged and alone supports
+  real other-counterparty confirm/reject or initiator cancel.
+- New `tests/bilateral-residual-contract.test.mjs` enforces release
+  gate, no synthetic transfers and SQL original-source conservation.
+- `tests/preview-http.smoke.mjs`: the same 122-obligation fixture
+  covers unauthorized outsider/admin, no applied proposal, stale
+  money, old pending cash blocking, explicit cancel/reject,
+  same-key concurrent requests [200,201], cash pending not paid,
+  failed initiator self-confirm, immutable source + provenance,
+  counterpart confirmed residual zero, no additional zero transfer.
+- `.github/workflows/sprint1-integration.yml`: BN006_TEST_ONLY
+  flag exists only with PostgreSQL 17 disposable GitHub runner
+  alongside exact DB URL and CI=true. The engine remains disabled.
+
+**Verification at implementation SHA `0a63adb32ef10ec1ed218ac3abb2cd9dbf7e1834`:**
+- [CI SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41977899879)
+  includes lint, TypeScript, native unit tests, production build.
+- [PostgreSQL 17 + authenticated HTTP SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41977899998)
+  includes migration 020 twice, all SQL integration and HTTP
+  payment/permissions/concurrency test suite.
+- [BN-006-RESIDUAL-CASH.md](./BN-006-RESIDUAL-CASH.md):
+  source-of-truth and release-gate contract.
+
+**Explicit hold:** PR #16 stays Draft/open, base develop, no merge.
+No shared Neon migration, no staging/production deploy and
+`SETTLEMENT_CYCLE_ENGINE_READY=false` unchanged. Real financial
+execution remains CI-only with all `CI=true`,
+`BN006_TEST_ONLY=isolated-pg17`,
+`DATABASE_URL=postgresql://test:test@localhost:5432/group_expense`.
+Do NOT implement SC-006 without separate user request.
+
+## NEXT CONVERSATION: SC-006 ONLY
+
+Study all settlement-cycles docs, especially the frozen-source
+adjustment/recurrence, invoice and member-leave lifecycle rules.
+Implement only SC-006 against the same feature branch with
+full standalone CI + PostgreSQL HTTP acceptance.
+Never merge, deploy or enable real-money behavior automatically.
+Keep PR #16 Draft.
+
