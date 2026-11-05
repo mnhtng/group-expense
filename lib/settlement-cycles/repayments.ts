@@ -208,7 +208,7 @@ export async function createCycleBatchRepayment(groupId:string,cycleId:string,
     "sc005-request-v1",cycleId,input.debtorId,input.creditorId,
     input.expectedCycleVersion,input.expectedFingerprint,note,
   ])).digest("hex");
-  return transaction(async client=>{
+  try{return await transaction(async client=>{
     await groupGate(client,groupId,actorId);
     // The true counterparty, not the owner/delegate, must request/confirm.
     if(actorId!==input.debtorId&&actorId!==input.creditorId)
@@ -282,5 +282,13 @@ export async function createCycleBatchRepayment(groupId:string,cycleId:string,
     return {id:settlementId,alreadyCreated:false,cycleId,
       allocationCount:allocations.length,amountMinor:preview.availableMinor,
       status:"pending" as const};
-  });
+  });}
+  catch(e){
+    if(e instanceof SettlementError)throw e;
+    if(e&&typeof e==="object"&&"code" in e&&
+      String(e.code)==="P0001"&&
+      "message" in e&&String(e.message).includes("SC-009 disputed source"))
+      throw err(409,"Nghĩa vụ gốc đang tranh chấp; không được tạo thanh toán gộp.");
+    throw e;
+  }
 }
