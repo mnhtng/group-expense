@@ -69,6 +69,40 @@ export async function archiveGroup(groupId: string, ownerId: string, confirmatio
              SELECT 1 FROM bn005_obligation_balances b
              WHERE b.obligation_id=o.id
                AND (b.outstanding_minor<>0 OR b.available_minor<0))
+       )
+       -- SC-006: neither a reviewed-but-unlocked cycle nor an unresolved
+       -- frozen original invoice may be lost by archiving its group.
+       AND NOT EXISTS(
+         SELECT 1 FROM group_settlement_cycles c
+         WHERE c.group_id=g.id AND (
+           c.state IN ('open','review')
+           OR EXISTS(
+             SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+             JOIN expenses e ON e.id=se.expense_id
+             WHERE se.cycle_id=c.id AND e.deleted_at IS NULL
+               AND e.completed_at IS NULL
+           )
+           OR EXISTS(
+             SELECT 1 FROM group_settlement_cycle_snapshot_obligations so
+             JOIN bn005_obligation_balances bal ON bal.obligation_id=so.obligation_id
+             WHERE so.cycle_id=c.id
+               AND (bal.outstanding_minor<>0 OR bal.pending_cash_minor<>0
+                 OR bal.available_minor<0)
+           )
+           OR (c.state='locked' AND EXISTS(
+             SELECT 1 FROM expenses late
+             JOIN group_settlement_cycle_snapshots snap ON snap.cycle_id=c.id
+             WHERE late.group_id=g.id AND late.deleted_at IS NULL
+               AND late.occurred_on>=c.period_start AND late.occurred_on<c.period_end
+               AND (late.created_at>snap.cutoff_at OR late.updated_at>snap.cutoff_at)
+               AND NOT EXISTS(
+                 SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+                 WHERE se.expense_id=late.id)
+               AND NOT EXISTS(
+                 SELECT 1 FROM group_settlement_cycle_adjustments adj
+                 WHERE adj.expense_id=late.id)
+           ))
+         )
        )`,
     [groupId, ownerId, confirmation.trim()],
   );
