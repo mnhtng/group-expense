@@ -108,3 +108,35 @@ CREATE CONSTRAINT TRIGGER bn005_noncash_guard
   AFTER INSERT ON group_settlement_bilateral_application_allocations
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
   EXECUTE FUNCTION bn005_assert_noncash_capacity();
+
+-- SC-004's frozen invoice completion guard originally recognized CASH only.
+-- Preserve every immutable-source and creator-only constraint while
+-- accepting an already-applied BN-004 noncash discharge as equally final.
+CREATE OR REPLACE FUNCTION sc004_guard_frozen_expense()
+RETURNS trigger LANGUAGE plpgsql AS $bn005$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+    JOIN group_settlement_cycles c ON c.id=se.cycle_id
+    WHERE se.expense_id=OLD.id AND c.state='locked'
+  ) THEN RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END; END IF;
+  IF TG_OP='DELETE' THEN
+    RAISE EXCEPTION 'Frozen cycle expense cannot be deleted';
+  END IF;
+  IF OLD.completed_at IS NULL AND NEW.completed_at IS NOT NULL
+    AND NEW.completed_by=OLD.created_by AND NEW.version=OLD.version+1
+    AND (to_jsonb(NEW)-'completed_at'-'completed_by'-'version'-'updated_at')
+       =(to_jsonb(OLD)-'completed_at'-'completed_by'-'version'-'updated_at')
+  THEN
+    IF EXISTS(
+      SELECT 1 FROM obligations o
+      JOIN bn005_obligation_balances b ON b.obligation_id=o.id
+      WHERE o.expense_id=OLD.id AND o.voided_at IS NULL
+        AND (b.outstanding_minor<>0 OR b.pending_cash_minor<>0 OR
+             b.available_minor<0)
+    ) THEN RAISE EXCEPTION
+      'Unpaid or pending debt prevents completing frozen invoice'; END IF;
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Frozen cycle expense can only be creator-completed';
+END;$bn005$;
