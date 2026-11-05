@@ -2901,7 +2901,9 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       const response=await fetch(url,{redirect:"manual",
         headers:cookies.size?{cookie:cookieHeader(cookies)}:{},
         signal:AbortSignal.timeout(20000)});
-      return {response,html:await response.text()};
+      // React server rendering can insert HTML text-boundary comments.
+      // Assert visible words/numbers rather than fragile comment markers.
+      return {response,html:(await response.text()).replace(/<!--\s*-->/g,"")};
     };
     const sc008Anon=await sc008Page(sc008ListUrl,new Map());
     assert.ok([200,307].includes(sc008Anon.response.status));
