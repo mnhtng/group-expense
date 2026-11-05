@@ -2986,6 +2986,24 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(debtSetoff.toString(),bt.setoff);
     assert.equal(rows.reduce((n,x)=>n+BigInt(x.outstandingMinor),0n).toString(),
       bt.outstanding);
+    const personalAfter=await expenseRequest("GET",
+      `${origin}/api/debts`,undefined,jar);
+    assert.equal(personalAfter.response.status,200);
+    const pairPersonal=personalAfter.body.debts.filter(x=>x.groupId===bnGroup);
+    assert.equal(pairPersonal.reduce((n,x)=>n+BigInt(x.amountMinor),0n),
+      BigInt(bt.outstanding),"personal multi-group report must include noncash discharge");
+    const withSetoff=rows.find(x=>BigInt(x.confirmedSetoffMinor)>0n);
+    assert.ok(withSetoff);
+    const itemDetail=await expenseRequest("GET",
+      `${origin}/api/groups/${bnGroup}/debts/${withSetoff.id}`,
+      undefined,otherJar);
+    assert.equal(itemDetail.response.status,200);
+    assert.equal(itemDetail.body.debt.confirmedSetoffMinor,
+      withSetoff.confirmedSetoffMinor);
+    assert.equal(itemDetail.body.setoffs.length,1);
+    assert.equal(itemDetail.body.setoffs[0].applicationId,applied.id);
+    assert.equal(itemDetail.body.setoffs[0].amountMinor,
+      withSetoff.confirmedSetoffMinor);
     const forwardDebt=rows.find(r=>r.expenseId===bnForward.body.id);
     assert.ok(forwardDebt&&BigInt(forwardDebt.confirmedSetoffMinor)>0n,
       "original invoice must expose exact noncash discharge");
