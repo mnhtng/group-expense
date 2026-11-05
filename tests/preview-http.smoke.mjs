@@ -2311,9 +2311,20 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.notEqual(bnReprice.body.fingerprint,bnLive.body.fingerprint);
     assert.equal((await expenseRequest("POST",bnProposalUrl,
       bnPayload(1,randomUUID(),bnLive.body.fingerprint),jar)).response.status,409);
-    const bnSecond=await expenseRequest("POST",bnProposalUrl,
-      bnPayload(1,randomUUID(),bnReprice.body.fingerprint),otherJar);
-    assert.equal(bnSecond.response.status,201,JSON.stringify(bnSecond.body));
+    // Simultaneous identical request keys are not two revisions.
+    // The committed result survives a lost first HTTP response.
+    const bnSecondKey=randomUUID();
+    const bnSameKeyRace=await Promise.all([
+      expenseRequest("POST",bnProposalUrl,
+        bnPayload(1,bnSecondKey,bnReprice.body.fingerprint),otherJar),
+      expenseRequest("POST",bnProposalUrl,
+        bnPayload(1,bnSecondKey,bnReprice.body.fingerprint),otherJar),
+    ]);
+    assert.deepEqual(bnSameKeyRace.map(x=>x.response.status).sort(),[200,201],
+      "double-click proposal must publish one immutable version");
+    assert.equal(bnSameKeyRace[0].body.proposal.id,
+      bnSameKeyRace[1].body.proposal.id);
+    const bnSecond=bnSameKeyRace.find(x=>x.response.status===201);
     assert.equal(bnSecond.body.proposal.version,2);
     assert.equal((await pool.query(
       `SELECT version,offset_minor::text FROM group_settlement_bilateral_proposals
