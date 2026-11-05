@@ -2322,6 +2322,82 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       `SELECT offset_minor::text AS amount FROM group_settlement_bilateral_proposals
        WHERE id=$1`,[bnFirst.id])).rows[0].amount,"140000",
       "historical proposal version remains immutable after cash confirmation");
+    // Adversarial SQL: equal totals but WRONG FIFO ordering must never
+    // become the published version. No partial commit may survive.
+    const bnSpoofId=randomUUID(),bnSpoofKey=randomUUID();
+    const bnSmallOb=(await pool.query(`SELECT o.id FROM obligations o
+      JOIN expenses e ON e.id=o.expense_id WHERE e.group_id=$1
+        AND e.title='BN002 Bulk 1'`,[bnGroup])).rows[0].id;
+    const bnMainOb=(await pool.query(
+      "SELECT id FROM obligations WHERE expense_id=$1",
+      [bnForward.body.id])).rows[0].id;
+    const bnClient=await pool.connect();
+    try{
+      await bnClient.query("BEGIN");
+      await bnClient.query(`INSERT INTO group_settlement_bilateral_proposals
+        (id,group_id,cycle_id,party_low,party_high,version,request_key,
+         request_digest,source_fingerprint,snapshot_fingerprint,created_by,
+         offset_minor,source_count,allocation_count)
+        SELECT $2,group_id,cycle_id,party_low,party_high,3,$3,
+          $4,source_fingerprint,snapshot_fingerprint,$5,
+          offset_minor,source_count,allocation_count-1
+        FROM group_settlement_bilateral_proposals WHERE id=$1`,
+        [bnSecond.body.proposal.id,bnSpoofId,bnSpoofKey,"a".repeat(64),
+          registered.user.id]);
+      await bnClient.query(`INSERT INTO group_settlement_bilateral_sources
+        (proposal_id,group_id,cycle_id,party_low,party_high,obligation_id,
+         debtor_id,creditor_id,occurred_on,expense_version,original_minor,
+         confirmed_cash_minor,pending_cash_minor,confirmed_setoff_minor,
+         pending_setoff_minor,available_before_minor,proposed_minor,
+         available_after_minor)
+        SELECT $2,group_id,cycle_id,party_low,party_high,obligation_id,
+          debtor_id,creditor_id,occurred_on,expense_version,original_minor,
+          confirmed_cash_minor,pending_cash_minor,confirmed_setoff_minor,
+          pending_setoff_minor,available_before_minor,
+          CASE WHEN obligation_id=$3 THEN 0
+               WHEN obligation_id=$4 THEN proposed_minor+1000
+               ELSE proposed_minor END,
+          available_before_minor-
+          CASE WHEN obligation_id=$3 THEN 0
+               WHEN obligation_id=$4 THEN proposed_minor+1000
+               ELSE proposed_minor END
+        FROM group_settlement_bilateral_sources WHERE proposal_id=$1`,
+        [bnSecond.body.proposal.id,bnSpoofId,bnSmallOb,bnMainOb]);
+      await assert.rejects(bnClient.query(`UPDATE group_settlement_bilateral_heads
+        SET version=3,current_proposal_id=$2
+        WHERE group_id=$1 AND cycle_id=$3`,
+        [bnGroup,bnSpoofId,bnCycle]),/BN-002 noncanonical source allocation order/);
+    }finally{await bnClient.query("ROLLBACK");bnClient.release();}
+    assert.equal((await pool.query(
+      "SELECT version FROM group_settlement_bilateral_heads WHERE group_id=$1",
+      [bnGroup])).rows[0].version,2,
+      "tampered proposal must never publish or change the current head");
+    assert.equal((await pool.query(
+      "SELECT count(*)::int AS n FROM group_settlement_bilateral_proposals WHERE group_id=$1",
+      [bnGroup])).rows[0].n,2,
+      "tampered proposal must be fully rolled back");
+
+    // A creator may complete an already fully PAID source invoice without
+    // altering the immutable original obligation. This metadata version
+    // increment must not make all remaining opposite-side debts unqueryable.
+    const bnAllPaid=await expenseRequest("POST",bnCash,{
+      requestKey:randomUUID(),allocations:[
+        {obligationId:bnSmallOb,amountMinor:"1000"}],
+    },otherJar);
+    assert.equal(bnAllPaid.response.status,201);
+    assert.equal((await expenseRequest("PATCH",`${bnCash}/${bnAllPaid.body.id}`,
+      {action:"confirm"},jar)).response.status,200);
+    const bnBeforeComplete=(await expenseRequest("GET",bnReadUrl,undefined,jar)).body;
+    const bnComplete=await expenseRequest("POST",
+      `${bnExpenses}/${(await pool.query(
+        "SELECT expense_id FROM obligations WHERE id=$1",[bnSmallOb]
+      )).rows[0].expense_id}/complete`,{expectedVersion:1},jar);
+    assert.equal(bnComplete.response.status,200,JSON.stringify(bnComplete.body));
+    const bnAfterComplete=await expenseRequest("GET",bnReadUrl,undefined,jar);
+    assert.equal(bnAfterComplete.response.status,200);
+    assert.equal(bnAfterComplete.body.fingerprint,bnBeforeComplete.fingerprint,
+      "creator completion does not change financial source values");
+
     assert.equal((await expenseRequest("PATCH",bnSetting,
       config(2,false,false),jar)).response.status,200);
     assert.equal((await expenseRequest("POST",bnProposalUrl,
