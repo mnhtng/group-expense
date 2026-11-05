@@ -3163,6 +3163,151 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
 
 
 
+    // BN-006: the residual is a distinct, ordinary CASH request linked to
+    // this already-applied noncash proof. Only the two REAL counterparties
+    // can initiate it, and only the other can confirm it. Never auto-pay.
+    const bn006Url=`${bnCycleApi}/${bnCycle}/bilateral-applications/${applied.id}/residual`;
+    assert.equal((await expenseRequest("GET",bn006Url,undefined,new Map()))
+      .response.status,401);
+    assert.equal((await expenseRequest("GET",bn006Url,undefined,thirdJar))
+      .response.status,403);
+    assert.equal((await expenseRequest("POST",bn006Url,{
+      expectedCycleVersion:3,requestKey:randomUUID(),
+      expectedFingerprint:"a".repeat(64),
+    },thirdJar)).response.status,403);
+    const bn006Preview=(await expenseRequest("GET",bn006Url,undefined,jar));
+    assert.equal(bn006Preview.response.status,200,JSON.stringify(bn006Preview.body));
+    const firstPreview=bn006Preview.body.preview;
+    assert.equal(firstPreview.status,"ready");
+    assert.equal(firstPreview.offsetMinor,appProposal.offsetMinor);
+    assert.equal(firstPreview.pendingCashMinor,"0");
+    assert.equal(firstPreview.financialEngineEnabled,false);
+    assert.equal(bn006Preview.body.writable,true,"disposable PG17 ONLY");
+    assert.equal(firstPreview.remainingLowToHighMinor==="0"||
+      firstPreview.remainingHighToLowMinor==="0",true);
+    const originalBN004Count=(await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_application_allocations
+      WHERE application_id=$1`,[applied.id])).rows[0].n;
+    const bn006Body=(fingerprint,key=randomUUID(),note="BN006 residual")=>({
+      expectedCycleVersion:3,requestKey:key,
+      expectedFingerprint:fingerprint,note,
+    });
+    assert.equal((await expenseRequest("POST",bn006Url,{
+      ...bn006Body(firstPreview.fingerprint),amountMinor:"1",
+    },jar)).response.status,400,"client cannot supply money or allocations");
+    assert.equal((await expenseRequest("POST",bn006Url,{
+      ...bn006Body(firstPreview.fingerprint),debtorId:thirdUser.id,
+    },jar)).response.status,400,"client cannot impersonate a pair member");
+    assert.equal((await expenseRequest("POST",bn006Url,
+      bn006Body("a".repeat(64)),jar)).response.status,409,
+      "stale/fabricated original source fingerprint denied");
+
+    // Existing independent pending CASH invalidates net-residual action:
+    // do not collect a new transfer while another is awaiting confirmation.
+    const bn006Source=(await pool.query(`SELECT o.id
+      FROM obligations o JOIN bn005_obligation_balances b ON b.obligation_id=o.id
+      WHERE o.group_id=$1 AND o.debtor_id=$2 AND o.creditor_id=$3
+        AND b.available_minor>0 ORDER BY o.id LIMIT 1`,
+      [bnGroup,firstPreview.debtorId,firstPreview.creditorId])).rows[0];
+    const cashInitiator=firstPreview.debtorId===registered.user.id?jar:otherJar;
+    const cashCounterparty=firstPreview.creditorId===registered.user.id?jar:otherJar;
+    assert.ok(bn006Source);
+    const externalPending=await expenseRequest("POST",bnCash,{
+      requestKey:randomUUID(),allocations:[
+        {obligationId:bn006Source.id,amountMinor:"1"}],
+    },cashInitiator);
+    assert.equal(externalPending.response.status,201);
+    const blocked006=await expenseRequest("GET",bn006Url,undefined,jar);
+    assert.equal(blocked006.body.preview.status,"blocked");
+    assert.equal(blocked006.body.preview.pendingCashMinor,"1");
+    assert.equal((await expenseRequest("POST",bn006Url,
+      bn006Body(blocked006.body.preview.fingerprint),jar))
+      .response.status,409,"cannot settle ambiguous pending cash");
+    assert.equal((await expenseRequest("PATCH",
+      `${bnCash}/${externalPending.body.id}`,{action:"cancel"},cashInitiator))
+      .response.status,200);
+    const postHold=(await expenseRequest("GET",bn006Url,undefined,jar)).body.preview;
+    assert.equal(postHold.status,"ready");
+    assert.equal(postHold.amountMinor,firstPreview.amountMinor,
+      "cancelled reservation does not reduce cash residual");
+
+    // Concurrent SAME request-key attempts must atomically publish ONE
+    // pending settlement, matching one append-only BN-006 proof.
+    const bn006Key=randomUUID();
+    const parallel=await Promise.all([
+      expenseRequest("POST",bn006Url,bn006Body(postHold.fingerprint,bn006Key),jar),
+      expenseRequest("POST",bn006Url,bn006Body(postHold.fingerprint,bn006Key),jar),
+    ]);
+    assert.deepEqual(parallel.map(x=>x.response.status).sort(),[200,201],
+      "BN-006 same-key race must return one original pending request");
+    const bn006Cash=parallel[0].body.id;
+    assert.equal(bn006Cash,parallel[1].body.id);
+    const proof=(await pool.query(`SELECT r.application_id,r.amount_minor::text AS amount,
+      r.allocation_count,s.status,s.debtor_id,s.creditor_id
+      FROM group_settlement_bilateral_residual_repayments r
+      JOIN settlements s ON s.id=r.settlement_id
+      WHERE r.settlement_id=$1`,[bn006Cash])).rows[0];
+    assert.equal(proof.application_id,applied.id);
+    assert.equal(proof.amount,postHold.amountMinor);
+    assert.equal(proof.allocation_count,postHold.allocationCount);
+    assert.equal(proof.status,"pending");
+    assert.equal(proof.debtor_id,postHold.debtorId);
+    assert.equal(proof.creditor_id,postHold.creditorId);
+    assert.equal((await expenseRequest("POST",bn006Url,
+      bn006Body(postHold.fingerprint,bn006Key),jar)).response.status,200);
+    assert.equal((await expenseRequest("POST",bn006Url,
+      bn006Body(postHold.fingerprint,bn006Key,"changed note"),jar))
+      .response.status,409,"idempotency key is bound to exact document");
+    assert.equal((await expenseRequest("POST",bn006Url,
+      bn006Body(postHold.fingerprint),cashCounterparty))
+      .response.status,409,"double spend while cash is pending");
+    const pendingPreview=(await expenseRequest("GET",bn006Url,undefined,otherJar)).body;
+    assert.equal(pendingPreview.preview.status,"blocked");
+    assert.equal(pendingPreview.history[0].status,"pending");
+    assert.equal((await expenseRequest("PATCH",`${bnCash}/${bn006Cash}`,
+      {action:"confirm"},jar===cashInitiator?jar:otherJar))
+      .response.status,403,"cash initiator cannot confirm own transfer");
+    assert.equal((await pool.query(`SELECT status FROM settlements
+      WHERE id=$1`,[bn006Cash])).rows[0].status,"pending");
+    await assert.rejects(pool.query(`UPDATE
+      group_settlement_bilateral_residual_repayments
+      SET amount_minor=1 WHERE settlement_id=$1`,[bn006Cash]),/append-only/);
+    await assert.rejects(pool.query(`DELETE FROM
+      group_settlement_bilateral_residual_repayments
+      WHERE settlement_id=$1`,[bn006Cash]),/append-only/);
+
+    // Rejection releases original availability. Retry must create a new
+    // immutable cash receipt (same original NONCASH proof) with a new key.
+    assert.equal((await expenseRequest("PATCH",`${bnCash}/${bn006Cash}`,
+      {action:"reject"},cashCounterparty)).response.status,200);
+    const rejectedPreview=(await expenseRequest("GET",bn006Url,undefined,jar)).body;
+    assert.equal(rejectedPreview.preview.status,"ready");
+    assert.equal(rejectedPreview.preview.amountMinor,postHold.amountMinor);
+    assert.equal(rejectedPreview.history[0].status,"rejected");
+    const bn006Final=await expenseRequest("POST",bn006Url,
+      bn006Body(rejectedPreview.preview.fingerprint),cashInitiator);
+    assert.equal(bn006Final.response.status,201,JSON.stringify(bn006Final.body));
+    assert.equal(bn006Final.body.amountMinor,postHold.amountMinor);
+    assert.equal((await expenseRequest("PATCH",
+      `${bnCash}/${bn006Final.body.id}`,{action:"confirm"},cashCounterparty))
+      .response.status,200);
+    const settled006=(await expenseRequest("GET",bn006Url,undefined,otherJar)).body;
+    assert.equal(settled006.preview.status,"settled");
+    assert.equal(settled006.preview.amountMinor,"0");
+    assert.equal(settled006.history.length,2);
+    assert.equal(settled006.history[0].status,"confirmed");
+    assert.equal((await expenseRequest("POST",bn006Url,
+      bn006Body(settled006.preview.fingerprint),jar))
+      .response.status,409,"zero residual MUST NOT generate a cash transfer");
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_application_allocations
+      WHERE application_id=$1`,[applied.id])).rows[0].n,originalBN004Count,
+      "real money never mutates original noncash application");
+    const allZero=(await pool.query(`SELECT COALESCE(sum(b.outstanding_minor),0)::text AS due
+      FROM obligations o JOIN bn005_obligation_balances b ON b.obligation_id=o.id
+      WHERE o.group_id=$1 AND o.voided_at IS NULL`,[bnGroup])).rows[0].due;
+    assert.equal(allZero,"0","entire pair now settled only after other-person confirmation");
+
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
