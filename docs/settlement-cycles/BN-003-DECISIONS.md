@@ -69,14 +69,26 @@ Derivation precedence:
 5. Otherwise return `agreed` / `partially_approved` / `pending`
    according to the two independent recorded approvers.
 
-A GET projects time/stale state without writing audit events.
-An attempted decision on a stale or expired CURRENT proposal stores
-exactly ONE immutable `invalidated` or `expired` system event in
-its transaction, COMMITs the event and THEN returns HTTP 409.
-This avoids silently losing audit history due to a rollback. A later
-read reports the terminal state even if the source financial values
-have changed again. Unlike a payment, no approval automatically reserves
-availability.
+An AFTER-trigger on any original cash allocation INSERT/UPDATE/DELETE
+or cash settlement status change **automatically and irreversibly records**
+one terminal invalidation event for the affected current pair proposal in
+the SAME payment transaction. A pending cash request that is later
+cancelled therefore NEVER resurrects old signatures merely because the
+fingerprint returns to its previous value. It also rolls back the
+invalidation if the cash transaction fails.
+
+Group opt-out, source pair member departure or group archival also
+durably invalidate the relevant current proposals in their write
+transactions. An unrelated third person leaving a group does NOT invalidate
+the A/B proposal. Rejoin, re-enable or later cash cancellation does not
+erase or reactivate a terminal event.
+
+A GET projects time/stale state without writing audit events. An attempted
+decision on a stale or expired CURRENT proposal stores exactly ONE
+immutable `invalidated` or `expired` system event when it has not already
+been recorded, COMMITs and only then returns HTTP 409. This preserves
+failure audit even for a time-only expiry where no cron job runs.
+A later read reports the terminal state. No approval reserves availability.
 
 ## 3. Persistence and SQL integrity
 
@@ -101,6 +113,11 @@ DB enforcement:
 - SQL BEFORE INSERT holds the original proposal row `FOR UPDATE` before
   reading any prior event: even direct SQL APPROVE-vs-REJECT races cannot
   both decide from a stale event list.
+- SQL AFTER triggers on cash allocations and settlement status updates,
+  cycle/netting opt-out, a relevant signatory leaving, or group archive
+  record invalidation atomically with the actual source change.
+  The trigger filters only affected pairs and preserves existing terminal
+  history, including when a source later returns to its old numeric value.
 - Database also revalidates the current proposal head, active pair,
   cycle opt-in, locked snapshot provenance, original invoice versions,
   `confirmed/pending` cash totals, and availability conservation.
@@ -171,10 +188,14 @@ obligation BN-002 pair and verifies:
 - One counterparty can reject before agreement, terminal rejection,
   same-fingerprint new version permitted with two new signatures;
 - Live cash becoming pending/confirmed after a signature produces
-  `invalidated` and stores a single system terminal event before HTTP 409;
+  `invalidated` in the SAME cash transaction, before any new HTTP
+  action; cancellation/rejection cannot resurrect consent, even when
+  the hash returns to the original value;
 - A directly-constructed 73-hour-old historical fixture is `expired`;
   a current proposal cannot have `expired` forged before 72 hours,
   and retries cannot create duplicate expiry events;
+- Opt-out/re-enable, relevant signer leave/rejoin and group archive
+  invalidate persistently; unrelated third-party departure does not.
 - Immutable event DELETE/UPDATE fails at DB level, source cash counts
   remain unchanged except for the test's explicitly created manual cash
   reservations.
