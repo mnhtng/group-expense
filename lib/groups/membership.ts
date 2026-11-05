@@ -52,12 +52,10 @@ async function activeRole(client:PoolClient,groupId:string,userId:string) {
 async function eligibility(client:PoolClient,groupId:string,userId:string,isOwner:boolean):Promise<ExitEligibility> {
   const result=await client.query<{toPayMinor:string;toReceiveMinor:string;pendingCount:number}>(
     `WITH remaining AS (
-      SELECT o.debtor_id,o.creditor_id,
-        GREATEST(0::numeric,o.amount_minor::numeric
-          - COALESCE((SELECT sum(a.amount_minor)::numeric
-            FROM settlement_allocations a JOIN settlements s ON s.id=a.settlement_id
-            WHERE a.obligation_id=o.id AND s.status='confirmed'),0::numeric)) AS due
-      FROM obligations o JOIN expenses e ON e.id=o.expense_id
+      SELECT o.debtor_id,o.creditor_id,b.outstanding_minor AS due
+      FROM obligations o
+      JOIN bn005_obligation_balances b ON b.obligation_id=o.id
+      JOIN expenses e ON e.id=o.expense_id
       WHERE o.group_id=$1 AND o.voided_at IS NULL AND e.deleted_at IS NULL
         AND (o.debtor_id=$2 OR o.creditor_id=$2)
     )
