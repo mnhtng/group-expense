@@ -32,6 +32,18 @@ test("RR-002 runs actual browser interactions, not static source contract tests"
   assert.match(s,/dispute/i);
   assert.match(s,/RR002 synthetic/);
 });
+test("RR-002 reuses four real signed actors across browser profiles without disabling rate limits",()=>{
+  const s=read("tests/rr002-browser.e2e.mjs");
+  assert.match(s,/for\(const tag of \["owner","counterparty","admin","outsider"\]\)/);
+  assert.match(s,/storageState:await u\.context\.storageState\(\)/);
+  assert.match(s,/storageState:actor\.storageState/);
+  assert.equal((s.match(/await userFor\(/g)||[]).length,1,
+    "one signed setup per actor, never 16 bulk signups from one CI IP");
+  assert.match(s,/response\.status\(\)!==429/);
+  assert.match(s,/\["retry-after"\]/);
+  assert.match(s,/await capture\(user\.page,project,"failure-actor-"/);
+  assert.doesNotMatch(s,/rateLimit:\s*\{\s*enabled:\s*false/);
+});
 test("RR-002 CI never points to Neon or enables financial engine",()=>{
   const y=read(".github/workflows/rr002-browser-e2e.yml");
   assert.match(y,/postgres:17/);
