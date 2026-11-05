@@ -66,7 +66,11 @@ const candidateObligations=`
     WHERE a.obligation_id=o.id
   ) pay ON true
   WHERE o.group_id=$1 AND e.deleted_at IS NULL AND o.voided_at IS NULL
-    AND e.occurred_on >= $2::date AND e.occurred_on < $3::date
+    AND (
+      (e.occurred_on >= $2::date AND e.occurred_on < $3::date)
+      OR EXISTS (SELECT 1 FROM group_settlement_cycle_adjustments adj
+          WHERE adj.group_id=$1 AND adj.target_cycle_id=$5 AND adj.expense_id=e.id)
+    )
     AND e.created_at <= $4::timestamptz AND o.created_at <= $4::timestamptz
 `;
 const candidateExpenses=`
@@ -74,7 +78,11 @@ const candidateExpenses=`
     e.occurred_on::text AS "occurredOn",e.total_minor::text AS "totalMinor"
   FROM expenses e
   WHERE e.group_id=$1 AND e.deleted_at IS NULL
-    AND e.occurred_on >= $2::date AND e.occurred_on < $3::date
+    AND (
+      (e.occurred_on >= $2::date AND e.occurred_on < $3::date)
+      OR EXISTS (SELECT 1 FROM group_settlement_cycle_adjustments adj
+          WHERE adj.group_id=$1 AND adj.target_cycle_id=$5 AND adj.expense_id=e.id)
+    )
     AND e.created_at <= $4::timestamptz
 `;
 const selectCycle=`SELECT c.id,c.group_id AS "groupId",
@@ -123,7 +131,7 @@ function fingerprint(expenses:readonly DbExpenseRow[],rows:readonly DbCashRow[])
   return hash.digest("hex");
 }
 async function readCanonical(client:PoolClient,c:DbCycle,cutoff:Date){
-  const params=[c.groupId,c.startDate,c.endDate,cutoff.toISOString()];
+  const params=[c.groupId,c.startDate,c.endDate,cutoff.toISOString(),c.id];
   const expenses=await client.query<DbExpenseRow>(
     candidateExpenses+" ORDER BY e.occurred_on,e.id",params);
   const obligations=await client.query<DbCashRow>(
@@ -234,7 +242,11 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
          e.created_at,e.payer_id,e.created_by,e.total_minor,e.completed_at
        FROM expenses e
        WHERE e.group_id=$1 AND e.deleted_at IS NULL
-         AND e.occurred_on >= $2::date AND e.occurred_on < $3::date
+         AND (
+      (e.occurred_on >= $2::date AND e.occurred_on < $3::date)
+      OR EXISTS (SELECT 1 FROM group_settlement_cycle_adjustments adj
+          WHERE adj.group_id=$1 AND adj.target_cycle_id=$5 AND adj.expense_id=e.id)
+    )
          AND e.created_at <= $4::timestamptz
        ORDER BY e.occurred_on,e.id`,params);
     const obligationInsert=await client.query(
@@ -257,7 +269,11 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
          WHERE a.obligation_id=o.id
        ) pay ON true
        WHERE o.group_id=$1 AND e.deleted_at IS NULL AND o.voided_at IS NULL
-         AND e.occurred_on >= $2::date AND e.occurred_on < $3::date
+         AND (
+      (e.occurred_on >= $2::date AND e.occurred_on < $3::date)
+      OR EXISTS (SELECT 1 FROM group_settlement_cycle_adjustments adj
+          WHERE adj.group_id=$1 AND adj.target_cycle_id=$5 AND adj.expense_id=e.id)
+    )
          AND e.created_at <= $4::timestamptz AND o.created_at <= $4::timestamptz
        ORDER BY e.occurred_on,e.id,o.id`,params);
     if(expenseInsert.rowCount!==details.totals.expenseCount||
@@ -352,7 +368,9 @@ export async function countLateCycleExpenses(groupId:string,cycleId:string,
       JOIN expenses e ON e.group_id=c.group_id
         AND e.occurred_on>=c.period_start AND e.occurred_on<c.period_end
         AND e.deleted_at IS NULL
-        AND NOT EXISTS(SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+        AND NOT EXISTS(SELECT 1 FROM group_settlement_cycle_adjustments adj
+      WHERE adj.expense_id=e.id)
+    AND NOT EXISTS(SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
           WHERE se.cycle_id=c.id AND se.expense_id=e.id)
       WHERE c.group_id=$1 AND c.id=$2 AND c.state='locked'`,
     [groupId,cycleId]);
