@@ -9,11 +9,13 @@ CREATE TABLE group_settlement_cycle_adjustments(
   expense_id uuid NOT NULL,
   expense_version integer NOT NULL CHECK(expense_version>0),
   actor_id text NOT NULL REFERENCES "user"(id) ON DELETE RESTRICT,
+  request_key uuid NOT NULL,
   kind text NOT NULL DEFAULT 'late_invoice' CHECK(kind='late_invoice'),
   note varchar(500) NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   CONSTRAINT sc006_distinct_cycle CHECK(origin_cycle_id<>target_cycle_id),
   CONSTRAINT sc006_unique_original_invoice UNIQUE(expense_id),
+  CONSTRAINT sc006_adjustment_request_unique UNIQUE(group_id,actor_id,request_key),
   CONSTRAINT sc006_origin_group_fk FOREIGN KEY(origin_cycle_id,group_id)
     REFERENCES group_settlement_cycles(id,group_id) ON DELETE RESTRICT,
   CONSTRAINT sc006_target_group_fk FOREIGN KEY(target_cycle_id,group_id)
