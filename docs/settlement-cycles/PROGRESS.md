@@ -1101,6 +1101,19 @@ CASH/NONCASH/obligation ledger writes were performed.
 [RR-001 execution evidence and verification limits](../release-readiness/RR-001-NEON-MIGRATION-EVIDENCE.md)
 · [Release readiness RR-001–RR-005](../release-readiness/BACKLOG.md).
 
+## 2026-11-05 — RR-002 browser and mobile-emulation E2E: IMPLEMENTED, EXECUTION BLOCKED, NO-GO
+
+- Added independent GitHub Actions `.github/workflows/rr002-browser-e2e.yml` using ephemeral PostgreSQL 17, real Next.js production build, Playwright Chromium/WebKit and simulated iPhone/Android device profiles; no shared Neon and no CI finance-write bypass.
+- Added signed browser interaction test `tests/rr002-browser.e2e.mjs` with four real Better Auth actors, owner/admin/counterparty/outsider access gates, consent and stale 409 snapshot handling, >50 original-source pagination, bilateral disabled money controls, active two-party dispute response/resolution privacy, network retry, persistent session and mobile touch/overflow checks.
+- `tests/rr002-safety.test.mjs` asserts fail-closed exact disposable DB target, hard OFF financial engine and 44px invoice source touch target; source invoice link increased from `min-h-10` to `min-h-11`.
+- Real browser runs initially exposed a JS test-fixture shadowing error (fixed) and then a genuine Better Auth HTTP 429 rate limit when creating many test identities on localhost. The test harness now honors bounded `Retry-After` and never disables auth limits.
+- [Browser run #42070632696](https://github.com/mnhtng/group-expense/actions/runs/42070632696) reached test setup and documented the HTTP 429 fixture failure. Commit `31046c718b9fbce9a018644dfe35cb12ffb5b344` passed [CI](https://github.com/mnhtng/group-expense/actions/runs/42070632715) and [PG17 integration](https://github.com/mnhtng/group-expense/actions/runs/42070634602).
+- On next SHA `7d556985607e5ae8cac4fb28257ae7af2b4adb7b`, CI/integration/browser GitHub jobs all failed before receiving runners (`runner_id=0`, empty steps); re-run of only the browser job repeated the runner-allocation failure. **No passing full Playwright browser interaction run is claimed**.
+- Physical iOS/Android installed-PWA checks, true touch/focus/screen reader and production-like visual regression remain pending. No real money API was activated or original ledger modified by the RR-002 code.
+- **Current state: RR-002 code/test suite implemented, browser gate BLOCKED and overall release NO-GO; PR #16 remains Draft.**
+
+[RR-002 browser E2E matrix and CI blocker](../release-readiness/RR-002-BROWSER-E2E.md) · [RR-001–RR-005 release backlog](../release-readiness/BACKLOG.md).
+
 ## NEXT WORK — separate approval required
 
 The child-only RR-001 **schema migration check is complete**.
