@@ -182,6 +182,29 @@ export async function listSettlementCycles(groupId:string,actorId:string,
     effectiveEnabled:false};
 }
 
+/** SC-008 member-visible history paging is independent from business
+ * calculations and never truncates a period's financial source totals.
+ */
+export async function listSettlementCycleHistoryPage(
+  groupId:string,actorId:string,page:number,
+):Promise<{cycles:CycleRecord[];page:number;totalPages:number;total:number}>{
+  assertUuid(groupId);
+  if(!Number.isSafeInteger(page)||page<1||page>100000)
+    throw error(400,"Trang lịch sử kỳ không hợp lệ.");
+  await getSettlementSettings(groupId,actorId);
+  const [rows,count]=await Promise.all([
+    pool.query<RawCycle>(
+      `${qCycle} WHERE group_id=$1 ORDER BY start_at DESC,id DESC
+       LIMIT 50 OFFSET $2`,[groupId,(page-1)*50]),
+    pool.query<{n:number}>(
+      "SELECT count(*)::int AS n FROM group_settlement_cycles WHERE group_id=$1",
+      [groupId]),
+  ]);
+  const total=count.rows[0]?.n??0;
+  return {cycles:rows.rows.map(publicCycle),page,total,
+    totalPages:Math.max(1,Math.ceil(total/50))};
+}
+
 /** Direct cycle lookup: a historic link must not disappear merely
  * because it is older than the first 50/100 cycles returned by a list.
  * Membership and group availability are independently checked.
