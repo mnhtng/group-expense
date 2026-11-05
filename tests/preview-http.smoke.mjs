@@ -2935,7 +2935,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.match(sc008Source.html,/Phân trang nguồn công nợ/);
     const pageTwo=await sc008Page(sc008DetailUrl+"?page=2");
     assert.equal(pageTwo.response.status,200);
-    assert.match(pageTwo.html,/Trang 2\//);
+    assert.match(pageTwo.html,/Trang 2\//);
     assert.match(pageTwo.html,
       new RegExp(`Tổng hợp từ toàn bộ ${sc008OriginalCount} nghĩa vụ gốc`),
       "paging must never alter grand totals");
