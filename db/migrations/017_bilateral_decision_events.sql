@@ -127,10 +127,18 @@ BEGIN
        NOT is_live OR NOT active_pair OR source_changed
     THEN RAISE EXCEPTION 'BN-003 approval denied for stale/expired/duplicate state'; END IF;
   ELSIF NEW.event_type='reject' THEN
+    IF clock_timestamp()>=p.created_at+interval '72 hours' OR
+       NOT is_live OR NOT active_pair OR source_changed THEN
+      RAISE EXCEPTION 'BN-003 rejection denied for stale or expired state';
+    END IF;
     IF old_approvals>=2 THEN
       RAISE EXCEPTION 'BN-003 fully agreed proposal cannot be rejected';
     END IF;
   ELSIF NEW.event_type='revoke' THEN
+    IF clock_timestamp()>=p.created_at+interval '72 hours' OR
+       NOT is_live OR NOT active_pair OR source_changed THEN
+      RAISE EXCEPTION 'BN-003 revocation denied for stale or expired state';
+    END IF;
     IF NOT same_actor_approval THEN
       RAISE EXCEPTION 'BN-003 only an approving signatory can revoke';
     END IF;
