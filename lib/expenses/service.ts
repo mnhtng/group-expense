@@ -21,7 +21,8 @@ export type ExpenseSummary = {
   recurringRuleId: string | null; recurringPeriod: string | null;
   completedAt: string | null; completedBy: string | null;
   debtorCount: number;
-  dueMinor: string; confirmedMinor: string; pendingMinor: string; remainingMinor: string;
+  dueMinor: string; confirmedMinor: string; confirmedCashMinor: string;
+  confirmedSetoffMinor: string; pendingMinor: string; remainingMinor: string;
 };
 export type ExpenseListFilter = "active" | "completed" | "all";
 type ExpenseItem = {
@@ -42,17 +43,13 @@ const expensePaymentProgress = `
  LEFT JOIN LATERAL (
    SELECT count(*)::int AS "debtorCount",
      COALESCE(sum(o.amount_minor),0)::text AS "dueMinor",
-     COALESCE(sum(COALESCE(p.confirmed,0)),0)::text AS "confirmedMinor",
-     COALESCE(sum(COALESCE(p.pending,0)),0)::text AS "pendingMinor",
-     COALESCE(sum(o.amount_minor-COALESCE(p.confirmed,0)),0)::text AS "remainingMinor"
+     COALESCE(sum(b.confirmed_cash_minor+b.confirmed_setoff_minor),0)::text AS "confirmedMinor",
+     COALESCE(sum(b.confirmed_cash_minor),0)::text AS "confirmedCashMinor",
+     COALESCE(sum(b.confirmed_setoff_minor),0)::text AS "confirmedSetoffMinor",
+     COALESCE(sum(b.pending_cash_minor),0)::text AS "pendingMinor",
+     COALESCE(sum(b.outstanding_minor),0)::text AS "remainingMinor"
    FROM obligations o
-   LEFT JOIN LATERAL (
-     SELECT COALESCE(sum(a.amount_minor) FILTER (WHERE st.status='confirmed'),0) AS confirmed,
-            COALESCE(sum(a.amount_minor) FILTER (WHERE st.status='pending'),0) AS pending
-     FROM settlement_allocations a
-     JOIN settlements st ON st.id=a.settlement_id
-     WHERE a.obligation_id=o.id
-   ) p ON true
+   JOIN bn005_obligation_balances b ON b.obligation_id=o.id
    WHERE o.expense_id=e.id AND o.voided_at IS NULL
  ) progress ON true
 `;
