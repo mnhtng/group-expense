@@ -2947,8 +2947,141 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal((await pool.query(`SELECT count(*)::int AS n
       FROM group_settlement_bilateral_decision_events
       WHERE proposal_id=$1 AND event_type='revoke'`,[appProposal.id])).rows[0].n,0);
-    // BN-005 deliberately NOT implemented: original obligation/cash
-    // balances and invoice/cycle completion states remain unchanged.
+    // BN-005: every balance and user-facing reader must now recognize
+    // immutable NONCASH discharge but preserve original cash records.
+    const totalsAfter=await pool.query(`
+      SELECT sum(b.confirmed_setoff_minor)::text AS setoff,
+        sum(b.confirmed_cash_minor)::text AS cash,
+        sum(b.pending_cash_minor)::text AS pending,
+        sum(b.outstanding_minor)::text AS outstanding,
+        sum(b.available_minor)::text AS available,
+        count(*)::int AS sources
+      FROM bn005_obligation_balances b
+      JOIN obligations o ON o.id=b.obligation_id
+      WHERE o.group_id=$1 AND o.voided_at IS NULL`,[bnGroup]);
+    const bt=totalsAfter.rows[0];
+    assert.equal(bt.sources,122);
+    assert.equal(bt.setoff,(2n*BigInt(appProposal.offsetMinor)).toString(),
+      "one applied document must discharge equal total money on BOTH sides");
+    assert.ok(BigInt(bt.outstanding)>=0n && BigInt(bt.available)>=0n,
+      "money cannot become negative");
+    assert.ok(BigInt(bt.outstanding)>=BigInt(bt.available),
+      "pending cash must remain reserved, not treated as confirmed");
+    const brokenSources=await pool.query(`
+      SELECT b.obligation_id FROM bn005_obligation_balances b
+      JOIN obligations o ON o.id=b.obligation_id
+      WHERE o.group_id=$1 AND (b.outstanding_minor<0 OR b.available_minor<0
+        OR b.original_minor<>b.confirmed_cash_minor
+           +b.confirmed_setoff_minor+b.outstanding_minor
+        OR b.outstanding_minor<>b.pending_cash_minor+b.available_minor)`,
+      [bnGroup]);
+    assert.equal(brokenSources.rowCount,0,
+      "per-obligation conservation must hold, never only aggregate");
+    const grouped=await expenseRequest("GET",
+      `${origin}/api/groups/${bnGroup}/debts`,undefined,jar);
+    assert.equal(grouped.response.status,200,JSON.stringify(grouped.body));
+    const rows=grouped.body.debts;
+    assert.equal(rows.length,122);
+    const debtSetoff=rows.reduce((n,x)=>n+BigInt(x.confirmedSetoffMinor),0n);
+    assert.equal(debtSetoff.toString(),bt.setoff);
+    assert.equal(rows.reduce((n,x)=>n+BigInt(x.outstandingMinor),0n).toString(),
+      bt.outstanding);
+    const forwardDebt=rows.find(r=>r.expenseId===bnForward.body.id);
+    assert.ok(forwardDebt&&BigInt(forwardDebt.confirmedSetoffMinor)>0n,
+      "original invoice must expose exact noncash discharge");
+    const invoice=await expenseRequest("GET",
+      `${bnExpenses}/${bnForward.body.id}`,undefined,jar);
+    assert.equal(invoice.response.status,200,JSON.stringify(invoice.body));
+    const progress=invoice.body.expense??invoice.body;
+    assert.equal(progress.remainingMinor,forwardDebt.outstandingMinor);
+    assert.equal(progress.confirmedSetoffMinor,forwardDebt.confirmedSetoffMinor);
+    assert.equal(BigInt(progress.confirmedMinor),
+      BigInt(progress.confirmedCashMinor)+BigInt(progress.confirmedSetoffMinor));
+    const originalHistory=await pool.query(`
+      SELECT count(*)::int AS n FROM settlement_allocations a
+      WHERE a.group_id=$1`,[bnGroup]);
+    assert.equal(originalHistory.rows[0].n,appBefore.allocation_count,
+      "bù trừ KHÔNG được tạo thêm giao dịch tiền mặt");
+
+    // A fully discharged original obligation is NO LONGER available for
+    // another manual cash report. Direct SQL bypass must also roll back.
+    const fully=await pool.query(`
+      SELECT o.id AS obligation_id,o.debtor_id,o.creditor_id,o.expense_id,
+        b.confirmed_setoff_minor::text AS setoff
+      FROM obligations o
+      JOIN bn005_obligation_balances b ON b.obligation_id=o.id
+      JOIN expenses e ON e.id=o.expense_id
+      WHERE o.group_id=$1 AND o.voided_at IS NULL
+        AND b.confirmed_setoff_minor>0 AND b.available_minor=0
+        AND b.outstanding_minor=0 AND e.completed_at IS NULL
+      ORDER BY o.id LIMIT 1`,[bnGroup]);
+    assert.equal(fully.rowCount,1,"fixture has a noncash-settled invoice");
+    const full=fully.rows[0];
+    const debtorJar=full.debtor_id===registered.user.id?jar:otherJar;
+    const creditorJar=full.creditor_id===registered.user.id?jar:otherJar;
+    assert.equal((await expenseRequest("POST",bnCash,{
+      requestKey:randomUUID(),
+      allocations:[{obligationId:full.obligation_id,amountMinor:"1"}],
+    },debtorJar)).response.status,409,
+      "a 1-VND manual settlement MUST NOT spend discharged money again");
+    const rawClient=await pool.connect();
+    try{
+      await rawClient.query("BEGIN");
+      const sid=randomUUID();
+      await rawClient.query(`INSERT INTO settlements
+        (id,group_id,debtor_id,creditor_id,initiated_by,status,
+         amount_minor,request_key,request_fingerprint,note)
+        VALUES($1,$2,$3,$4,$3,'pending',1,$5,$6,'BN005 bypass')`,
+        [sid,bnGroup,full.debtor_id,full.creditor_id,
+          randomUUID(),"a".repeat(64)]);
+      await rawClient.query(`INSERT INTO settlement_allocations
+        (settlement_id,obligation_id,group_id,debtor_id,creditor_id,amount_minor)
+        VALUES($1,$2,$3,$4,$5,1)`,
+        [sid,full.obligation_id,bnGroup,full.debtor_id,full.creditor_id]);
+      await assert.rejects(rawClient.query("COMMIT"),
+        /BN-005 cash exceeds live debt/,
+        "SQL bypass also must not overbook applied setoff");
+    }finally{await rawClient.query("ROLLBACK");rawClient.release();}
+
+    // Creator-only completion after NONCASH discharge, without cash
+    // confirmation. The non-creator must never be able to finalize it.
+    assert.equal((await expenseRequest("POST",
+      `${bnExpenses}/${full.expense_id}/complete`,
+      {expectedVersion:1},debtorJar)).response.status,403);
+    const completedSetoff=await expenseRequest("POST",
+      `${bnExpenses}/${full.expense_id}/complete`,
+      {expectedVersion:1},creditorJar);
+    assert.equal(completedSetoff.response.status,200,
+      JSON.stringify(completedSetoff.body));
+    assert.equal((await pool.query(`SELECT completed_by
+      FROM expenses WHERE id=$1`,[full.expense_id])).rows[0].completed_by,
+      full.creditor_id);
+
+    // Do not permit a member with residual debt to leave, nor archive a
+    // group with remaining obligations. The checks are live, not snapshots.
+    const exit=await expenseRequest("GET",
+      `${origin}/api/groups/${bnGroup}/membership/leave`,undefined,otherJar);
+    assert.equal(exit.response.status,200);
+    assert.equal(exit.body.eligibility.canLeave,false);
+    assert.equal(BigInt(exit.body.eligibility.toPayMinor)+
+      BigInt(exit.body.eligibility.toReceiveMinor),BigInt(bt.outstanding));
+    assert.equal((await expenseRequest("POST",
+      `${origin}/api/groups/${bnGroup}/archive`,
+      {confirmation:"BN002 two-way"},jar)).response.status,409);
+    const pairRepayments=await expenseRequest("GET",
+      `${bnCycleApi}/${bnCycle}/repayments`,undefined,jar);
+    assert.equal(pairRepayments.response.status,200,
+      JSON.stringify(pairRepayments.body));
+    assert.equal(pairRepayments.body.pairs.reduce((n,x)=>
+      n+BigInt(x.availableMinor),0n),BigInt(bt.available),
+      "SC-005 available cannot include already applied setoff");
+    const reProposal=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(11,randomUUID(),
+        (await expenseRequest("GET",bnReadUrl,undefined,jar)).body.fingerprint),
+      jar);
+    assert.equal(reProposal.response.status,409,
+      "one pair/cycle cannot re-bill discharged source even if balances change");
+
 
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
