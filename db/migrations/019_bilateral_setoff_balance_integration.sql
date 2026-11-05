@@ -44,8 +44,11 @@ CREATE FUNCTION bn005_assert_cash_capacity() RETURNS trigger LANGUAGE plpgsql AS
 DECLARE oid uuid; balance record;
 BEGIN
   IF TG_TABLE_NAME='settlement_allocations' THEN
-    oid:=COALESCE(NEW.obligation_id,OLD.obligation_id);
-    IF TG_OP='DELETE' THEN oid:=OLD.obligation_id; END IF;
+    IF TG_OP='DELETE' THEN
+      oid:=OLD.obligation_id;
+    ELSE
+      oid:=NEW.obligation_id;
+    END IF;
     IF TG_OP='UPDATE' THEN
       PERFORM 1 FROM obligations WHERE id=OLD.obligation_id FOR UPDATE;
       SELECT original_minor,confirmed_cash_minor,pending_cash_minor,
@@ -95,6 +98,7 @@ CREATE CONSTRAINT TRIGGER bn005_cash_transition_guard
 CREATE FUNCTION bn005_assert_noncash_capacity() RETURNS trigger LANGUAGE plpgsql AS $bn005$
 DECLARE balance record;
 BEGIN
+  PERFORM 1 FROM obligations WHERE id=NEW.obligation_id FOR UPDATE;
   SELECT original_minor,confirmed_cash_minor,pending_cash_minor,
     confirmed_setoff_minor,outstanding_minor,available_minor
   INTO balance FROM bn005_obligation_balances WHERE obligation_id=NEW.obligation_id;
