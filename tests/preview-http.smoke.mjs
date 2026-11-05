@@ -2577,6 +2577,11 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
         {obligationId:extraBnOb,amountMinor:"100"}],
     },otherJar);
     assert.equal(bnChangedMoney.response.status,201);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='invalidated'`,
+      [fifth.id])).rows[0].n,1,
+      "money writer must invalidate approvals atomically at cash INSERT");
     assert.equal((await expenseRequest("GET",fifthUrl,undefined,jar))
       .body.status,"invalidated");
     assert.equal((await expenseRequest("POST",fifthUrl,
@@ -2591,7 +2596,24 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       WHERE proposal_id=$1 AND event_type='approve'`,
       [fifth.id])).rows[0].n,1,
       "old approval must remain for audit, never count towards a new proposal");
-
+    // Reverting the temporary cash reservation restores the numeric SHA,
+    // but MUST NOT resurrect a signed proposal invalidated in the meantime.
+    assert.equal((await expenseRequest("PATCH",
+      `${bnCash}/${bnChangedMoney.body.id}`,{action:"cancel"},otherJar))
+      .response.status,200);
+    const restoredFingerprint=(await expenseRequest("GET",bnReadUrl,undefined,jar)).body;
+    assert.equal(restoredFingerprint.fingerprint,fifth.sourceFingerprint);
+    assert.equal((await expenseRequest("GET",fifthUrl,undefined,jar))
+      .body.status,"invalidated",
+      "immutable invalidation survives transient money changes and reversals");
+    assert.equal((await expenseRequest("POST",fifthUrl,
+      decisionBody("approve",5,fifth.sourceFingerprint),otherJar))
+      .response.status,409);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='invalidated'`,
+      [fifth.id])).rows[0].n,1,
+      "cash cancel must never append a second terminal event");
 
     // SQL-created, historically dated proposal fixture: 73 hours old. The
     // normal authenticated proposal API never accepts user-supplied dates.
