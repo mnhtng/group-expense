@@ -121,7 +121,10 @@ DB enforcement:
 - Database also revalidates the current proposal head, active pair,
   cycle opt-in, locked snapshot provenance, original invoice versions,
   `confirmed/pending` cash totals, and availability conservation.
-- A forged early `expired`, a made-up `invalidated` event on unchanged
+- Direct SQL `reject` and `revoke` also require the same current
+source/eligibility and 72-hour window as an `approve`; neither can
+disguise an expired or stale proposal as a timely member decision.
+A forged early `expired`, a made-up `invalidated` event on unchanged
   financial sources or revoked-by-nonapprover action is rejected.
 - DB trigger and service perform complementary checks: only the service
   can recompute the full BN-002 SHA from canonical live source rows.
@@ -170,6 +173,17 @@ wrong fingerprint, wrong party, late approval or stale source returns 409
 (or 403 where authz fails). A decision already committed remains
 idempotently retrievable after group opt-out. A denied action never writes
 cash allocations, obligations or noncash offsets.
+
+## Final verified implementation evidence
+
+- Commit `6cdd80fa3aa11fd0432d2847c5714dbd46c982e1`.
+- [GitHub CI — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41962695419).
+- [PostgreSQL 17 + HTTP — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41962695398).
+- Extra adversarial test: SQL cannot INSERT signatory
+  `reject` or `revoke` for a 73-hour-old proposal; each attempt
+  fails with no audit event persisted.
+- No monetary ledger update, automatic set-off, BN-004 API or
+  financial engine activation has been made in BN-003.
 
 ## 5. Test and release gates
 

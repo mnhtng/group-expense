@@ -399,7 +399,63 @@ opt-in, but does NOT reserve, pay or discharge one dong. Subsequent
 BN-003/BN-004 MUST revalidate the live ledger and immutably hashed
 document before any approvals or noncash application.
 
-## NEXT CONVERSATION: BN-003 ONLY
+## 2026-11-05 — BN-003: DONE (only signed decisions; ledger remains untouched)
+
+**Scope:** Independent two-party consent to immutable BN-002 proposal
+versions, rejection, revocation, expiry and durable invalidation when
+money or eligibility changes. No automated monetary set-off or
+reservations, and no changes to the existing cash payment pipeline.
+
+**Implementation:**
+- `017_bilateral_decision_events.sql`: append-only
+  `group_settlement_bilateral_decision_events`; exact proposal/pair
+  and fingerprint foreign keys; actor-specific approval identity,
+  at-most-once per signer and at-most-one terminal event; row locks
+  protect concurrent SQL decision writers.
+- Automatic, transactional invalidation on original settlement
+  allocation/cash status changes, pair-member departure, group
+  archive and group-level opt-out. Subsequent cash cancellation,
+  member rejoin or opt-in cannot revive a terminal signature.
+- `lib/settlement-cycles/decisions.ts` and authenticated
+  `GET/POST .../bilateral-proposals/:proposalId/decisions`:
+  active pair-only reads and decisions; `approve`, `reject`,
+  `revoke` with immutable request-key/idempotency, expected version
+  and exact original source fingerprint. Two separate approvals produce
+  `agreed` ONLY; always `readyForApplication:false`.
+- Expiry is 72 hours; GET projects time-dependent state read-only.
+  A late attempted decision commits one system `expired` event
+  before returning 409. A stale state does likewise for
+  `invalidated` when not already recorded.
+- SQL hardening on final commit: `reject` and `revoke` cannot
+  be forged through direct SQL after 72-hour expiry or while
+  pair eligibility/cash state is stale. Negative integration tests
+  confirm no extra audit/event rows survive those attempts.
+- Contract: `BN-003-DECISIONS.md` documents the full state machine.
+
+**Verified source HEAD `6cdd80fa3aa11fd0432d2847c5714dbd46c982e1`:**
+- [GitHub CI SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41962695419):
+  lint, TypeScript, Node unit suite, Next.js production build.
+- [Disposable PostgreSQL 17 / HTTP SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41962695398):
+  migration replay, DB integrity integration, authenticated HTTP
+  approval/rejection/revocation/expiry/invalidation and races.
+- Test reuses a 122-obligation, two-counterparty original pair.
+  Same-key racing approval returns [201,200] with identical event;
+  two different signatories are required for `agreed`.
+  Approval-vs-rejection is serialized; terminal revocation survives,
+  old proposal signatures cannot leak into newer revisions.
+  Pending cash and later cancellation do not resurrect stale consent.
+  Opt-out/re-enable, member leave/rejoin and archive invalidate
+  only relevant current pair; unrelated third member leaving does not.
+  Forged SQL late reject/revoke after expiry is rejected.
+- No new noncash monetary tables, no offset application, no
+  `settlements` or `obligations` mutations by decision APIs.
+
+**Release gate remains CLOSED:** `SETTLEMENT_CYCLE_ENGINE_READY=false`.
+Draft PR #16 targets `develop`; no merge, shared Neon migration or
+staging/production deployment. Actual bilateral noncash ledger
+application is **BN-004, a separate future ticket only**.
+
+## NEXT CONVERSATION: BN-004 ONLY
 
 Begin ONLY the dual independent approvals/invalidation/rejection/expiry
 ticket after reading all `docs/settlement-cycles/`. All financial

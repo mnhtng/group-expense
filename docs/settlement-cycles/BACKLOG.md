@@ -40,7 +40,7 @@
 | SC-005 | P0 | Same-direction batch repayment by pair, 50+ allocations, idempotent requests and scoped confirmation | SC-004 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; RELEASE GATED OFF |
 | BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO LEDGER |
 | BN-002 | P0 | Bilateral proposal persistence, one group+cycle+pair+version, stable fingerprint and conflict handling | BN-001 | DONE ON FEATURE BRANCH — CI + POSTGRES/HTTP PASS; NO APPROVAL / NO LEDGER |
-| BN-003 | P0 | Dual approval with identities, invalidation/rejection/expiry/revoke, no auto-apply | BN-002 | TODO |
+| BN-003 | P0 | Dual approval with identities, invalidation/rejection/expiry/revoke, no auto-apply | BN-002 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO NONCASH LEDGER |
 | BN-004 | P0 | Atomic noncash set-off ledger + reservations, exact A↔B balance conservation, immutable audit | BN-003 | TODO |
 | BN-005 | P0 | Integrate `confirmed_setoff` into **all** outstanding, available, leave/archive, paid, completion and report queries | BN-004 | TODO |
 | BN-006 | P0 | Net residual cash settlement through the pre-existing two-party confirmation flow | BN-005,SC-005 | TODO |
@@ -251,6 +251,40 @@ See [BN-002-PROPOSALS.md](./BN-002-PROPOSALS.md).
 noncash entries, BN-005 balance integration, SC-006 later adjustments and
 any production activation. Financial engine flag remains OFF. PR #16
 remains Draft; no shared Neon migration, merge or deploy.
+
+## BN-003 — independent counterpart decisions (current conversation)
+
+**DONE ON FEATURE BRANCH; FINANCIAL RELEASE STILL OFF.**
+The existing BN-003 implementation was validated against full
+PostgreSQL 17 + HTTP CI. Hardening added to migration 017 prohibits
+raw SQL `reject` and `revoke` after the original source is
+stale, eligibility is revoked or the proposal has expired. The same
+state rules apply to `approve`, with strict one-signature-per-person
+and one-terminal-event-per-proposal invariants.
+
+**Source files:** `017_bilateral_decision_events.sql`,
+`lib/settlement-cycles/decisions.ts`, authenticated
+`GET/POST /bilateral-proposals/:proposalId/decisions`.
+Append-only signatory decisions `approve/reject/revoke`, durable
+system `invalidated/expired`, 72-hour deadline, current-head
+version and source fingerprint. Two separate approvals yield
+`agreed`, NEVER `applied` or `paid`. No noncash set-off row,
+no pending noncash reservation, no invoice or money mutation.
+
+**Final verified commit `6cdd80fa3aa11fd0432d2847c5714dbd46c982e1`:**
+[CI SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41962695419);
+[PostgreSQL/HTTP SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41962695398).
+Tests cover two actual counterpart signers and unrelated admin denial,
+same-key concurrent retries, approval versus rejection, revoke after
+agreement, terminal immutable history, 72-hour expiry and forged
+direct SQL late reject/revoke, cash-status source invalidation,
+reversal of pending cash not resurrecting approvals, opt-out,
+member leave/rejoin, group archive and no financial-application writes.
+
+Detailed contract: [BN-003-DECISIONS.md](./BN-003-DECISIONS.md).
+Release remains blocked: PR #16 Draft; no shared Neon migrations,
+no deploy or merge, `SETTLEMENT_CYCLE_ENGINE_READY=false`.
+BN-004 may be started only in a separate future conversation.
 
 ## Design debt & migration/release gates
 
