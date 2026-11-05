@@ -2933,10 +2933,10 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.match(sc008Source.html,/Tiền mặt chờ xác nhận/);
     assert.match(sc008Source.html,/Chưa phát hành giao dịch quyết toán/);
     assert.match(sc008Source.html,/Phân trang nguồn công nợ/);
-    const pageTwo=await sc008Page(sc008DetailUrl+"?page=2");
-    assert.equal(pageTwo.response.status,200);
-    assert.match(pageTwo.html,/Trang 2\//);
-    assert.match(pageTwo.html,
+    const sc008PageTwo=await sc008Page(sc008DetailUrl+"?page=2");
+    assert.equal(sc008PageTwo.response.status,200);
+    assert.match(sc008PageTwo.html,/Trang 2\//);
+    assert.match(sc008PageTwo.html,
       new RegExp(`Tổng hợp từ toàn bộ ${sc008OriginalCount} nghĩa vụ gốc`),
       "paging must never alter grand totals");
     const sc008Live=(await pool.query(`
