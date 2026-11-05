@@ -14,7 +14,7 @@ SC-001–SC-010 and BN-001–BN-006 are implemented on the feature branch. Postg
 | Ticket | Priority | Goal | Exit criterion | Status |
 |---|---|---|---|---|
 | **RR-001** | P0 | Isolated Neon migration 011–023 rehearsal | Confirm exact isolated child and credential endpoints; record pre-migration source hashes; separately authorize 011–023 *on that child alone*; verify migration idempotency and checksums; reconcile original balances/provenance and parent immutability; independent permission/HTTP and restore gates follow separately | **SCHEMA PASS — all 011–023 applied on isolated child, 23/23 checksums and 8/8 read-only financial audits; release remains NO-GO** |
-| **RR-002** | P0 | Browser and mobile real-interaction E2E | Chromium + WebKit, iOS installed PWA and Android; consent, focus, stale proposal, error, offline, deep links, bilateral privacy and 44px touch; artifacts and regression list | NOT STARTED |
+| **RR-002** | P0 | Browser and mobile real-interaction E2E | Chromium + WebKit, iOS installed PWA and Android; consent, focus, stale proposal, error, offline, deep links, bilateral privacy and 44px touch; artifacts and regression list | **IMPLEMENTED / BLOCKED** — Browser suite + dedicated PG17 CI created; earlier run hit Better Auth 429 (retry fixed); latest Actions jobs could not acquire runners, full browser E2E not green; physical iOS/Android pending; **NO-GO** |
 | **RR-003** | P0 | Recoverability and operations alerting | Authorized provider backup/PITR restore into new independent Neon branch; independent immutable-source reconciliation, declared RPO/RTO, verified authenticated 503/alert response path, operator acknowledgement | NOT STARTED |
 | **RR-004** | P0 | Independent security and finance signoff | Full original + confirmed CASH + NONCASH + pending conservation, source-link accuracy, disputed-source denials, roles, concurrency, secrets, threats and documented review by accountable humans | NOT STARTED |
 | **RR-005** | P1 | Staging and staged-release decision | Only after RR-001..004 pass, separate explicit approval for staging migrations/deployment and production release; test rollback without ledger reversal; reviewed commit SHA; controlled opted-in 1→5→25 cohort | BLOCKED / NOT AUTHORIZED |
@@ -50,3 +50,11 @@ SC-001–SC-010 and BN-001–BN-006 are implemented on the feature branch. Postg
 - Without those values it fails closed and cannot connect. Passwords and URLs must **never** enter Git.
 - The isolated Neon schema rehearsal has been separately authorized and executed. **Do not reapply SQL 011–023 manually or migrate shared branches.** A later CLI idempotency demonstration may use only the already-migrated isolated child with branch-specific credentials, after re-verifying its current schema; the 23 exact checksums already prove that the ordinary migrator would skip these migration files. Do not treat this as RR-003 backup/restore certification.
 - RR-002..005 are deliberately **not implemented** under RR-001.
+
+## RR-002 implementation and verification status (2026-11-05)
+
+- Real browser E2E: `tests/rr002-browser.e2e.mjs` using Chromium desktop, WebKit desktop, iPhone 13 WebKit emulation and Pixel 7 Chromium emulation against disposable localhost PG17 only.
+- Dedicated CI: `.github/workflows/rr002-browser-e2e.yml`; fail-closed static checks: `tests/rr002-safety.test.mjs`. The original obligation invoice link touch height was adjusted to 44 CSS px.
+- Latest browser source includes a bounded retry respecting Better Auth HTTP 429 rate limiting, **without weakening production auth**.
+- [Evidence, execution attempts and outstanding physical-device gates](./RR-002-BROWSER-E2E.md). **Do not mark RR-002 DONE:** browser tests reached login setup in an earlier run but did not yet complete; later GitHub Actions jobs failed without a runner. Developer-managed CI/PG17 tests on the earlier commit passed, but are not browser validation.
+- The source of truth for financial release remains `SETTLEMENT_CYCLE_ENGINE_READY=false`. PR #16 Draft. No staging/prod migration, finance engine activation or shared-Neon mutation.
