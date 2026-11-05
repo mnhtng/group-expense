@@ -3439,10 +3439,12 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     },jar)).response.status,409,"stale snapshot fingerprint fails closed");
     const frozenLateEdit=await expenseRequest("PATCH",
       `${sc006Expenses}/${lateId}`,{
-        expectedVersion:1,title:"Forged historical change",
-        occurredOn:sc003Date(-9),payerId:otherUser.id,
-        items:[{name:"Changed",quantity:1,unitPriceMinor:"8000",
-          participants:[registered.user.id]}],
+        expectedVersion:1,expense:{
+          title:"Forged historical change",
+          occurredOn:sc003Date(-9),payerId:otherUser.id,
+          items:[{name:"Changed",quantity:1,unitPriceMinor:"8000",
+            participants:[registered.user.id]}],
+        },
       },otherJar);
     assert.equal(frozenLateEdit.response.status,409,
       "attributed invoice must be frozen even BEFORE target lock");
