@@ -13,7 +13,7 @@ SC-001–SC-010 and BN-001–BN-006 are implemented on the feature branch. Postg
 
 | Ticket | Priority | Goal | Exit criterion | Status |
 |---|---|---|---|---|
-| **RR-001** | P0 | Isolated Neon migration 011–023 rehearsal | Confirm exact isolated child and credential endpoints; record pre-migration source hashes; separately authorize 011–023 *on that child alone*; migrate twice with checksum equality; revalidate original balances, source provenance, privacy and parent immutability | **PARTIAL — read-only preflight and connection guard; migration NOT authorized/executed** |
+| **RR-001** | P0 | Isolated Neon migration 011–023 rehearsal | Confirm exact isolated child and credential endpoints; record pre-migration source hashes; separately authorize 011–023 *on that child alone*; verify migration idempotency and checksums; reconcile original balances/provenance and parent immutability; independent permission/HTTP and restore gates follow separately | **SCHEMA PASS — all 011–023 applied on isolated child, 23/23 checksums and 8/8 read-only financial audits; release remains NO-GO** |
 | **RR-002** | P0 | Browser and mobile real-interaction E2E | Chromium + WebKit, iOS installed PWA and Android; consent, focus, stale proposal, error, offline, deep links, bilateral privacy and 44px touch; artifacts and regression list | NOT STARTED |
 | **RR-003** | P0 | Recoverability and operations alerting | Authorized provider backup/PITR restore into new independent Neon branch; independent immutable-source reconciliation, declared RPO/RTO, verified authenticated 503/alert response path, operator acknowledgement | NOT STARTED |
 | **RR-004** | P0 | Independent security and finance signoff | Full original + confirmed CASH + NONCASH + pending conservation, source-link accuracy, disputed-source denials, roles, concurrency, secrets, threats and documented review by accountable humans | NOT STARTED |
@@ -30,16 +30,17 @@ SC-001–SC-010 and BN-001–BN-006 are implemented on the feature branch. Postg
 7. Do not claim release-ready from a green CI or a read-only Neon baseline. Each gate needs independent evidence and human signoff.
 8. The SC-010 runbook remains canonical for recovery and staged rollout: [SC-010](../settlement-cycles/SC-010-OPERATIONS-ROLLOUT.md).
 
-## Current RR-001 evidence (read-only, 2026-11-05)
+## RR-001 execution evidence (isolated Neon, 2026-11-05)
 
 - Neon project: `withered-salad-00928018` (`group-expense`).
 - Isolated child: `br-curly-rice-b3xenws6` (`sc010-rehearsal-20261105`).
 - Parent: `br-dry-poetry-b31cudmb` (`development`).
 - Production: `br-round-salad-b39y4yce` (**excluded**).
-- Child and parent both have **10** installed migrations, ending at `010_monthly_recurring_expenses.sql`; independent Neon compare reports **empty schema diff**.
+- Before migration, child and parent both had **10** migrations with empty schema diff. **After migration, child has 23**, parent retains 10 and production retains 6; child-parent schema diff is nonempty as expected.
 - Baseline child: **2** original expenses, **2** obligations. Values and identity-bearing rows are deliberately not published in repository docs.
 - The child PostgreSQL 17 compute was found; endpoint host pair is pinned to that **one** child in `db/rr001-neon-preflight.mjs`. The checker rejects all other project, branch, database, host, role or TLS combinations before connecting.
-- **No migration 011–023 has been executed on Neon by RR-001.** This evidence is only preflight, not completion.
+- **All migrations 011–023 were executed in ordered, advisory-locked transactions on the child only.** SHA-256 of all 23 installed migrations matches the exact pinned GitHub SQL. The complete original `expenses`/`obligations` source-row hashes are unchanged, and all 8 SC-007 independent read-only financial reconciliation queries return zero violations.
+- **Evidence and limits:** [RR-001-NEON-MIGRATION-EVIDENCE.md](./RR-001-NEON-MIGRATION-EVIDENCE.md). The exact `pnpm db:migrate` CLI was not run on Neon; equivalent SQL was applied through the branch-pinned Neon connector. No managed Neon PITR restore or authenticated browser E2E occurred. This child has no applied noncash document; positive multi-party scenarios remain verified by disposable PG17 CI.
 - The existing engine remains OFF; PR #16 must remain Draft.
 
 ## RR-001 reproducibility and handoff
@@ -47,5 +48,5 @@ SC-001–SC-010 and BN-001–BN-006 are implemented on the feature branch. Postg
 - Unit validation: `node --test tests/rr001-neon-preflight.test.mjs`.
 - Operator read-only DB preflight, only after securely provisioning branch-specific `DATABASE_URL`, `DATABASE_URL_DIRECT`, `RR001_PROJECT_ID` and `RR001_BRANCH_ID`: `node db/rr001-neon-preflight.mjs`.
 - Without those values it fails closed and cannot connect. Passwords and URLs must **never** enter Git.
-- Do not run `pnpm db:migrate` or any Neon schema-mutating tool until the separately authorized RR-001 migration rehearsal. At that point, re-verify branch metadata and direct/pool endpoints; run the exact migrations twice and post-migration source/parent audit.
+- The isolated Neon schema rehearsal has been separately authorized and executed. **Do not reapply SQL 011–023 manually or migrate shared branches.** A later CLI idempotency demonstration may use only the already-migrated isolated child with branch-specific credentials, after re-verifying its current schema; the 23 exact checksums already prove that the ordinary migrator would skip these migration files. Do not treat this as RR-003 backup/restore certification.
 - RR-002..005 are deliberately **not implemented** under RR-001.
