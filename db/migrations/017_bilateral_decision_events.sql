@@ -156,7 +156,7 @@ CREATE TRIGGER bn003_event_guard BEFORE INSERT
 -- were invalidated at the first write. Every cash writer already holds
 -- the group row lock. The proposal lock serializes these events with
 -- direct SQL decision inserts as well.
-CREATE FUNCTION bn003_auto_invalidate(gid uuid, source_id uuid)
+CREATE FUNCTION bn003_auto_invalidate(gid uuid, source_id uuid, affected_member text DEFAULT NULL)
 RETURNS void LANGUAGE plpgsql AS $bn003$
 BEGIN
   INSERT INTO group_settlement_bilateral_decision_events
@@ -170,6 +170,8 @@ BEGIN
   JOIN group_settlement_bilateral_proposals p
     ON p.id=h.current_proposal_id AND p.group_id=h.group_id
   WHERE h.group_id=gid
+    AND (affected_member IS NULL OR p.party_low=affected_member
+      OR p.party_high=affected_member)
     AND (source_id IS NULL OR EXISTS (
       SELECT 1 FROM group_settlement_bilateral_sources x
       WHERE x.proposal_id=p.id AND x.obligation_id=source_id))
@@ -241,7 +243,7 @@ CREATE TRIGGER bn003_cycle_optout_changed
 CREATE FUNCTION bn003_member_invalidation() RETURNS trigger LANGUAGE plpgsql AS $bn003$
 BEGIN
   IF OLD.status='active' AND NEW.status<>'active' THEN
-    PERFORM bn003_auto_invalidate(NEW.group_id,NULL);
+    PERFORM bn003_auto_invalidate(NEW.group_id,NULL,NEW.user_id);
   END IF;
   RETURN NEW;
 END;
