@@ -47,7 +47,7 @@
 | SC-006 | P0 | Immutable next-REVIEW attribution of late original invoices; recurring catchup order; leave/creator/recurring-template/archive guards; no historic edits or unlock | SC-004,BN-005 | DONE ON FEATURE BRANCH — PG17/HTTP VERIFIED; NOT RELEASED |
 | SC-007 | P0 | Full financial concurrency, authz, property-based and HTTP E2E regression suite; fail-closed release gate | SC-006,BN-006 | DONE ON FEATURE BRANCH — CI + PG17/HTTP AUDIT PASS; RELEASE NO-GO |
 | SC-008 | P1 | Member-visible mobile-first cycle/history/review; original-obligation cash vs noncash; bilateral consent previews; manager late-source workflow; source paging and release gating | SC-007 | DONE ON FEATURE BRANCH — SSR/HTTP + CI VERIFIED; FINANCIAL RELEASE NO-GO |
-| SC-009 | P1 | In-app notifications, reminders, disputes, late adjustments, audit/export and reconciliation reports | SC-008 | TODO |
+| SC-009 | P1 | In-app event + dedup reminders, true bilateral immutable disputes, late adjustment notices, source-preserving audit/CSV and full live reconciliation | SC-008 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; FINANCIAL RELEASE NO-GO |
 | SC-010 | P1 | Operational runbooks, cron catch-up, monitoring, recovery / rollback, staged production rollout | SC-009 | TODO |
 | BN-007 | P2 | Optional future refinements strictly **within two parties**, never 3+-party debt simplification | SC-010 | BACKLOG |
 
@@ -571,6 +571,80 @@ regression require a subsequent staging/device rehearsal.
 UX, no SC-010 operational release, no shared Neon migration,
 staging/production deploy or PR merge. PR #16 stays Draft
 and the financial release decision stays **NO-GO**.
+
+## SC-009 — operational clarity without releasing money
+
+**DONE ON FEATURE BRANCH; NOT RELEASED.** Adds migration 022
+`settlement_cycle_notifications_disputes.sql`, immutable
+original-obligation pair disputes and events, transactionally
+idempotent in-app cycle notifications (with old settlement alerts
+preserved), durable push queue reuse, gated bounded daily
+reminders, live reconciliation, chronological original-source
+audit and Excel-safe CSV exports.
+
+- Original notification table now supports cycle events,
+  nullable system actor and per-recipient immutable source-event
+  keys, while retaining the previous cash-settlement events.
+  PostgreSQL AFTER INSERT triggers generate rollback-safe
+  user notices for review/lock, BN-002 proposals, BN-003
+  decisions, BN-004 applied noncash, SC-006 original late
+  assignment and dispute lifecycle. Only active counterparties
+  receive pair-private details.
+- Existing signed daily Cron now generates at most 40
+  per-day idempotent reminders for overdue period REVIEW,
+  pending current approval, existing actual-counterparty CASH
+  confirmation, late original invoices and two-party
+  disputes, then drains the existing push queue. With
+  `SETTLEMENT_CYCLE_ENGINE_READY=false`, reminders stay
+  **OFF outside exact disposable CI/PG17 test gate**.
+- Real debtor/creditor may open one active dispute per
+  ORIGINAL locked source and exchange append-only
+  `respond`, reporter `resolve` or `withdraw` events.
+  Owner/admin/manager cannot impersonate either; group
+  members outside the pair cannot access private thread
+  or pair-specific audit rows.
+- Active dispute prevents new money allocation on that
+  ORIGINAL obligation (ordinary manual cash, SC-005 batch
+  cash, BN-004 applied noncash); existing pending cash may
+  not be confirmed until dispute resolved. It does NOT
+  reverse confirmed money, silently edit bills or
+  mutate frozen snapshots.
+- Read-only reconciliation derives **all** original
+  obligation balances from the BN-005 canonical view,
+  separates confirmed CASH/NONCASH and pending CASH,
+  counts incomplete creator invoices, unresolved current
+  proposals, open disputes and pending payments. A
+  "ready for manual review" hint NEVER closes a cycle.
+- Every signed ACTIVE member can export full original
+  money source and scoped audit CSV (max 20,000,
+  fail closed on cap), UTF-8 BOM, formula injection
+  neutralization, secure attachment filename/no-store,
+  immutable chronology. Private pair events are never
+  exposed to unrelated members via JSON/CSV.
+- SC-008 locked-cycle screen adds a mobile-first panel:
+  real ledger report, original-source dispute selector,
+  inline two-person response/withdraw/resolve,
+  source/audit CSV exports and paginated audit history.
+- Tests: `tests/sc009-notifications-disputes.test.mjs`
+  (roles, SQL immutability, source gating, cron release
+  controls and UI) and real signed PG17/HTTP fixture:
+  two-party open/respond/resolve, third-admin privacy,
+  changed-key/replay denial, notice dedup,
+  source-money conservation, attempted SC-005 and manual
+  CASH while disputed (fail closed), blocked confirmation
+  of pre-existing pending CASH, scoped audit/CSV and
+  formula-safe UTF-8 data. All SC-001…SC-008, BN-001…BN-006
+  regression plus SC-007 before/after independent
+  ledger audit remain green.
+
+**Canonical document:**
+[SC-009-NOTIFICATIONS-DISPUTES-RECONCILIATION.md](./SC-009-NOTIFICATIONS-DISPUTES-RECONCILIATION.md).
+
+**Hard exclusions:** SC-010 operations, recovery, stage
+rollout, shared Neon migration, PR merge and any real
+financial release. PR #16 stays **Draft**;
+`SETTLEMENT_CYCLE_ENGINE_READY=false` remains unchanged.
+Do not start SC-010 without a separate user request.
 
 ## Design debt & migration/release gates
 
