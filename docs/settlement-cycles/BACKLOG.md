@@ -46,7 +46,7 @@
 | BN-006 | P0 | Net residual cash settlement through the pre-existing two-party confirmation flow | BN-005,SC-005 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
 | SC-006 | P0 | Immutable next-REVIEW attribution of late original invoices; recurring catchup order; leave/creator/recurring-template/archive guards; no historic edits or unlock | SC-004,BN-005 | DONE ON FEATURE BRANCH — PG17/HTTP VERIFIED; NOT RELEASED |
 | SC-007 | P0 | Full financial concurrency, authz, property-based and HTTP E2E regression suite; fail-closed release gate | SC-006,BN-006 | DONE ON FEATURE BRANCH — CI + PG17/HTTP AUDIT PASS; RELEASE NO-GO |
-| SC-008 | P1 | Cycle and set-off mobile UI: list/review/confirm, per-obligation traceability, clarity for each role | SC-007 | TODO |
+| SC-008 | P1 | Member-visible mobile-first cycle/history/review; original-obligation cash vs noncash; bilateral consent previews; manager late-source workflow; source paging and release gating | SC-007 | DONE ON FEATURE BRANCH — SSR/HTTP + CI VERIFIED; FINANCIAL RELEASE NO-GO |
 | SC-009 | P1 | In-app notifications, reminders, disputes, late adjustments, audit/export and reconciliation reports | SC-008 | TODO |
 | SC-010 | P1 | Operational runbooks, cron catch-up, monitoring, recovery / rollback, staged production rollout | SC-009 | TODO |
 | BN-007 | P2 | Optional future refinements strictly **within two parties**, never 3+-party debt simplification | SC-010 | BACKLOG |
@@ -517,6 +517,60 @@ Do not start SC-007 in this ticket.
 `SETTLEMENT_CYCLE_ENGINE_READY=false`, no shared Neon migration,
 no staging/production deployment, no actual money enablement.
 Do not start SC-008 in this conversation.
+
+## SC-008 — mobile-first role-scoped cycle and bilateral settlement UI
+
+**DONE ON FEATURE BRANCH; NOT RELEASED.** Existing UI route
+`/groups/:groupId` now links to authorized
+`/groups/:groupId/cycles?page=N`, with a member-visible
+50-record-per-page history and direct
+`/groups/:groupId/cycles/:cycleId?page=N` detail (no latest-100
+truncation). OPEN links to original bills; REVIEW reuses the original
+SC-004 manager snapshot workflow; LOCKED renders the frozen
+snapshot plus **live** original obligation balances.
+
+The original source drill-down uses a REPEATABLE READ READ ONLY SQL
+projection over the SC-004 original snapshot IDs and BN-005 live
+balances. Financial totals aggregate over ALL original obligations
+independently of 50-row source pagination. Each line links back to
+the ORIGINAL expense and displays original date, actual confirmed
+cash, confirmed NONCASH bù trừ, pending cash, remaining/available
+balances and SC-006 late-attribution audit.
+
+Authenticated member can select exactly ONE other member, preview
+BN-002's real 2-way BigInt calculation and original source allocations,
+inspect BN-003 approvals/rejection/revocation/expiry, BN-004 applied
+noncash proof, BN-006 live residual (cash requests remain pending
+until independent counterparty confirmation), and SC-005 one-direction
+batch cash. Owner/explicit cycle-manager can review SC-006
+late-source audit and assign the ORIGINAL invoice to the
+first eligible subsequent REVIEW period via a two-step inline
+confirmation. Non-manager has no bypass.
+
+UI is mobile-touch sized, uses persistent state rather than
+auto-collapsing native details, explicit loading/error/retry,
+role/status labels and keyboard labels. Both cash/noncash and
+confirmed/pending distinctions are explicit. All financial
+mutation controls remain disabled by the server-provided
+hardcoded `SETTLEMENT_CYCLE_ENGINE_READY=false`; a frontend
+opt-in cannot enable real money.
+
+Tested with `tests/sc008-cycle-ui.test.mjs` and actual
+Better Auth / Next.js production server / PostgreSQL HTTP SSR:
+anonymous navigation denied, original >50-source sum and source
+paging verified, after-BN004 original noncash visible,
+SC-006 original late invoice in its subsequent locked cycle.
+All SC-001…SC-007/BN-001…BN-006 regressions continue to run.
+**SC-008 is NOT browser/device visual or interaction E2E.**
+Physical iOS/Android accessibility, WebKit focus and visual
+regression require a subsequent staging/device rehearsal.
+
+**Contract:** [SC-008-MOBILE-UI.md](./SC-008-MOBILE-UI.md).
+
+**Hard exclusions:** no SC-009 reminders/notifications/dispute/audit
+UX, no SC-010 operational release, no shared Neon migration,
+staging/production deploy or PR merge. PR #16 stays Draft
+and the financial release decision stays **NO-GO**.
 
 ## Design debt & migration/release gates
 
