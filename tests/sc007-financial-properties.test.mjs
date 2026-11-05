@@ -164,3 +164,29 @@ test("SC-007 model: adversarial float, overflow, negative, cross-pair or duplica
   assert.throws(()=>calculateBilateralSetoff(base(good,{
     partyBId:A})),e=>e.code==="INVALID_SCOPE");
 });
+
+test("SC-007 regression: audit-proven late ORIGINAL invoice can net without rewriting its historic date",()=>{
+  const late=row(120001,0,7000n,0n,0n,0n,0n,"2026-09-29");
+  const regular=row(120002,1,3000n,0n,0n,0n,0n,"2026-10-13");
+  assert.throws(()=>calculateBilateralSetoff(base([late,regular])),
+    e=>e.code==="INVALID_SCOPE",
+    "unattributed backdated invoice must be rejected");
+  assert.throws(()=>calculateBilateralSetoff(base([
+    {...late,lateAttributionVerified:false},regular,
+  ])),e=>e.code==="INVALID_SCOPE");
+  const proved={...late,lateAttributionVerified:true};
+  const value=calculateBilateralSetoff(base([proved,regular]));
+  assert.equal(value.offsetMinor,"3000");
+  assert.equal(value.aOwesB.allocations[0].occurredOn,"2026-09-29");
+  assert.equal(value.aOwesB.availableAfterMinor,"4000");
+  assert.equal(value.bOwesA.availableAfterMinor,"0");
+  assert.deepEqual(calculateBilateralSetoff(base([regular,proved])),value,
+    "late attribution must not change source date, FIFO or ordering");
+  assert.throws(()=>calculateBilateralSetoff(base([
+    {...proved,groupId:id(500)},regular,
+  ])),e=>e.code==="INVALID_SCOPE",
+    "an audit proof never permits cross-group source laundering");
+  assert.throws(()=>calculateBilateralSetoff(base([
+    {...proved,cycleId:id(501)},regular,
+  ])),e=>e.code==="INVALID_SCOPE");
+});
