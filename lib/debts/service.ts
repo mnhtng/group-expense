@@ -78,6 +78,28 @@ export async function listGroupDebts(groupId: string, actorId: string): Promise<
   return result.rows;
 }
 
+/** Canonical full-group rollup (NO 500-row UI list cap).
+ * All entries come from original nonvoid obligations; applied set-off
+ * changes outstanding/available but never duplicates expense totals.
+ */
+export async function getGroupDebtTotals(groupId:string,actorId:string):
+  Promise<{outstandingMinor:string;myPayableMinor:string;myReceivableMinor:string}|null>{
+  if(!(await assertGroupMember(groupId,actorId)))return null;
+  const r=await pool.query<{
+    outstandingMinor:string;myPayableMinor:string;myReceivableMinor:string;
+  }>(`SELECT
+     COALESCE(sum(b.outstanding_minor),0)::text AS "outstandingMinor",
+     COALESCE(sum(b.outstanding_minor) FILTER(WHERE o.debtor_id=$2),0)::text
+       AS "myPayableMinor",
+     COALESCE(sum(b.outstanding_minor) FILTER(WHERE o.creditor_id=$2),0)::text
+       AS "myReceivableMinor"
+   FROM obligations o
+   JOIN bn005_obligation_balances b ON b.obligation_id=o.id
+   JOIN expenses e ON e.id=o.expense_id AND e.deleted_at IS NULL
+   WHERE o.group_id=$1 AND o.voided_at IS NULL`,[groupId,actorId]);
+  return r.rows[0]??{outstandingMinor:"0",myPayableMinor:"0",myReceivableMinor:"0"};
+}
+
 export async function listExpenseDebts(groupId: string, expenseId: string, actorId: string) {
   if (!(await assertGroupMember(groupId, actorId))) return null;
   if (!validUUID(expenseId)) return [];
