@@ -2575,15 +2575,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       [fifth.id])).rows[0].n,1,
       "old approval must remain for audit, never count towards a new proposal");
 
-    await assert.rejects(pool.query(`
-      INSERT INTO group_settlement_bilateral_decision_events
-        (id,proposal_id,group_id,cycle_id,party_low,party_high,
-         actor_id,event_type,request_key,request_digest,source_fingerprint)
-      SELECT $2,p.id,p.group_id,p.cycle_id,p.party_low,p.party_high,
-        NULL,'expired',$3,$4,p.source_fingerprint
-      FROM group_settlement_bilateral_proposals p WHERE p.id=$1`,
-      [fifth.id,randomUUID(),randomUUID(),"a".repeat(64)]),
-      /BN-003 proposal has not expired/);
+
     // SQL-created, historically dated proposal fixture: 73 hours old. The
     // normal authenticated proposal API never accepts user-supplied dates.
     // This verifies expiration against real PostgreSQL time, NOT mock clocks.
@@ -2593,6 +2585,15 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       bnPayload(5,randomUUID(),sixthPreview.fingerprint),otherJar);
     assert.equal(sixthCreated.response.status,201,JSON.stringify(sixthCreated.body));
     const sixth=sixthCreated.body.proposal;
+    await assert.rejects(pool.query(`
+      INSERT INTO group_settlement_bilateral_decision_events
+        (id,proposal_id,group_id,cycle_id,party_low,party_high,
+         actor_id,event_type,request_key,request_digest,source_fingerprint)
+      SELECT $2,p.id,p.group_id,p.cycle_id,p.party_low,p.party_high,
+        NULL,'expired',$3,$4,p.source_fingerprint
+      FROM group_settlement_bilateral_proposals p WHERE p.id=$1`,
+      [sixth.id,randomUUID(),randomUUID(),"a".repeat(64)]),
+      /BN-003 proposal has not expired/);
     const expiredId=randomUUID();
     const expireClient=await pool.connect();
     try{
