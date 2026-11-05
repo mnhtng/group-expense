@@ -50,7 +50,7 @@ async function activeRole(client:PoolClient,groupId:string,userId:string) {
 }
 
 async function eligibility(client:PoolClient,groupId:string,userId:string,isOwner:boolean):Promise<ExitEligibility> {
-  const result=await client.query<{toPayMinor:string;toReceiveMinor:string;pendingCount:number}>(
+  const result=await client.query<{toPayMinor:string;toReceiveMinor:string;pendingCount:number;invalidCount:number}>(
     `WITH remaining AS (
       SELECT o.debtor_id,o.creditor_id,b.outstanding_minor AS due
       FROM obligations o
@@ -62,13 +62,16 @@ async function eligibility(client:PoolClient,groupId:string,userId:string,isOwne
     SELECT
       COALESCE(sum(due) FILTER(WHERE debtor_id=$2),0)::text AS "toPayMinor",
       COALESCE(sum(due) FILTER(WHERE creditor_id=$2),0)::text AS "toReceiveMinor",
+      count(*) FILTER(WHERE due<0)::int AS "invalidCount",
       (SELECT count(*)::int FROM settlements
        WHERE group_id=$1 AND status='pending'
          AND (debtor_id=$2 OR creditor_id=$2)) AS "pendingCount"
     FROM remaining`,
     [groupId,userId],
   );
-  const stats=result.rows[0]??{toPayMinor:"0",toReceiveMinor:"0",pendingCount:0};
+  const stats=result.rows[0]??{toPayMinor:"0",toReceiveMinor:"0",pendingCount:0,invalidCount:0};
+  if(stats.invalidCount>0)throw new MembershipError(409,
+    "Số dư công nợ không hợp lệ; không thể rời nhóm trước khi đối soát.");
   const hasDebt=BigInt(stats.toPayMinor)>0n||BigInt(stats.toReceiveMinor)>0n;
   const reason:ExitEligibility["reason"]=isOwner?"owner":
     stats.pendingCount>0?"pending":hasDebt?"unsettled":"ready";
