@@ -3,7 +3,7 @@ import {notFound} from "next/navigation";
 import {requireUser} from "@/lib/auth/session";
 import {getMemberRole,getGroupDetails,listMembers} from "@/lib/groups/service";
 import {getSettlementSettings} from "@/lib/settlement-cycles/settings";
-import {listSettlementCycles} from "@/lib/settlement-cycles/lifecycle";
+import {getSettlementCycleById} from "@/lib/settlement-cycles/lifecycle";
 import {readCycleSources} from "@/lib/settlement-cycles/ui-read";
 import {formatDateDMY} from "@/lib/date-format";
 import {SettlementSnapshotPanel} from "@/components/groups/settlement-snapshot-panel";
@@ -22,12 +22,11 @@ export default async function CycleDetailPage({params,searchParams}:{
     requestedPage<=100000?requestedPage:1;
   const user=await requireUser();
   if(!await getMemberRole(groupId,user.id))notFound();
-  const [group,members,settings,cycles]=await Promise.all([
+  const [group,members,settings,selected]=await Promise.all([
     getGroupDetails(groupId,user.id),listMembers(groupId,user.id),
-    getSettlementSettings(groupId,user.id),listSettlementCycles(groupId,user.id,100),
+    getSettlementSettings(groupId,user.id),getSettlementCycleById(groupId,cycleId,user.id),
   ]);
   if(!group)notFound();
-  const selected=cycles.cycles.find(c=>c.id===cycleId);
   if(!selected)notFound();
   const isLocked=selected.state==="locked";
   const originalSources=isLocked?await readCycleSources(groupId,selected,user.id,page):null;
