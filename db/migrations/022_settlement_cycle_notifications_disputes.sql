@@ -25,6 +25,9 @@ CREATE INDEX sc009_notification_cycle_idx
   ON notifications(group_id,cycle_id,created_at DESC)
   WHERE cycle_id IS NOT NULL;
 
+CREATE UNIQUE INDEX sc009_snapshot_obligation_fk
+ ON group_settlement_cycle_snapshot_obligations(cycle_id,group_id,obligation_id);
+
 CREATE TABLE group_settlement_cycle_disputes(
  id uuid PRIMARY KEY,
  group_id uuid NOT NULL,
