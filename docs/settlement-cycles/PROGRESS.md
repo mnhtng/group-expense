@@ -686,11 +686,90 @@ permits a previously UNRECORDED late original invoice to be
 attributed for subsequent settlement. No SC-007 release gate,
 SC-008 mobile UI or SC-009 notifications implemented here.
 
-## NEXT CONVERSATION: SC-007 ONLY
+## 2026-11-05 — SC-007 DONE in isolation, RELEASE NO-GO
 
-Implement comprehensive financial concurrency, permission,
-property-based and E2E regression tests, including explicit
-release-readiness review. Do not enable financial engine, merge,
-migrate shared Neon, or deploy staging/production without a separate
-explicit release decision. Keep PR #16 Draft.
+Only SC-007: comprehensive financial, authorization, concurrency,
+property-based, direct SQL and authenticated Next.js/Better Auth/
+PostgreSQL HTTP E2E regression. No new feature or financial write.
+Never merge or activate the actual financial engine from this result.
 
+**New verification infrastructure**
+- `tests/sc007-financial-properties.test.mjs`: 1,500 reproducible
+  seeded randomized BigInt source ledgers, independent expected
+  two-way offset, pending conservation, bidirectional equality,
+  FIFO, pair-swap/permutation invariance; 10,000 ORIGINAL sources
+  with >50 allocations/direction; invalid money/currency/party/
+  group/cycle/source/version fail-closed.
+- `tests/sc007-financial-concurrency.integration.mjs`: 16
+  simultaneous TWO POSTGRES TRANSACTION races each allocating
+  7,000+7,000 into an ORIGINAL 10,000-VND debt. Exactly ONE
+  COMMIT each time, 16 rolled-back losers and exact 7,000 pending /
+  3,000 available live debt; rogue cross-group allocation and
+  extra 3,001 pending cash fail and leave ledger unchanged.
+  A losing direct SQL writer can fail with `40P01` deadlock or
+  BN-005 capacity guard. Both are safe rollbacks; HTTP original
+  financial writers already use the deterministic group lock.
+- `db/sc007-audit.mjs`: SQL-only INDEPENDENT REPEATABLE READ
+  READ ONLY reconciliation with exact disposable CI PG17 triple
+  guard (CI, SC007_TEST_ONLY, exact local DB URL). Eight
+  cross-table checks: original obligations vs confirmed/pending
+  real cash and applied noncash; per-settlement allocation sums;
+  BN-004 opposite-direction conservation and original-source
+  links; BN-006 cash provenance; SC-006 historic original
+  attribution; one snapshot origin per source; unique monthly
+  recurring occurrence. CI performs audit BEFORE and AFTER
+  authenticated HTTP E2E. No data mutation.
+- `tests/sc007-release-safety.test.mjs` guards hardcoded
+  `SETTLEMENT_CYCLE_ENGINE_READY=false`, CI-only exact localhost
+  gates for SC-005/BN-004/BN-006, no synthetic confirmation
+  and trusted PostgreSQL proof for historical late invoices.
+- Existing 550+ cash allocations, 122 two-sided original
+  noncash obligations, manager/role/owner revocation,
+  approval/expiry/revoke, pending/reject/confirm, idempotent
+  concurrent 200/201, invoice creator completion, group
+  leave/archive and month scheduling E2E continue to pass.
+
+**Bug discovered by release regression and FIXED**
+- SC-006 audited late original invoices appear in a later LOCKED
+  snapshot, but BN-001 previously rejected a historical
+  occurredOn outside the target period. The proposal service
+  now independently proves `group_settlement_cycle_adjustments`
+  for exactly source expense/cycle/version. Only then does the
+  calculator allow the ORIGINAL (unchanged) late date, while
+  all group/pair/version/locked-source and FIFO checks remain.
+- Positive and negative seed-unit properties plus a real
+  SC-006->BN-002 authenticated HTTP preview prove correct
+  eligibility and exact 3,000-VND preview without writing money.
+
+**Verified at implementation SHA `e8f0d534b8bc592079d9d3bb88b24256f82e2a27`:**
+- [CI Success](https://github.com/mnhtng/group-expense/actions/runs/41995965007):
+  all lint, TypeScript, deterministic unit/property and build.
+- [Disposable PostgreSQL 17 / HTTP / pre- and post-audit Success](https://github.com/mnhtng/group-expense/actions/runs/41995965095):
+  migration 001–021 twice, real concurrent SQL, full SQL and
+  HTTP E2E, independent ledger reconciliation.
+- After E2E: **704 obligations, 40 cash settlement records,
+  1 applied noncash document, 676 frozen obligation sources,
+  1 original late invoice attribution**. Eight read-only
+  reconciliation checks, zero mismatches.
+- [SC-007-RELEASE-SAFETY.md](./SC-007-RELEASE-SAFETY.md):
+  acceptance matrix and conservative release prerequisites.
+
+**Release decision: NO-GO.** This P0 financial test suite is
+complete only on disposable PostgreSQL 17, NOT on a separate
+Neon test branch or any real infrastructure. SC-008 product mobile
+UI, SC-009 notification/dispute/audit UX, SC-010 operational
+backup/monitoring/rehearsal/staged rollout and controlled real
+environment reconciliation have not been completed. No
+browser-device E2E of the future SC-008 UI exists in SC-007.
+Never set `SETTLEMENT_CYCLE_ENGINE_READY=true` from a passing
+CI, or migrate shared Neon, enable production cash, deploy,
+merge PR #16 or treat test-only flags as product configuration.
+
+## NEXT CONVERSATION: SC-008 ONLY
+
+Implement role-specific mobile-first cycle and bilateral setoff UI,
+with clear original debt source, CASH vs NONCASH, pending vs confirmed,
+manager vs actual two-party consent, invoice creator completion,
+audited late bills and testable accessibility. Work ONLY on SC-008
+after explicit request and full relevant document review. PR #16
+remains Draft, finance OFF, no shared migrations or deployment.
