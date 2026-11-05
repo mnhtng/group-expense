@@ -2686,6 +2686,70 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       group_settlement_bilateral_decision_events
       WHERE proposal_id=$1 AND event_type='expired'`,
       [expiredId])).rows[0].n,1,"retry must not duplicate expiry event");
+    // Opt-out and membership revocation are FINANCIAL CONSENT revocations,
+    // not merely transient UI disabled flags. They cannot be resurrected by
+    // re-enabling netting or the same member rejoining.
+    const v8Preview=(await expenseRequest("GET",bnReadUrl,undefined,jar)).body;
+    assert.equal(v8Preview.currentVersion,7);
+    const v8Creation=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(7,randomUUID(),v8Preview.fingerprint),jar);
+    assert.equal(v8Creation.response.status,201,JSON.stringify(v8Creation.body));
+    const v8=v8Creation.body.proposal,v8Url=bnDecisionUrl(v8.id);
+    assert.equal((await expenseRequest("GET",v8Url,undefined,jar))
+      .body.status,"pending");
+    await pool.query(`UPDATE group_members
+      SET status='left',left_at=clock_timestamp()
+      WHERE group_id=$1 AND user_id=$2`,[bnGroup,thirdUser.id]);
+    assert.equal((await expenseRequest("GET",v8Url,undefined,jar))
+      .body.status,"pending",
+      "unrelated third-party departure cannot invalidate A/B proposal");
+    assert.equal((await expenseRequest("PATCH",bnSetting,
+      config(4,false,false),jar)).response.status,200);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='invalidated'`,
+      [v8.id])).rows[0].n,1,
+      "owner opt-out durably invalidates current pair consent");
+    assert.equal((await expenseRequest("PATCH",bnSetting,
+      config(5,true,true),jar)).response.status,200);
+    assert.equal((await expenseRequest("GET",v8Url,undefined,jar))
+      .body.status,"invalidated",
+      "opt-out/re-enable cannot resurrect previous consent");
+    const v9Creation=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(8,randomUUID(),v8.sourceFingerprint),jar);
+    assert.equal(v9Creation.response.status,201,JSON.stringify(v9Creation.body));
+    const v9=v9Creation.body.proposal,v9Url=bnDecisionUrl(v9.id);
+    assert.equal((await expenseRequest("GET",v9Url,undefined,jar))
+      .body.status,"pending");
+    await pool.query(`UPDATE group_members
+      SET status='left',left_at=clock_timestamp()
+      WHERE group_id=$1 AND user_id=$2`,[bnGroup,otherUser.id]);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='invalidated'`,
+      [v9.id])).rows[0].n,1,
+      "signatory departure invalidates pending/approved consent at SQL commit");
+    await pool.query(`UPDATE group_members SET status='active',
+      left_at=NULL,rejoined_at=clock_timestamp()
+      WHERE group_id=$1 AND user_id=$2`,[bnGroup,otherUser.id]);
+    assert.equal((await expenseRequest("GET",v9Url,undefined,jar))
+      .body.status,"invalidated",
+      "rejoining cannot restore old signed documents");
+    const v10Creation=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(9,randomUUID(),v9.sourceFingerprint),jar);
+    assert.equal(v10Creation.response.status,201,JSON.stringify(v10Creation.body));
+    const v10=v10Creation.body.proposal;
+    await pool.query(`UPDATE groups SET archived_at=clock_timestamp()
+      WHERE id=$1`,[bnGroup]);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='invalidated'`,
+      [v10.id])).rows[0].n,1,
+      "group archive invalidates consent even through SQL bypass");
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM
+      group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='approve'`,[v10.id])).rows[0].n,0);
+
     // No proposal approval/revocation/rejection may modify actual cash.
     assert.equal((await pool.query(`SELECT count(*)::int AS n FROM
       settlement_allocations WHERE group_id=$1`,[bnGroup])).rows[0].n,3);
