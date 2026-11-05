@@ -2088,6 +2088,214 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       sc005Request(randomUUID(),sc005Fresh.fingerprint),otherJar))
       .response.status,409,"opt-out cannot start a new cash request");
 
+
+    // BN-002 isolated proposal fixture: opposite-direction original invoices
+    // in ONE locked period. The proposal is not an allocation or reservation.
+    const bnGroup=randomUUID(),bnRev=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'BN002 two-way')",
+      [bnGroup,registered.user.id]);
+    for(const [memberId,role] of [
+      [registered.user.id,"owner"],[otherUser.id,"member"],[thirdUser.id,"admin"]])
+      await pool.query(
+        "INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,$3)",
+        [bnGroup,memberId,role]);
+    const bnSetting=`${origin}/api/groups/${bnGroup}/settlement-cycle/settings`;
+    const bnCycleApi=`${origin}/api/groups/${bnGroup}/settlement-cycle/cycles`;
+    const bnExpenses=`${origin}/api/groups/${bnGroup}/expenses`;
+    const bnCash=`${origin}/api/groups/${bnGroup}/settlements`;
+    assert.equal((await expenseRequest("PATCH",bnSetting,
+      config(0,true,false),jar)).response.status,200);
+    await pool.query(`UPDATE group_settlement_config_events
+      SET recorded_at=$2::timestamptz WHERE group_id=$1
+        AND event_type='settings_changed'`,
+      [bnGroup,sc003Date(-7)+"T00:00:00Z"]);
+    await pool.query(
+      "INSERT INTO group_settlement_schedule_heads(group_id,updated_by) VALUES($1,$2)",
+      [bnGroup,registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,1,'manual','UTC',$3,$4,$5)`,
+      [bnRev,bnGroup,sc003Date(-6),sc003Date(-6)+"T00:00:00Z",registered.user.id]);
+    const bnMade=await expenseRequest("POST",bnCycleApi,{
+      expectedScheduleVersion:1,requestKey:randomUUID(),
+      startDate:sc003Date(-3),endDate:sc003Date(-1),
+    },jar);
+    assert.equal(bnMade.response.status,201,JSON.stringify(bnMade.body));
+    const bnCycle=bnMade.body.cycle.id;
+    assert.equal((await expenseRequest("POST",`${bnCycleApi}/${bnCycle}/review`,
+      {expectedVersion:1},jar)).response.status,200);
+    const bnForward=await expenseRequest("POST",bnExpenses,{
+      title:"BN002 A paid dinner",occurredOn:sc003Date(-2),
+      payerId:registered.user.id,items:[{name:"A paid",quantity:1,
+        unitPriceMinor:"130000",participants:[otherUser.id]}],
+    },jar);
+    assert.equal(bnForward.response.status,201,JSON.stringify(bnForward.body));
+    const bnBackward=await expenseRequest("POST",bnExpenses,{
+      title:"BN002 B paid groceries",occurredOn:sc003Date(-2),
+      payerId:otherUser.id,items:[{name:"B paid",quantity:1,
+        unitPriceMinor:"100000",participants:[registered.user.id]}],
+    },otherJar);
+    assert.equal(bnBackward.response.status,201,JSON.stringify(bnBackward.body));
+    const bnOb=(await pool.query(`SELECT id,debtor_id,creditor_id
+      FROM obligations WHERE expense_id=ANY($1::uuid[]) ORDER BY id`,
+      [[bnForward.body.id,bnBackward.body.id]])).rows;
+    assert.equal(bnOb.length,2);
+    const bnCashOb=bnOb.find(o=>o.debtor_id===registered.user.id);
+    const bnPending=await expenseRequest("POST",bnCash,{
+      requestKey:randomUUID(),
+      allocations:[{obligationId:bnCashOb.id,amountMinor:"20000"}],
+    },jar);
+    assert.equal(bnPending.response.status,201);
+    const bnSnapshotUrl=`${bnCycleApi}/${bnCycle}/snapshot`;
+    const bnSnapshotPreview=(await expenseRequest("GET",bnSnapshotUrl,undefined,jar)).body.snapshot;
+    assert.equal(bnSnapshotPreview.state,"review");
+    assert.equal((await expenseRequest("POST",bnSnapshotUrl,{
+      expectedVersion:2,requestKey:randomUUID(),
+      expectedFingerprint:bnSnapshotPreview.fingerprint,
+    },jar)).response.status,200);
+
+    const bnProposalUrl=`${bnCycleApi}/${bnCycle}/bilateral-proposals`;
+    const bnReadUrl=`${bnProposalUrl}?partyAId=${encodeURIComponent(registered.user.id)}&partyBId=${encodeURIComponent(otherUser.id)}`;
+    assert.equal((await expenseRequest("GET",bnReadUrl,undefined,new Map()))
+      .response.status,401);
+    assert.equal((await expenseRequest("GET",bnReadUrl,undefined,thirdJar))
+      .response.status,403,"unrelated group admin cannot inspect a bilateral document");
+    assert.equal((await expenseRequest("GET",bnProposalUrl,undefined,jar))
+      .response.status,400,"pair must be explicit");
+    const bnReadOff=await expenseRequest("GET",bnReadUrl,undefined,jar);
+    assert.equal(bnReadOff.response.status,200,JSON.stringify(bnReadOff.body));
+    assert.equal(bnReadOff.body.writable,false);
+    assert.equal(bnReadOff.body.calculation.offsetMinor,"80000");
+    assert.equal(bnReadOff.body.eligibleSourceCount,2);
+    assert.equal(bnReadOff.body.approvalEnabled,false);
+    const bnPayload=(version,key,fingerprint)=>({
+      partyAId:registered.user.id,partyBId:otherUser.id,
+      expectedVersion:version,requestKey:key,expectedFingerprint:fingerprint,
+    });
+    assert.equal((await expenseRequest("POST",bnProposalUrl,
+      bnPayload(0,randomUUID(),bnReadOff.body.fingerprint),jar)).response.status,409,
+      "bilateral netting preference must be separately opted in");
+    assert.equal((await expenseRequest("PATCH",bnSetting,
+      config(1,true,true),jar)).response.status,200);
+    const bnLive=await expenseRequest("GET",bnReadUrl,undefined,otherJar);
+    assert.equal(bnLive.response.status,200,JSON.stringify(bnLive.body));
+    assert.equal(bnLive.body.writable,true);
+    assert.equal(bnLive.body.currentVersion,0);
+    assert.equal(bnLive.body.current,null);
+    assert.equal(bnLive.body.calculation.aOwesB.availableBeforeMinor,"80000");
+    assert.equal(bnLive.body.calculation.bOwesA.availableBeforeMinor,"130000");
+
+    const bnRejectedInput=await expenseRequest("POST",bnProposalUrl,{
+      ...bnPayload(0,randomUUID(),bnLive.body.fingerprint),
+      amountMinor:"1",
+    },jar);
+    assert.equal(bnRejectedInput.response.status,400,
+      "client must never supply monetary allocations or amount");
+    assert.equal((await expenseRequest("POST",bnProposalUrl,
+      bnPayload(0,randomUUID(),bnLive.body.fingerprint),thirdJar))
+      .response.status,403,"third person cannot propose for the pair");
+    assert.equal((await expenseRequest("POST",bnProposalUrl,
+      bnPayload(0,randomUUID(),"0".repeat(64)),jar)).response.status,409,
+      "fingerprint cannot be forged");
+    const bnBefore=(await pool.query(`SELECT
+      (SELECT count(*)::int FROM settlements WHERE group_id=$1) AS cash,
+      (SELECT count(*)::int FROM settlement_allocations WHERE group_id=$1) AS allocations`,
+      [bnGroup])).rows[0];
+    const bnKeyA=randomUUID(),bnKeyB=randomUUID();
+    const bnRace=await Promise.all([
+      expenseRequest("POST",bnProposalUrl,
+        bnPayload(0,bnKeyA,bnLive.body.fingerprint),jar),
+      expenseRequest("POST",bnProposalUrl,
+        bnPayload(0,bnKeyB,bnLive.body.fingerprint),otherJar),
+    ]);
+    assert.deepEqual(bnRace.map(x=>x.response.status).sort(),[201,409],
+      "two signatories cannot publish the same pair version concurrently");
+    const bnWinner=bnRace.findIndex(x=>x.response.status===201);
+    const bnFirst=bnRace[bnWinner].body.proposal;
+    assert.equal(bnFirst.version,1);
+    assert.equal(bnFirst.offsetMinor,"80000");
+    assert.equal(bnFirst.sourceCount,2);
+    assert.equal(bnFirst.allocationCount,2);
+    assert.equal(bnRace[bnWinner].body.approvalEnabled,false);
+    const bnAuthor=bnWinner===0?jar:otherJar;
+    const bnSameKey=bnWinner===0?bnKeyA:bnKeyB;
+    const bnAgain=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(0,bnSameKey,bnLive.body.fingerprint),bnAuthor);
+    assert.equal(bnAgain.response.status,200,"lost response is idempotent");
+    assert.equal(bnAgain.body.proposal.id,bnFirst.id);
+    assert.equal((await expenseRequest("POST",bnProposalUrl,
+      bnPayload(0,bnSameKey,"1".repeat(64)),bnAuthor)).response.status,409);
+    assert.equal((await expenseRequest("POST",bnProposalUrl,
+      bnPayload(1,randomUUID(),bnLive.body.fingerprint),jar)).response.status,409,
+      "cannot publish another version without a changed eligible ledger");
+    const bnSources=(await pool.query(`SELECT debtor_id,creditor_id,
+      proposed_minor::text,available_before_minor::text
+      FROM group_settlement_bilateral_sources
+      WHERE proposal_id=$1 ORDER BY obligation_id`,[bnFirst.id])).rows;
+    assert.equal(bnSources.length,2);
+    assert.deepEqual(bnSources.map(x=>x.proposed_minor),["80000","80000"]);
+    assert.equal((await pool.query(
+      "SELECT count(*)::int AS n FROM group_settlement_bilateral_proposals WHERE group_id=$1",
+      [bnGroup])).rows[0].n,1);
+    await assert.rejects(pool.query(
+      `UPDATE group_settlement_bilateral_sources
+       SET proposed_minor=proposed_minor-1 WHERE proposal_id=$1`,
+      [bnFirst.id]),/immutable/);
+    await assert.rejects(pool.query(
+      `UPDATE group_settlement_bilateral_proposals SET offset_minor=1 WHERE id=$1`,
+      [bnFirst.id]),/immutable/);
+    await assert.rejects(pool.query(
+      `DELETE FROM group_settlement_bilateral_heads WHERE group_id=$1`,
+      [bnGroup]),/cannot be deleted/);
+    const bnAfter=(await pool.query(`SELECT
+      (SELECT count(*)::int FROM settlements WHERE group_id=$1) AS cash,
+      (SELECT count(*)::int FROM settlement_allocations WHERE group_id=$1) AS allocations`,
+      [bnGroup])).rows[0];
+    assert.deepEqual(bnAfter,bnBefore,
+      "proposal storage must never modify cash rows or existing allocation amounts");
+
+    // Confirming cash after proposal publication makes the old immutable
+    // proposal stale; new version requires explicit new preview/version.
+    assert.equal((await expenseRequest("PATCH",
+      `${bnCash}/${bnPending.body.id}`,{action:"confirm"},otherJar))
+      .response.status,200);
+    const bnReprice=await expenseRequest("GET",bnReadUrl,undefined,jar);
+    assert.equal(bnReprice.response.status,200);
+    assert.equal(bnReprice.body.currentVersion,1);
+    assert.equal(bnReprice.body.staleCurrent,true);
+    assert.notEqual(bnReprice.body.fingerprint,bnLive.body.fingerprint);
+    assert.equal((await expenseRequest("POST",bnProposalUrl,
+      bnPayload(1,randomUUID(),bnLive.body.fingerprint),jar)).response.status,409);
+    const bnSecond=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(1,randomUUID(),bnReprice.body.fingerprint),otherJar);
+    assert.equal(bnSecond.response.status,201,JSON.stringify(bnSecond.body));
+    assert.equal(bnSecond.body.proposal.version,2);
+    assert.equal((await pool.query(
+      `SELECT version,offset_minor::text FROM group_settlement_bilateral_proposals
+       WHERE group_id=$1 ORDER BY version`,[bnGroup])).rows.length,2);
+    assert.equal((await pool.query(
+      `SELECT offset_minor::text AS amount FROM group_settlement_bilateral_proposals
+       WHERE id=$1`,[bnFirst.id])).rows[0].amount,"80000",
+      "historical proposal version remains immutable after cash confirmation");
+    assert.equal((await expenseRequest("PATCH",bnSetting,
+      config(2,false,false),jar)).response.status,200);
+    assert.equal((await expenseRequest("POST",bnProposalUrl,
+      bnPayload(1,bnSameKey,bnLive.body.fingerprint),bnAuthor))
+      .response.status,409,"same key with a changed version is denied");
+    assert.equal((await expenseRequest("POST",bnProposalUrl,
+      bnPayload(0,bnSameKey,bnLive.body.fingerprint),bnAuthor))
+      .response.status,200,"committed idempotent receipt survives disabling group");
+    assert.equal((await expenseRequest("POST",bnProposalUrl,
+      bnPayload(2,randomUUID(),bnReprice.body.fingerprint),jar))
+      .response.status,409,"disabled group cannot publish new proposal");
+    assert.equal((await pool.query(
+      `SELECT count(*)::int AS n FROM group_settlement_bilateral_proposals
+       WHERE group_id=$1`,[bnGroup])).rows[0].n,2);
+    // No proposal is a confirmed set-off, pending set-off or payment.
+    assert.equal((await pool.query(
+      `SELECT count(*)::int AS n FROM settlement_allocations WHERE group_id=$1`,
+      [bnGroup])).rows[0].n,1);
+
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
