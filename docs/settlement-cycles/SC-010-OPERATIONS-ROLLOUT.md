@@ -78,8 +78,11 @@ New migration:
   The original daily Cron schedule in `vercel.json` remains
   **02:00 UTC = 09:00 Asia/Ho_Chi_Minh**.
 - No new scheduled event source or duplicate Cron registration
-  was added. The existing Vercel Cron remains production-only
-  when deployed; this branch has **not** been deployed.
+  was added. The existing Vercel Cron remains production-only.
+  Vercel Git integration has created automatic **feature-branch
+  preview** deployments (target=null, not a staging/production
+  promotion); these previews may not have feature migrations.
+  No manual staging/production deploy or promotion was invoked.
 
 ### Protected endpoints
 
