@@ -81,6 +81,8 @@ jobs:
       BN004_TEST_ONLY: isolated-pg17
       # BN-006 residual cash available only in disposable PG17 integration.
       BN006_TEST_ONLY: isolated-pg17
+      # SC-007 reconciliation/concurrency tests may run ONLY in disposable PG17.
+      SC007_TEST_ONLY: isolated-pg17
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -94,5 +96,7 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm db:migrate
       - run: pnpm test:integration
+      - run: pnpm test:finance:audit
       - run: pnpm build
       - run: pnpm test:http
+      - run: pnpm test:finance:audit
