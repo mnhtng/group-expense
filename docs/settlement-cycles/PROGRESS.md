@@ -1061,16 +1061,55 @@ contains actionable commands, severity,
 redacted alert codes, backup/rollback
 policies and gated future rollout stages.
 
+## 2026-11-05 — RR-001 isolated Neon migration rehearsal: SCHEMA PASS; RELEASE NO-GO
+
+**Separate user authorization received after SC-010.** Only the
+dedicated child `sc010-rehearsal-20261105`
+(`br-curly-rice-b3xenws6`) was schema-migrated. No original
+CASH/NONCASH/obligation ledger writes were performed.
+
+- Preflight: Neon project `withered-salad-00928018`, child parent
+  `br-dry-poetry-b31cudmb`, exact database `group_expense`.
+  Before RR-001, child and development contained 10 migrations,
+  production 6; child-parent schema diff was empty.
+- Applied the original migrations **011 through 023**, with one
+  PostgreSQL transaction per file, `pg_advisory_xact_lock(240011,2026)`,
+  strict prior migration-count guard and SHA-256 source-file
+  checksum persisted atomically. **Only the isolated Neon child changed.**
+- Read-only re-verification: **23/23 exact migration SHA-256s match**.
+  The normal SQL migrator would skip these installed files; the CLI
+  itself was not run against Neon.
+- Independent `db/sc007-audit.mjs` checks reissued as
+  **REPEATABLE READ READ ONLY**: **8/8 zero violations**, including
+  original cash/noncash source conservation and available balance
+  semantics. No negative BN-005 live balances.
+- PostgreSQL SHA-256 of full original `expenses` and `obligations`
+  rows remained unchanged before and after. On development the
+  independent original hashes also match; dev still has 10 migration
+  versions and production 6. Neon child-parent schema diff is now
+  nonempty, as required by the new DDL.
+- Catalog verification: operational run table, bilateral setoff
+  table, BN-005 live balances and SC-009 disputes exist; 6 BN-004
+  and 13 SC-009 non-internal triggers present.
+- The child has **zero** applied NONCASH, frozen snapshots, disputes
+  or Cron-run evidence; positive financed/approved/disputed E2E
+  scenarios remain tested on disposable PG17 CI, **not** on Neon.
+  No managed-provider backup/PITR restoration has been attempted.
+- Release remains **NO-GO**, `SETTLEMENT_CYCLE_ENGINE_READY=false`
+  untouched, PR #16 stays **Draft** against `develop`.
+
+[RR-001 execution evidence and verification limits](../release-readiness/RR-001-NEON-MIGRATION-EVIDENCE.md)
+· [Release readiness RR-001–RR-005](../release-readiness/BACKLOG.md).
+
 ## NEXT WORK — separate approval required
 
-Do not auto-start BN-007, merge PR #16,
-enable real money, deploy or migrate shared
-Neon. The next **release-readiness** stage
-requires a separately authorized migration
-011–023 and full integrity rehearsal on
-the dedicated isolated Neon child, a
-separate test/restore of a real recoverable
-backup, a configured monitor and actual
-mobile/browser interaction testing.
-Any real rollout requires an explicit
-production release decision at a reviewed SHA.
+The child-only RR-001 **schema migration check is complete**.
+Remaining separate readiness gates are **RR-002** device/browser E2E,
+**RR-003** real Neon backup/PITR restoration and secured external
+monitor, **RR-004** independent security/financial signoff and
+**RR-005** separately authorized staging/cohort release. A positive
+noncash fixture and authenticated role/privacy E2E on an isolated
+Neon deployment have NOT been established by this read-only audit.
+No feature merge, production/staging deployment, shared Neon migration,
+real-money activation or expansion into BN-007 is authorized.
+Any real rollout requires an explicit reviewed-SHA production decision.
