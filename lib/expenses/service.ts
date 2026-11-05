@@ -111,7 +111,10 @@ async function assertExpenseNotFrozen(client: PoolClient, expenseId: string) {
   const frozen=await client.query(
     `SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
      JOIN group_settlement_cycles c ON c.id=se.cycle_id
-     WHERE se.expense_id=$1 AND c.state='locked' LIMIT 1`,[expenseId],
+     WHERE se.expense_id=$1 AND c.state='locked'
+     UNION ALL SELECT 1 FROM group_settlement_cycle_adjustments adj
+     WHERE adj.expense_id=$1
+     LIMIT 1`,[expenseId],
   );
   if(frozen.rowCount)throw new ExpenseAccessError(409,
     "Hóa đơn thuộc kỳ đã khóa. Không thể sửa hoặc xóa; cần ghi điều chỉnh ở kỳ sau.");
