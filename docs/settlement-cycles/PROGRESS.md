@@ -765,11 +765,95 @@ Never set `SETTLEMENT_CYCLE_ENGINE_READY=true` from a passing
 CI, or migrate shared Neon, enable production cash, deploy,
 merge PR #16 or treat test-only flags as product configuration.
 
-## NEXT CONVERSATION: SC-008 ONLY
+## 2026-11-05 — SC-008 DONE on feature branch; finance release NO-GO
 
-Implement role-specific mobile-first cycle and bilateral setoff UI,
-with clear original debt source, CASH vs NONCASH, pending vs confirmed,
-manager vs actual two-party consent, invoice creator completion,
-audited late bills and testable accessibility. Work ONLY on SC-008
-after explicit request and full relevant document review. PR #16
-remains Draft, finance OFF, no shared migrations or deployment.
+**Only SC-008:** mobile-first member-visible, permission-aware UI
+for group settlement cycles, original ledger source drill-down,
+two-person bilateral approval and noncash/cash distinction,
+SC-006 immutable late source management, existing invoice
+creator-only completion navigation and accessibility. No new
+financial ledger, migration or bank transfer.
+
+**User journeys implemented**
+- Group screen links to `/groups/:groupId/cycles`: historical
+  authorized 50-per-page cycle list, correct date/timezone,
+  manager settings entry and OPEN/REVIEW/LOCKED states.
+  `/groups/:groupId/cycles/:cycleId` now directly loads an
+  authorized period by group+ID regardless of age, avoiding
+  newest-100 truncation. Both pages verify signed account
+  and CURRENT active group membership before querying data.
+- OPEN shows existing original group invoices; REVIEW reuses
+  the SC-004 source fingerprint and existing manager-only
+  snapshot approval; LOCKED shows the ORIGINAL frozen
+  source names/dates/IDs, total live BN-005 balances,
+  an original-bill link and historical snapshot separately.
+- `lib/settlement-cycles/ui-read.ts`: PostgreSQL
+  REPEATABLE READ READ ONLY, active group/cycle checks,
+  full-source `numeric`/BigInt original debt, confirmed
+  CASH, confirmed NONCASH, pending CASH, remaining/available,
+  fail-closed financial conservation; 50-item UI source
+  paging does NOT truncate money totals.
+- `settlement-cycle-finance-panel.tsx`: exact two-person
+  dropdown, two-sided BN-002 offset calculation, FIFO
+  original-obligation preview, BN-003 actor-specific
+  approval/reject/revoke/expiry status, BN-004 immutable
+  noncash document (NOT bank transfer), BN-006 one-way
+  residual cash request states, SC-005 one-way cash preview.
+  Financial writing buttons are hard disabled by the
+  original `SETTLEMENT_CYCLE_ENGINE_READY=false` gate.
+  An optional future release cannot be enabled just by
+  local JS state or owner/admin status.
+- `settlement-late-invoice-panel.tsx`: owner/delegated
+  manager-only review of original missed expenses, recurring
+  source provenance, next eligible REVIEW period, two-step
+  inline idempotent assignment. Creator-only invoice close
+  still uses the existing protected original invoice page.
+- Mobile-first responsive cards, 44–48px tap targets,
+  Vietnamese status and financial category labels,
+  keyboard-select labels, controlled persistent source
+  disclosure, inline consent/retry and visible loading/
+  error/disabled states. No `<details>` auto-close modal
+  or `window.confirm` interaction.
+- `tests/sc008-cycle-ui.test.mjs`: route/member, historic
+  paging, BigInt unpaginated money, pair/role/consent,
+  late-source and engine-locked controls.
+- `tests/preview-http.smoke.mjs`: authenticated Next.js
+  server-rendered pages with real Better Auth and PG17:
+  anonymous cycle navigation denied, 122 ORIGINAL
+  obligations (>50 visible rows), unchanged total on
+  source page 2, exact confirmed CASH vs applied
+  NONCASH vs pending CASH display, active user
+  permissions and original late-attributed invoice
+  visible in the later LOCKED snapshot.
+
+**Verified implementation SHA `932f47dd5c05bb58cc8943750c799db115d70e59`:**
+- [CI SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/42009125034):
+  lint, TypeScript, all native unit/UI contract tests, Next.js build.
+- [PG17 + HTTP + financial pre/post audit SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/42009124994):
+  migrations twice, SQL/property/concurrency tests,
+  original source UI + real authentication and balance
+  reconciliation all green.
+- [SC-008-MOBILE-UI.md](./SC-008-MOBILE-UI.md) covers page,
+  status, source and test contracts.
+
+**Not claimed:** No installed iOS/Android PWA device visual
+regression, Playwright pointer/touch/focus full UI E2E,
+isolated shared Neon rehearsal, SC-009 notification/dispute/
+audit UI or SC-010 operational release. Test coverage
+is actual authenticated SSR/HTTP + code UI contract;
+it is NOT the same as full browser mobile automation.
+
+**Release:** NO-GO; `SETTLEMENT_CYCLE_ENGINE_READY=false`
+untouched, PR #16 remains Draft/open/unmerged against
+`develop`. No shared Neon migrations and no Vercel
+staging/production deployments.
+
+## NEXT CONVERSATION: SC-009 ONLY
+
+Implement SC-009 in-app notifications, reminders, dispute UX,
+late-adjustment follow-up, immutable audit/export and user
+reconciliation reporting with financial-engine OFF, correct
+pair identity and without inventing a bank transfer. Complete
+appropriate CI + PG17/HTTP/UI regression, only after explicit
+new request. Keep PR #16 Draft and do not deploy/merge.
+
