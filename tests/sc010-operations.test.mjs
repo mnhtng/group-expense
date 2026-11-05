@@ -47,22 +47,34 @@ test("SC-010 failure and backlog are never silently declared done",()=>{
     {remindersAttempted:40},{reminderPushClaimed:30},
   ])assert.equal(outcome(scenario).status,"partial",
     "capacity is a soft backlog warning, not verified completion");
+  const incomplete=outcome();
+  incomplete.counters.recurring.hasMoreRules=true;
+  assert.ok(classifyOpsOutcome(incomplete.counters,incomplete.stages)
+    .warningCodes.includes("RECURRING_SCAN_INCOMPLETE"));
+  incomplete.counters.recurring.hasMoreRules=false;
+  incomplete.counters.cycles.hasMoreGroups=true;
+  incomplete.counters.cycles.atCapacityGroups=2;
+  const cycleBacklog=classifyOpsOutcome(incomplete.counters,incomplete.stages);
+  assert.equal(cycleBacklog.status,"partial");
+  assert.ok(cycleBacklog.warningCodes.includes("CYCLE_PERIODS_AT_CAP"));
+  assert.ok(cycleBacklog.warningCodes.includes("CYCLE_GROUP_SCAN_INCOMPLETE"));
 });
 test("SC-010 operational monitor recognizes stale/failed runs and overdue manual work",()=>{
   const nowMs=Date.parse("2026-11-05T20:00:00.000Z");
   const normal={latestCompletedAt:"2026-11-05T10:00:00.000Z",
     latestStatus:"success",staleRunning:0,failedCheckpoints:0,
-    deadPushJobs:0,overdueReviews:0,nowMs};
+    recurringFailedCheckpoints:0,deadPushJobs:0,overdueReviews:0,nowMs};
   assert.deepEqual(operationalAlerts(normal),[]);
   assert.deepEqual(operationalAlerts({...normal,latestCompletedAt:null}),
     ["NO_COMPLETED_CRON_RUN"]);
   const stale=operationalAlerts({...normal,
     latestCompletedAt:"2026-11-02T10:00:00.000Z",
     latestStatus:"failed",staleRunning:1,failedCheckpoints:2,
-    deadPushJobs:3,overdueReviews:4});
+    recurringFailedCheckpoints:1,deadPushJobs:3,overdueReviews:4});
   for(const code of ["CRON_LAST_RUN_OLDER_THAN_36_HOURS",
     "LAST_RUN_NEEDS_OPERATOR_REVIEW","STUCK_CRON_RUN",
-    "RECENT_GROUP_CHECKPOINT_ERRORS","DEAD_PUSH_DELIVERIES",
+    "RECENT_GROUP_CHECKPOINT_ERRORS","RECENT_RECURRING_CHECKPOINT_ERRORS",
+    "DEAD_PUSH_DELIVERIES",
     "CYCLES_AWAITING_HUMAN_REVIEW"]){
     assert.ok(stale.includes(code),code);
   }
