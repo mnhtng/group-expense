@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {notFound} from "next/navigation";
 import {requireUser} from "@/lib/auth/session";
-import {getGroupDetails,listMembers} from "@/lib/groups/service";
+import {getMemberRole,getGroupDetails,listMembers} from "@/lib/groups/service";
 import {getSettlementSettings} from "@/lib/settlement-cycles/settings";
 import {listSettlementCycles} from "@/lib/settlement-cycles/lifecycle";
 import {readCycleSources} from "@/lib/settlement-cycles/ui-read";
@@ -21,6 +21,7 @@ export default async function CycleDetailPage({params,searchParams}:{
   const page=Number.isSafeInteger(requestedPage)&&requestedPage>0&&
     requestedPage<=100000?requestedPage:1;
   const user=await requireUser();
+  if(!await getMemberRole(groupId,user.id))notFound();
   const [group,members,settings,cycles]=await Promise.all([
     getGroupDetails(groupId,user.id),listMembers(groupId,user.id),
     getSettlementSettings(groupId,user.id),listSettlementCycles(groupId,user.id,100),
