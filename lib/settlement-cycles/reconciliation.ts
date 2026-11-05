@@ -134,10 +134,14 @@ export async function readCycleReconciliation(groupId:string,cycleId:string,acto
         WHERE se.group_id=$1 AND se.cycle_id=$2 AND e.completed_at IS NULL)
          AS "uncompletedInvoices",
        (SELECT count(*)::int FROM group_settlement_bilateral_heads h
+        JOIN group_settlement_bilateral_proposals p ON p.id=h.current_proposal_id
         WHERE h.group_id=$1 AND h.cycle_id=$2
-         AND h.current_proposal_id IS NOT NULL AND NOT EXISTS(
-           SELECT 1 FROM group_settlement_bilateral_applications app
-           WHERE app.proposal_id=h.current_proposal_id))
+          AND p.created_at>now()-interval '72 hours'
+          AND NOT EXISTS(SELECT 1 FROM group_settlement_bilateral_applications app
+            WHERE app.proposal_id=p.id)
+          AND NOT EXISTS(SELECT 1 FROM group_settlement_bilateral_decision_events ev
+            WHERE ev.proposal_id=p.id AND ev.event_type IN
+              ('reject','revoke','invalidated','expired')))
          AS "currentProposals"`,[groupId,cycleId]);
     const v=checks.rows[0];
     return {cycleId,state,...money,...v,
