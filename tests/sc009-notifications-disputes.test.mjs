@@ -55,7 +55,7 @@ test("SC-009 client never accepts spoofed actor or confirmation, export is sourc
  assert.match(service,/currentProposals/);
  assert.match(service,/confirmedSetoffMinor/);
  assert.match(service,/SELECT \* FROM \(\$\{auditUnion\}\) events/);
- assert.match(service,/\uFEFF/);
+ assert.ok(service.includes("FEFF"),"CSV must emit an Excel UTF-8 BOM");
 });
 test("SC-009 daily reminders are bounded, deduplicated and unconditionally OFF outside gated CI",()=>{
  const reminder=read("lib/settlement-cycles/reminders.ts");
