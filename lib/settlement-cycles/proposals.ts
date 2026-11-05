@@ -21,6 +21,7 @@ type Row={
   obligationId:string; debtorId:string;creditorId:string;
   occurredOn:string; sourceVersion:number;currentVersion:number;
   originalMinor:string;confirmedCashMinor:string;pendingCashMinor:string;
+  confirmedSetoffMinor:string;
   sourceOriginalMinor:string;sourceExpenseVersion:number;
   voided:boolean;deleted:boolean;
 };
@@ -69,8 +70,9 @@ const selectSources=`SELECT src.obligation_id AS "obligationId",
     o.amount_minor::text AS "originalMinor",
     src.original_minor::text AS "sourceOriginalMinor",
     src.expense_version AS "sourceExpenseVersion",
-    COALESCE(cash.paid,0)::text AS "confirmedCashMinor",
-    COALESCE(cash.pending,0)::text AS "pendingCashMinor",
+    bal.confirmed_cash_minor::text AS "confirmedCashMinor",
+    bal.pending_cash_minor::text AS "pendingCashMinor",
+    bal.confirmed_setoff_minor::text AS "confirmedSetoffMinor",
     (o.voided_at IS NOT NULL) AS "voided",
     (e.deleted_at IS NOT NULL) AS "deleted"
   FROM group_settlement_cycle_snapshot_obligations src
@@ -79,13 +81,7 @@ const selectSources=`SELECT src.obligation_id AS "obligationId",
   JOIN group_settlement_cycle_snapshot_expenses se
     ON se.cycle_id=src.cycle_id AND se.group_id=src.group_id
        AND se.expense_id=o.expense_id
-  LEFT JOIN LATERAL (
-    SELECT COALESCE(sum(a.amount_minor) FILTER(WHERE st.status='confirmed'),0) AS paid,
-           COALESCE(sum(a.amount_minor) FILTER(WHERE st.status='pending'),0) AS pending
-    FROM settlement_allocations a
-    JOIN settlements st ON st.id=a.settlement_id AND st.group_id=o.group_id
-    WHERE a.obligation_id=o.id
-  ) cash ON true
+  JOIN bn005_obligation_balances bal ON bal.obligation_id=o.id
   WHERE src.cycle_id=$1 AND src.group_id=$2
     AND ((src.debtor_id=$3 AND src.creditor_id=$4)
       OR (src.debtor_id=$4 AND src.creditor_id=$3))
@@ -173,7 +169,7 @@ function validRows(rows:readonly Row[],groupId:string,cycleId:string):BilateralE
       obligationVoided:r.voided,expenseDeleted:r.deleted,
       originalMinor:r.originalMinor,
       confirmedCashMinor:r.confirmedCashMinor,pendingCashMinor:r.pendingCashMinor,
-      confirmedSetoffMinor:"0",pendingSetoffMinor:"0",
+      confirmedSetoffMinor:r.confirmedSetoffMinor,pendingSetoffMinor:"0",
     };
   });
 }
@@ -211,13 +207,14 @@ export async function computed(client:PoolClient,groupId:string,cycleId:string,c
     const pending=BigInt(r.pendingCashMinor);
     const cash=BigInt(r.confirmedCashMinor);
     const amount=BigInt(r.originalMinor);
-    const before=amount-cash-pending;
+    const setoff=BigInt(r.confirmedSetoffMinor);
+    const before=amount-cash-setoff-pending;
     const proposed=BigInt(allocation.get(r.obligationId)??"0");
     const out={
       obligationId:r.obligationId,debtorId:r.debtorId,creditorId:r.creditorId,
       occurredOn:r.occurredOn,expenseVersion:r.currentExpenseVersion,
       originalMinor:r.originalMinor,confirmedCashMinor:r.confirmedCashMinor,
-      pendingCashMinor:r.pendingCashMinor,confirmedSetoffMinor:"0",
+      pendingCashMinor:r.pendingCashMinor,confirmedSetoffMinor:r.confirmedSetoffMinor,
       pendingSetoffMinor:"0",availableBeforeMinor:before.toString(),
       proposedMinor:proposed.toString(),
       availableAfterMinor:(before-proposed).toString(),
@@ -316,6 +313,15 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
     const live=await computed(client,groupId,cycleId,c,low,high,true);
     if(live.fingerprint!==input.expectedFingerprint)
       throw err(409,"Số dư công nợ đã thay đổi. Phải tính lại đề xuất.");
+    // BN-004 permits exactly one completed noncash document per pair/cycle.
+    // Reject a second proposal explicitly rather than publishing historical
+    // BN-002 source rows whose AS-OF noncash values must remain immutable.
+    const applied=await client.query(
+      `SELECT 1 FROM group_settlement_bilateral_applications
+       WHERE group_id=$1 AND cycle_id=$2 AND party_low=$3 AND party_high=$4`,
+      [groupId,cycleId,low,high]);
+    if(applied.rowCount)throw err(409,
+      "Cặp thành viên đã bù trừ kỳ này; không được lập lại trên cùng nghĩa vụ.");
     if(current?.sourceFingerprint===live.fingerprint){
       // BN-003 terminal decisions close ONE immutable version. A fresh
       // proposal is allowed after reject/revoke/invalidate/72h expiry;
