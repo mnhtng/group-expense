@@ -43,7 +43,8 @@ export async function runDailySettlementOperations(
     ]);
     const recurringDone=recurring.status==="fulfilled"&&
       recurring.value.errors===0&&
-      recurring.value.generated<OPS_LIMITS.recurring;
+      recurring.value.generated<OPS_LIMITS.recurring&&
+      !recurring.value.hasMoreRules;
     // SC-006: never create/review cycle metadata while overdue original
     // recurring invoices might still be missing.
     const cycles=recurringDone
