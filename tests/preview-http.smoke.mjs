@@ -3580,7 +3580,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const sc009Report=`${sc009Base}/reconciliation`;
     const sc009Audit=`${sc009Base}/audit`;
     const sc009Original=(await pool.query(`
-      SELECT so.obligation_id AS id FROM group_settlement_cycle_snapshot_obligations so
+      SELECT so.obligation_id AS id,so.debtor_id AS debtor,so.creditor_id AS creditor
+      FROM group_settlement_cycle_snapshot_obligations so
       WHERE so.group_id=$1 AND so.cycle_id=$2 AND
         $3 IN(so.debtor_id,so.creditor_id)
       ORDER BY so.obligation_id LIMIT 1`,
@@ -3635,6 +3636,53 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
         AND cycle_id=$2`,[otherUser.id,sc006Target])).rows[0].n,1,
       "event-key notice cannot duplicate on HTTP retry");
 
+    // Disputed ORIGINAL source must fail closed for SC-005 pending CASH,
+    // and must prevent confirming even a PRE-EXISTING cash reservation.
+    const sc009Batch=`${sc009Base}/repayments`;
+    const sc009BatchPreview=await expenseRequest("GET",sc009Batch,undefined,jar);
+    assert.equal(sc009BatchPreview.response.status,200);
+    const sc009Direction=sc009BatchPreview.body.pairs.find(p=>
+      p.debtorId===sc009Original.debtor&&p.creditorId===sc009Original.creditor);
+    assert.ok(sc009Direction&&BigInt(sc009Direction.availableMinor)>0n);
+    const sc009CashBefore=(await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_cycle_repayments WHERE group_id=$1 AND cycle_id=$2`,
+      [sc006Group,sc006Target])).rows[0].n;
+    const sc009DeniedCash=await expenseRequest("POST",sc009Batch,{
+      expectedCycleVersion:3,requestKey:randomUUID(),
+      debtorId:sc009Original.debtor,creditorId:sc009Original.creditor,
+      expectedFingerprint:sc009Direction.fingerprint,
+    },jar);
+    assert.equal(sc009DeniedCash.response.status,409,
+      "new cycle cash that touches active dispute must be denied, never 500");
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_cycle_repayments WHERE group_id=$1 AND cycle_id=$2`,
+      [sc006Group,sc006Target])).rows[0].n,sc009CashBefore);
+
+    const sc009PendingId=randomUUID(),manual=await pool.connect();
+    try{
+      await manual.query("BEGIN");
+      await manual.query(`INSERT INTO settlements
+        (id,group_id,debtor_id,creditor_id,initiated_by,status,amount_minor,
+         request_key,request_fingerprint) VALUES($1,$2,$3,$4,$5,'pending',1,$6,$7)`,
+        [sc009PendingId,sc006Group,sc009Original.debtor,
+          sc009Original.creditor,registered.user.id,randomUUID(),"a".repeat(64)]);
+      await manual.query(`INSERT INTO settlement_allocations
+        (settlement_id,obligation_id,group_id,debtor_id,creditor_id,amount_minor)
+        VALUES($1,$2,$3,$4,$5,1)`,
+        [sc009PendingId,sc009Original.id,sc006Group,sc009Original.debtor,
+          sc009Original.creditor]);
+      await manual.query("COMMIT");
+    }catch(e){await manual.query("ROLLBACK");throw e;}
+    finally{manual.release();}
+    await assert.rejects(pool.query(`
+      UPDATE settlements SET status='confirmed',resolved_at=now(),resolved_by=$2
+      WHERE id=$1`,[sc009PendingId,otherUser.id]),
+      /SC-009 disputed original obligation cannot be cash-confirmed/);
+    assert.equal((await pool.query(`SELECT status FROM settlements
+      WHERE id=$1`,[sc009PendingId])).rows[0].status,"pending");
+    await pool.query(`UPDATE settlements
+      SET status='cancelled',resolved_at=now(),resolved_by=$2
+      WHERE id=$1`,[sc009PendingId,registered.user.id]);
     const sc009Blocked=await expenseRequest("GET",sc009Report,undefined,jar);
     assert.equal(sc009Blocked.response.status,200);
     assert.equal(sc009Blocked.body.unresolvedDisputes,1);
