@@ -59,7 +59,13 @@ const selectCycle=`SELECT c.id,c.version,c.state,
 const selectSources=`SELECT src.obligation_id AS "obligationId",
     src.debtor_id AS "debtorId",src.creditor_id AS "creditorId",
     se.occurred_on::text AS "occurredOn",
-    src.expense_version AS "sourceVersion",e.version AS "currentVersion",
+    src.expense_version AS "sourceVersion",
+    -- Creator-only completion increments e.version without changing any
+    -- immutable original obligation or item shares. That *metadata-only*
+    -- increment must not invalidate other unpaid sources in the same pair.
+    CASE WHEN e.version=src.expense_version+1
+      AND e.completed_at IS NOT NULL AND e.completed_by=e.created_by
+      THEN src.expense_version ELSE e.version END AS "currentVersion",
     o.amount_minor::text AS "originalMinor",
     src.original_minor::text AS "sourceOriginalMinor",
     src.expense_version AS "sourceExpenseVersion",
