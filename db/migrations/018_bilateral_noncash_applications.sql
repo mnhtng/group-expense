@@ -71,8 +71,10 @@ BEGIN
   PERFORM 1 FROM groups
     WHERE id=NEW.group_id AND archived_at IS NULL FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'BN-004 group inactive'; END IF;
+  -- Serialize even raw SQL against BN-003 revoke/reject: that trigger
+  -- locks the same immutable proposal row before inspecting decisions.
   SELECT * INTO p FROM group_settlement_bilateral_proposals
-    WHERE id=NEW.proposal_id;
+    WHERE id=NEW.proposal_id FOR UPDATE;
   IF NOT FOUND OR p.group_id<>NEW.group_id OR p.cycle_id<>NEW.cycle_id
     OR p.party_low<>NEW.party_low OR p.party_high<>NEW.party_high
     OR p.version<>NEW.proposal_version
