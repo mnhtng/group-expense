@@ -3573,6 +3573,167 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const forbiddenCycle=await sc008Page(
       `${origin}/groups/${sc006Group}/cycles/${sc006Target}`,new Map());
     assert.ok([200,307].includes(forbiddenCycle.response.status));
+    // SC-009: dispute, privacy, notification, immutable audit, full source
+    // report and CSV export, all on a REAL signed PG17 HTTP fixture.
+    const sc009Base=`${sc006Api}/${sc006Target}`;
+    const sc009Disputes=`${sc009Base}/disputes`;
+    const sc009Report=`${sc009Base}/reconciliation`;
+    const sc009Audit=`${sc009Base}/audit`;
+    const sc009Original=(await pool.query(`
+      SELECT so.obligation_id AS id FROM group_settlement_cycle_snapshot_obligations so
+      WHERE so.group_id=$1 AND so.cycle_id=$2 AND
+        $3 IN(so.debtor_id,so.creditor_id)
+      ORDER BY so.obligation_id LIMIT 1`,
+      [sc006Group,sc006Target,registered.user.id])).rows[0];
+    assert.ok(sc009Original?.id);
+    const sc009Before=await expenseRequest("GET",sc009Report,undefined,jar);
+    assert.equal(sc009Before.response.status,200,JSON.stringify(sc009Before.body));
+    assert.equal(sc009Before.body.sourceCount,2);
+    assert.equal(sc009Before.body.confirmedSetoffMinor,"0");
+    assert.equal(sc009Before.body.pendingCashMinor,"0");
+    const sc009Opening={
+      obligationId:sc009Original.id,
+      reason:"Vui lòng kiểm tra số tiền chia của hóa đơn gốc này.",
+      requestKey:randomUUID(),
+    };
+    assert.equal((await expenseRequest("GET",sc009Disputes,undefined,new Map()))
+      .response.status,401,"anonymous cannot read dispute notes");
+    assert.equal((await expenseRequest("POST",sc009Disputes,
+      sc009Opening,thirdJar)).response.status,403,
+      "group admin NOT one of the actual two counterparties");
+    assert.equal((await expenseRequest("POST",sc009Disputes,{
+      ...sc009Opening,actorId:thirdUser.id,
+    },jar)).response.status,400,"client cannot spoof dispute actor");
+    const sc009Opened=await expenseRequest("POST",sc009Disputes,
+      sc009Opening,jar);
+    assert.equal(sc009Opened.response.status,201,JSON.stringify(sc009Opened.body));
+    const sc009Id=sc009Opened.body.dispute.id;
+    assert.equal(sc009Opened.body.dispute.status,"open");
+    assert.equal((await expenseRequest("POST",sc009Disputes,sc009Opening,jar))
+      .response.status,200,"exact key retried idempotently");
+    assert.equal((await expenseRequest("POST",sc009Disputes,{
+      ...sc009Opening,reason:"Nội dung khác cho cùng requestKey",
+    },jar)).response.status,409);
+    assert.equal((await expenseRequest("POST",sc009Disputes,{
+      ...sc009Opening,requestKey:randomUUID(),
+    },otherJar)).response.status,409,"only ONE open thread per source");
+    const sc009Other=await expenseRequest("GET",sc009Disputes,undefined,otherJar);
+    assert.equal(sc009Other.response.status,200);
+    assert.equal(sc009Other.body.disputes[0].id,sc009Id);
+    const sc009Admin=await expenseRequest("GET",sc009Disputes,undefined,thirdJar);
+    assert.equal(sc009Admin.response.status,200);
+    assert.equal(sc009Admin.body.disputes.length,0,
+      "group admin cannot read unrelated pair's private dispute contents");
+
+    const sc009Notice=await expenseRequest("GET",
+      `${origin}/api/notifications?limit=50`,undefined,otherJar);
+    assert.equal(sc009Notice.response.status,200);
+    assert.ok(sc009Notice.body.notifications.some(x=>x.kind==="cycle_dispute_opened"&&
+      x.href===`/groups/${sc006Group}/cycles/${sc006Target}`));
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM notifications WHERE recipient_id=$1 AND kind='cycle_dispute_opened'
+        AND cycle_id=$2`,[otherUser.id,sc006Target])).rows[0].n,1,
+      "event-key notice cannot duplicate on HTTP retry");
+
+    const sc009Blocked=await expenseRequest("GET",sc009Report,undefined,jar);
+    assert.equal(sc009Blocked.response.status,200);
+    assert.equal(sc009Blocked.body.unresolvedDisputes,1);
+    assert.equal(sc009Blocked.body.readyForManualReview,false);
+    const sc009ActorAudit=await expenseRequest("GET",sc009Audit,undefined,jar);
+    assert.equal(sc009ActorAudit.response.status,200);
+    assert.ok(sc009ActorAudit.body.items.some(x=>
+      x.kind==="dispute"&&x.eventType==="opened"&&x.subjectId===sc009Original.id));
+    const sc009OutsiderAudit=await expenseRequest("GET",sc009Audit,undefined,thirdJar);
+    assert.equal(sc009OutsiderAudit.response.status,200);
+    assert.ok(!sc009OutsiderAudit.body.items.some(x=>x.kind==="dispute"),
+      "admin not in pair cannot see private dispute events in audit");
+
+    const csvDownload=async(kind,cookies)=>{
+      const response=await fetch(`${sc009Base}/export?kind=${kind}`,{
+        headers:cookies.size?{cookie:cookieHeader(cookies)}:{},
+        signal:AbortSignal.timeout(20000),
+      });
+      return {response,text:await response.text()};
+    };
+    assert.equal((await csvDownload("ledger",new Map())).response.status,401);
+    const sc009Ledger=await csvDownload("ledger",jar);
+    assert.equal(sc009Ledger.response.status,200,sc009Ledger.text.slice(0,100));
+    assert.match(sc009Ledger.response.headers.get("content-type"),/text\/csv/);
+    assert.ok(sc009Ledger.text.startsWith("\uFEFF"));
+    assert.equal(sc009Ledger.text.trim().split("\r\n").length,3,
+      "CSV MUST contain ALL 2 original obligations, not one UI page");
+    assert.match(sc009Ledger.text,/Hóa đơn gốc/);
+    assert.match(sc009Ledger.text,/Late original grocery invoice/);
+    assert.match(sc009Ledger.text,/Đã bù trừ phi tiền mặt|Bù trừ phi tiền mặt/);
+    const sc009Export=await csvDownload("audit",jar);
+    assert.equal(sc009Export.response.status,200);
+    assert.match(sc009Export.text,/dispute/);
+    const sc009AdminExport=await csvDownload("audit",thirdJar);
+    assert.equal(sc009AdminExport.response.status,200);
+    assert.doesNotMatch(sc009AdminExport.text,/"dispute"/,
+      "audit export cannot leak another pair's dispute notes");
+    assert.equal((await csvDownload("other",jar)).response.status,400);
+
+    const sc009EventUrl=`${sc009Disputes}/${sc009Id}/events`;
+    const respondBody={eventType:"respond",body:"Tôi đã rà soát hóa đơn, cách tính hợp lệ.",
+      requestKey:randomUUID()};
+    assert.equal((await expenseRequest("POST",sc009EventUrl,
+      respondBody,jar)).response.status,409,
+      "reporter cannot forge counterparty's reply");
+    assert.equal((await expenseRequest("POST",sc009EventUrl,
+      respondBody,thirdJar)).response.status,403);
+    assert.equal((await expenseRequest("POST",sc009EventUrl,
+      respondBody,otherJar)).response.status,201);
+    assert.equal((await expenseRequest("POST",sc009EventUrl,
+      respondBody,otherJar)).response.status,200);
+    const sc009Awaiting=await expenseRequest("GET",sc009Disputes,undefined,jar);
+    assert.equal(sc009Awaiting.body.disputes[0].status,"awaiting_reporter");
+    assert.equal(sc009Awaiting.body.disputes[0].events.length,1);
+    assert.equal((await expenseRequest("POST",sc009EventUrl,{
+      eventType:"resolve",body:"Bên mở đã kiểm tra và đồng ý kết thúc.",
+      requestKey:randomUUID(),
+    },otherJar)).response.status,409,
+      "counterparty cannot resolve unilaterally");
+    const sc009Closed=await expenseRequest("POST",sc009EventUrl,{
+      eventType:"resolve",body:"Tôi xác nhận tranh chấp đã được giải quyết.",
+      requestKey:randomUUID(),
+    },jar);
+    assert.equal(sc009Closed.response.status,201,JSON.stringify(sc009Closed.body));
+    assert.equal(sc009Closed.body.dispute.status,"resolved");
+    assert.equal((await expenseRequest("POST",sc009EventUrl,{
+      eventType:"respond",body:"Thử thêm phản hồi sau khi đóng.",
+      requestKey:randomUUID(),
+    },otherJar)).response.status,409);
+    await assert.rejects(pool.query(`
+      UPDATE group_settlement_cycle_disputes SET reason='tampered'
+      WHERE id=$1`,[sc009Id]),/immutable/);
+    await assert.rejects(pool.query(`
+      DELETE FROM group_settlement_cycle_dispute_events
+      WHERE dispute_id=$1`,[sc009Id]),/immutable/);
+    const sc009After=await expenseRequest("GET",sc009Report,undefined,jar);
+    assert.equal(sc009After.response.status,200);
+    assert.equal(sc009After.body.unresolvedDisputes,0);
+    for(const field of ["originalMinor","confirmedCashMinor",
+      "confirmedSetoffMinor","pendingCashMinor","outstandingMinor","availableMinor"])
+      assert.equal(sc009After.body[field],sc009Before.body[field],
+        "dispute discussion cannot mutate any real financial amounts");
+
+    // Notification idempotency remains valid for cron/system actors:
+    // duplicate calls from separate attempts create exactly ONE reminder.
+    const reminderKey=`remind:ci:dispute:${sc009Id}`;
+    await Promise.all([pool.query(`
+      SELECT sc009_emit_notice($1,$2,$3,NULL,$4,'cycle_reminder',
+        'Nhắc nhở đối soát','Chỉ ghi thông báo, không chuyển tiền.',$5)`,
+        [sc006Group,sc006Target,registered.user.id,reminderKey,
+          `/groups/${sc006Group}/cycles/${sc006Target}`]),
+      pool.query(`
+      SELECT sc009_emit_notice($1,$2,$3,NULL,$4,'cycle_reminder',
+        'Nhắc nhở đối soát','Chỉ ghi thông báo, không chuyển tiền.',$5)`,
+        [sc006Group,sc006Target,registered.user.id,reminderKey,
+          `/groups/${sc006Group}/cycles/${sc006Target}`])]);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM notifications WHERE recipient_id=$1 AND event_key=$2`,
+      [registered.user.id,reminderKey])).rows[0].n,1);
     const sc006ExitGroup=randomUUID(),sc006ExitRev=randomUUID();
     await pool.query(`INSERT INTO groups(id,owner_id,name)
       VALUES($1,$2,'SC006 lifecycle group')`,
