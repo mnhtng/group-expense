@@ -1,0 +1,87 @@
+name: RR-002 Browser and Mobile Emulation E2E
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/rr002-browser-e2e.yml'
+      - 'tests/rr002-browser.e2e.mjs'
+      - 'tests/rr002-safety.test.mjs'
+      - 'components/groups/**'
+      - 'app/(app)/groups/**'
+      - 'app/api/groups/**'
+      - 'lib/settlement-cycles/**'
+      - 'db/**'
+      - 'proxy.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rr002-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: chromium-webkit-mobile-emulation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: group_expense
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d group_expense"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: 'true'
+      RR002_TEST_ONLY: isolated-pg17
+      DATABASE_URL: postgresql://test:test@localhost:5432/group_expense
+      BETTER_AUTH_URL: http://localhost:3112
+      BETTER_AUTH_SECRET: rr002-ci-only-secret-12345678901234567890
+      NEXT_TELEMETRY_DISABLED: '1'
+      # No SC005/BN004/BN006 or financial engine activation flags.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install app dependencies (lockfile enforced)
+        run: pnpm install --frozen-lockfile
+      - name: Versioned SQL migrations on disposable PG17 only
+        run: |
+          pnpm db:migrate
+          pnpm db:migrate
+      - name: Build the real Next.js application
+        run: pnpm build
+      - name: Install pinned Playwright tooling separately from production dependencies
+        run: |
+          npm install --prefix "$RUNNER_TEMP/rr002-tooling" \
+            --no-save --no-package-lock --ignore-scripts --no-audit --no-fund \
+            playwright@1.64.1
+          echo "RR002_PLAYWRIGHT_ENTRY=$RUNNER_TEMP/rr002-tooling/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
+      - name: Install real browser engines and Linux dependencies
+        run: "$RUNNER_TEMP/rr002-tooling/node_modules/.bin/playwright install --with-deps chromium webkit"
+      - name: Run signed-browser E2E against disposable PostgreSQL
+        run: node --test --test-reporter=spec tests/rr002-browser.e2e.mjs
+      - name: Upload synthetic-fixture screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rr002-browser-evidence
+          path: rr002-artifacts/
+          if-no-files-found: ignore
+          retention-days: 3
