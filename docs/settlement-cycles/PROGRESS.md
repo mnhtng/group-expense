@@ -455,10 +455,58 @@ Draft PR #16 targets `develop`; no merge, shared Neon migration or
 staging/production deployment. Actual bilateral noncash ledger
 application is **BN-004, a separate future ticket only**.
 
-## NEXT CONVERSATION: BN-004 ONLY
+## 2026-11-05 — BN-004: DONE (isolated atomic noncash proof; NOT released)
 
-Begin ONLY the dual independent approvals/invalidation/rejection/expiry
-ticket after reading all `docs/settlement-cycles/`. All financial
-source validity checks and race-safe cancellation must be re-evaluated.
-BN-003 must NOT apply a noncash set-off (BN-004) or enable money features.
-Keep Draft PR #16, no shared Neon migration or deployment.
+**Ticket boundary:** applies only a two-sided, previously agreed,
+immutable BN-002 proposal. Adds a NEW append-only noncash application
+and exact original-obligation allocations; DOES NOT write to existing
+cash ledger/settlements, modify source obligations, complete invoices or
+integrate `confirmed_setoff` into debt readers (BN-005).
+
+**Implementation:**
+- `018_bilateral_noncash_applications.sql`: pair-cycle uniqueness,
+  per-obligation uniqueness, immutable application and allocations,
+  direct SQL two-signature/expiry/stale-money checks, proposal-row lock
+  against concurrent BN-003 revocation, deferred full two-direction
+  conservation at transaction commit and denial of late revoke.
+- `lib/settlement-cycles/applications.ts`: group→cycle→proposal head
+  →original obligation locks, source SHA recomputation, exact BigInt
+  amount and FIFO proof, one valid application with idempotent
+  same-key recovery and conflict resolution.
+- Authenticated `GET/POST .../bilateral-proposals/:proposalId/applications`;
+  only actual pair members may apply/read. The audit clearly states
+  `noncash:true`, `cashTransferredMinor:"0"`.
+- BN-003 service additionally denies late revoke/reject for an already
+  applied proposal, preserving the irrevocable transaction.
+- Test-only financial gate is triple-bound to disposable GitHub
+  runner `CI=true`, `BN004_TEST_ONLY=isolated-pg17`,
+  `DATABASE_URL=postgresql://test:test@localhost:5432/group_expense`.
+  Global `SETTLEMENT_CYCLE_ENGINE_READY=false` unchanged.
+- Detailed contract `BN-004-NONCASH-APPLICATIONS.md`.
+
+**Verified acceptance:** last pre-document hardening commit
+`2cccecee1f403c1a3c27d125195304b7772cfd98`:
+[CI SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41968439116),
+[PostgreSQL 17 + HTTP SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41968439155).
+The actual HTTP fixture uses 122 original BN-002 sources and two
+independent BN-003 signers. Includes missing/one signature denial,
+unrelated member/admin denial, version/fingerprint mismatches,
+same-key concurrent [200,201], conflicting reapplication, direct SQL
+one-sided rollback, equal two-way amounts, original source proof,
+immutable audit and no cash allocation changes. Final docs/unit
+verification also runs on the resulting HEAD.
+
+**Intentionally not included:** no persistent pending setoff
+reservation: one transaction locks both sides and commits the complete
+noncash document or nothing. No `confirmed_setoff` read integration
+yet; BN-005 must implement that with its own tests before any release.
+No shared Neon DB, staging/production deployment, merge to
+`develop` or `main`. PR #16 remains Draft.
+
+## NEXT CONVERSATION: BN-005 ONLY
+
+Read the canonical backlog and all docs, then implement BN-005
+integration of confirmed noncash discharge into all balance,
+availability, leave/archive, invoice completion and report queries.
+Do NOT implement BN-006 residual cash, SC-006 integration or release.
+Keep PR #16 Draft, no shared database migrations or deployment.
