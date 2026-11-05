@@ -65,7 +65,7 @@ async function send(user,method,url,data){
   return {response,body};
 }
 async function must(user,method,path,body,expected=200){
-  const {response,result,body:payload}=await send(user,method,path,body);
+  const {response,body:payload}=await send(user,method,path,body);
   assert.equal(response.status(),expected,method+" "+path+" => "+response.status()+
     " expected "+expected+"; "+JSON.stringify(payload)?.slice(0,150));
   return payload;
@@ -283,7 +283,7 @@ async function scenario(engine,project,options){
     const firstSource=page2.getByRole("list",{name:"Nguồn công nợ gốc"}).getByRole("link").first();
     await assertTapTarget(firstSource,"original invoice link");
     await page2.getByRole("link",{name:"Trước"}).click();
-    await owner.page.waitForURL(url=>!url.searchParams.has("page"));
+    await owner.page.waitForURL(url=>url.searchParams.get("page")==="1");
 
     // Pair dropdown permits selecting exactly one counterparty. The
     // financial call-to-action remains truly disabled, not CSS-only.
@@ -320,8 +320,6 @@ async function scenario(engine,project,options){
     // An original pair member opens a dispute with explicit consent;
     // another member must not see its private reason or audit entries.
     const reason="RR002 synthetic invoice split needs two-party reconciliation";
-    const disputePanel=owner.page.getByRole("heading",{
-      name:"Tranh chấp giữa đúng hai người"}).locator("..");
     await owner.page.getByLabel("Chọn nghĩa vụ gốc cần đối soát")
       .selectOption({index:1});
     await owner.page.getByLabel("Lý do (10–500 ký tự)").fill(reason);
@@ -405,11 +403,7 @@ test("RR-002 signed Chromium/WebKit browser interactions on disposable PG17",{
     "node_modules/next/dist/bin/next","start","-p",String(port)
   ],{env:{...process.env,BETTER_AUTH_URL:ORIGIN},
     stdio:["ignore","pipe","pipe"]});
-  // Keep only a bounded, redacted readiness marker on failure.
-  let startupErrors="";
-  server.stderr.on("data",chunk=>{
-    startupErrors=(startupErrors+String(chunk)).slice(-800);
-  });
+  server.stderr.resume();
   try{
     await waitForServer(server);
     const scenarios=[
