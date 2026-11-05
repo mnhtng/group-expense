@@ -235,6 +235,7 @@ export async function generateDueRecurringExpenses(
   // LIMIT 201 reveals whether the bounded 200-rule scan is incomplete.
   // PostgreSQL checkpoints rotate the oldest last-checked rules to
   // prevent starving newly activated recurring rules.
+  const processed:{id:string;failed:boolean}[]=[];
   for(const target of rows.rows.slice(0,200)) {
     if(result.generated>=maxGenerated)break;
     let failed=false;
@@ -314,17 +315,22 @@ export async function generateDueRecurringExpenses(
       result.errors++;
       console.error("Recurring generation failed",error instanceof Error?error.name:"Unknown");
     }
-    if(!onlyRuleId){
-      await pool.query(`INSERT INTO recurring_cron_checkpoints
-        (rule_id,last_checked_at,last_error_at)
-        VALUES($1,clock_timestamp(),
-          CASE WHEN $2 THEN clock_timestamp() ELSE NULL END)
-        ON CONFLICT(rule_id) DO UPDATE SET
-          last_checked_at=EXCLUDED.last_checked_at,
-          last_error_at=EXCLUDED.last_error_at`,
-        [target.id,failed]);
-    }
+    processed.push({id:target.id,failed});
     result.checked++;
+  }
+  if(!onlyRuleId&&processed.length){
+    // One bulk, deterministic checkpoint write keeps a large catch-up
+    // run bounded in network round trips and rotates the 200-rule window.
+    await pool.query(`INSERT INTO recurring_cron_checkpoints
+      (rule_id,last_checked_at,last_error_at)
+      SELECT item.rule_id,clock_timestamp(),
+        CASE WHEN item.failed THEN clock_timestamp() ELSE NULL END
+      FROM unnest($1::uuid[],$2::boolean[])
+        AS item(rule_id,failed)
+      ON CONFLICT(rule_id) DO UPDATE SET
+        last_checked_at=EXCLUDED.last_checked_at,
+        last_error_at=EXCLUDED.last_error_at`,
+      [processed.map(x=>x.id),processed.map(x=>x.failed)]);
   }
   result.hasMoreRules=rows.rows.length>result.checked;
   return result;
