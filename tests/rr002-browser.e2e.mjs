@@ -74,11 +74,27 @@ async function userFor(browser,options,tag){
   const context=await browser.newContext({...options,baseURL:ORIGIN,
     acceptDownloads:true,serviceWorkers:"allow"});
   const email="rr002-"+tag+"-"+randomUUID()+"@example.test";
-  const response=await context.request.post(ORIGIN+"/api/auth/sign-up/email",{
-    headers:{origin:ORIGIN},
-    data:{name:"RR002 "+tag,email,password},
-  });
-  assert.equal(response.status(),200,"Better Auth synthetic signup");
+  // Keep real Better Auth rate limiting ON. A disposable runner creates
+  // several users from one loopback IP; wait for its advertised cooldown
+  // instead of spoofing identity or weakening the product auth policy.
+  let response;
+  for(let attempt=0;attempt<6;attempt++){
+    response=await context.request.post(ORIGIN+"/api/auth/sign-up/email",{
+      headers:{origin:ORIGIN},
+      data:{name:"RR002 "+tag,email,password},
+      timeout:20000,
+    });
+    if(response.status()!==429)break;
+    if(attempt===5)break;
+    const cooldown=response.headers()["x-retry-after"] ??
+      response.headers()["retry-after"] ?? "10";
+    const seconds=Number(cooldown);
+    await sleep(Number.isFinite(seconds)&&seconds>=0
+      ?Math.min(31000,Math.max(11000,Math.ceil(seconds*1000)+1000))
+      :11000);
+  }
+  assert.equal(response.status(),200,
+    "Better Auth synthetic signup must succeed without disabling rate limiting");
   const payload=await response.json();
   assert.ok(payload.user?.id,"Better Auth user ID");
   assert.ok((await context.cookies(ORIGIN)).some(c=>c.name.includes("session_token")),
