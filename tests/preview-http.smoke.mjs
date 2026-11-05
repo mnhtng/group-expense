@@ -2891,6 +2891,68 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const appliedGet=await expenseRequest("GET",applyUrl,undefined,otherJar);
     assert.equal(appliedGet.response.status,200);
     assert.equal(appliedGet.body.application.id,applied.id);
+    // SC-008: real Server Component + Better Auth + PG17 rendered on
+    // mobile-responsive routes. The financial engine remains OFF, and
+    // all displayed sums are LIVE original BN-005 source totals rather
+    // than a 50-row list sum.
+    const sc008ListUrl=`${origin}/groups/${bnGroup}/cycles`;
+    const sc008DetailUrl=`${sc008ListUrl}/${bnCycle}`;
+    const sc008Page=async(url,cookies=jar)=>{
+      const response=await fetch(url,{redirect:"manual",
+        headers:cookies.size?{cookie:cookieHeader(cookies)}:{},
+        signal:AbortSignal.timeout(20000)});
+      return {response,html:await response.text()};
+    };
+    const sc008Anon=await sc008Page(sc008ListUrl,new Map());
+    assert.ok([200,307].includes(sc008Anon.response.status));
+    if(sc008Anon.response.status===200){
+      assert.doesNotMatch(sc008Anon.html,/Công nợ gốc trong kỳ|Quyết toán theo kỳ.*Kỳ/, 
+        "unauthenticated cycle listing must never leak ledger information");
+      assert.match(sc008Anon.html,/NEXT_REDIRECT|http-equiv|__next-page-redirect/);
+    }else{
+      assert.equal(new URL(sc008Anon.response.headers.get("location"),origin)
+        .pathname,"/sign-in");
+    }
+    const sc008List=await sc008Page(sc008ListUrl);
+    assert.equal(sc008List.response.status,200,sc008List.html.slice(0,150));
+    assert.match(sc008List.html,/Các kỳ đã ghi nhận/);
+    assert.match(sc008List.html,/Chế độ xem trước/);
+    assert.match(sc008List.html,/Đã khóa sổ/);
+    const sc008OriginalCount=(await pool.query(`
+      SELECT count(*)::int AS n FROM group_settlement_cycle_snapshot_obligations
+      WHERE group_id=$1 AND cycle_id=$2`,[bnGroup,bnCycle])).rows[0].n;
+    assert.ok(sc008OriginalCount>50,
+      "SC-008 needs a >50-source fixture to detect a paginated money bug");
+    const sc008Source=await sc008Page(sc008DetailUrl);
+    assert.equal(sc008Source.response.status,200,sc008Source.html.slice(0,150));
+    assert.match(sc008Source.html,/Công nợ gốc trong kỳ/);
+    assert.match(sc008Source.html,
+      new RegExp(`Tổng hợp từ toàn bộ ${sc008OriginalCount} nghĩa vụ gốc`));
+    assert.match(sc008Source.html,/Tiền mặt đã xác nhận/);
+    assert.match(sc008Source.html,/Đã bù trừ phi tiền mặt/);
+    assert.match(sc008Source.html,/Tiền mặt chờ xác nhận/);
+    assert.match(sc008Source.html,/Chưa phát hành giao dịch quyết toán/);
+    assert.match(sc008Source.html,/Phân trang nguồn công nợ/);
+    const pageTwo=await sc008Page(sc008DetailUrl+"?page=2");
+    assert.equal(pageTwo.response.status,200);
+    assert.match(pageTwo.html,/Trang 2\//);
+    assert.match(pageTwo.html,
+      new RegExp(`Tổng hợp từ toàn bộ ${sc008OriginalCount} nghĩa vụ gốc`),
+      "paging must never alter grand totals");
+    const sc008Live=(await pool.query(`
+      SELECT COALESCE(sum(b.original_minor),0)::text AS original,
+        COALESCE(sum(b.confirmed_cash_minor),0)::text AS cash,
+        COALESCE(sum(b.confirmed_setoff_minor),0)::text AS setoff,
+        COALESCE(sum(b.pending_cash_minor),0)::text AS pending
+      FROM group_settlement_cycle_snapshot_obligations src
+      JOIN bn005_obligation_balances b ON b.obligation_id=src.obligation_id
+      WHERE src.group_id=$1 AND src.cycle_id=$2`,[bnGroup,bnCycle])).rows[0];
+    const vi=(n)=>new Intl.NumberFormat("vi-VN").format(BigInt(n));
+    assert.ok(BigInt(sc008Live.setoff)>0n,"BN-004 committed setoff is visible in UI");
+    for(const amount of Object.values(sc008Live))
+      assert.ok(sc008Source.html.includes(vi(amount)),
+        `Rendered UI must include FULL ORIGINAL source amount ${amount}`);
+
     assert.equal((await expenseRequest("POST",applyUrl,applyBody(),otherJar))
       .response.status,409,"second party cannot double apply the same pair");
     assert.equal((await expenseRequest("POST",applyUrl,applyBody(requestKey),jar))
@@ -3474,6 +3536,16 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     },"no duplicate original invoice, obligation or frozen snapshot");
     assert.equal((await expenseRequest("GET",lateApi,undefined,jar))
       .body.lateInvoices[0].assignedTargetId,sc006Target);
+    // SC-008: audit-proven historical original invoice remains visible
+    // in new-cycle rendered source lines with its REAL original date.
+    const sc008LatePage=await sc008Page(
+      `${origin}/groups/${sc006Group}/cycles/${sc006Target}`,jar);
+    assert.equal(sc008LatePage.response.status,200);
+    assert.match(sc008LatePage.html,/Late original grocery invoice/);
+    assert.match(sc008LatePage.html,/Hóa đơn nhập muộn/);
+    assert.match(sc008LatePage.html,/Có chứng từ gán kỳ|có chứng từ gán kỳ/);
+    assert.match(sc008LatePage.html,/Chưa phát hành giao dịch quyết toán/);
+
     // SC-007 release regression: a late invoice's ORIGINAL occurred_on
     // precedes the target cycle, but a proven SC-006 attribution in its
     // sealed snapshot MUST remain eligible for two-person noncash preview.
@@ -3495,6 +3567,10 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     // SC-006: zero-debt creator responsibility is independent of ledger
     // balances. One cannot abandon an invoice frozen in a cycle and make
     // it impossible for the only creator to confirm completion.
+    // A legitimate logged-in outsider cannot see private group/cycle money.
+    const forbiddenCycle=await sc008Page(
+      `${origin}/groups/${sc006Group}/cycles/${sc006Target}`,new Map());
+    assert.ok([200,307].includes(forbiddenCycle.response.status));
     const sc006ExitGroup=randomUUID(),sc006ExitRev=randomUUID();
     await pool.query(`INSERT INTO groups(id,owner_id,name)
       VALUES($1,$2,'SC006 lifecycle group')`,
