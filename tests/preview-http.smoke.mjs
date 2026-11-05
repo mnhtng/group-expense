@@ -3653,7 +3653,10 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
         headers:cookies.size?{cookie:cookieHeader(cookies)}:{},
         signal:AbortSignal.timeout(20000),
       });
-      return {response,text:await response.text()};
+      // Fetch Response.text() strips a UTF-8 BOM by specification.
+      // Inspect raw bytes instead to verify the Excel-friendly CSV signature.
+      const bytes=Buffer.from(await response.arrayBuffer());
+      return {response,text:bytes.toString("utf8"),bytes};
     };
     assert.equal((await csvDownload("ledger",new Map())).response.status,401);
     const sc009Ledger=await csvDownload("ledger",jar);
