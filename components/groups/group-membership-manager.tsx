@@ -76,6 +76,7 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
     owner:"Hãy chuyển quyền chủ nhóm trước.",
     pending:"Còn giao dịch chờ xác nhận.",
     unsettled:"Cần tất toán công nợ trước khi rời.",
+    creator_confirmation:"Còn hóa đơn thuộc kỳ quyết toán cần người tạo xác nhận hoàn thành.",
   };
   return <div className="space-y-4">
     <div className="space-y-2">
