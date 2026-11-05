@@ -204,20 +204,12 @@ export async function previewBilateralResidual(groupId:string,cycleId:string,
     await cycle(client,groupId,cycleId,false);
     const result=calculate(app,await originals(client,app,false));
     const attempts=await history(client,applicationId);
+    const featureEnabled=await enabled(client,groupId);
     await client.query("COMMIT");
     return {preview:result.preview,history:attempts,
-      writable:isResidualCashTestWritable()&&
-        await readEnabledForRead(groupId)};
+      writable:isResidualCashTestWritable()&&featureEnabled};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
-}
-async function readEnabledForRead(groupId:string){
-  const r=await pool.query<{requested_enabled:boolean;
-    requested_bilateral_netting:boolean}>(`
-    SELECT requested_enabled,requested_bilateral_netting
-    FROM group_settlement_settings WHERE group_id=$1`,[groupId]);
-  return r.rows[0]?.requested_enabled===true&&
-    r.rows[0]?.requested_bilateral_netting===true;
 }
 
 /** Residual money is never netted through a third party; one fully
