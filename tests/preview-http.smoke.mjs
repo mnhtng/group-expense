@@ -2575,8 +2575,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       [fifth.id])).rows[0].n,1,
       "old approval must remain for audit, never count towards a new proposal");
 
-    const dbNow=(await pool.query("SELECT clock_timestamp() AS now")).rows[0].now;
-    const expiryRejected=await assert.rejects(pool.query(`
+    await assert.rejects(pool.query(`
       INSERT INTO group_settlement_bilateral_decision_events
         (id,proposal_id,group_id,cycle_id,party_low,party_high,
          actor_id,event_type,request_key,request_digest,source_fingerprint)
@@ -2585,7 +2584,68 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       FROM group_settlement_bilateral_proposals p WHERE p.id=$1`,
       [fifth.id,randomUUID(),randomUUID(),"a".repeat(64)]),
       /BN-003 proposal has not expired/);
-    void dbNow;void expiryRejected;
+    // SQL-created, historically dated proposal fixture: 73 hours old. The
+    // normal authenticated proposal API never accepts user-supplied dates.
+    // This verifies expiration against real PostgreSQL time, NOT mock clocks.
+    const sixthPreview=(await expenseRequest("GET",bnReadUrl,undefined,jar)).body;
+    assert.equal(sixthPreview.currentVersion,5);
+    const sixthCreated=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(5,randomUUID(),sixthPreview.fingerprint),otherJar);
+    assert.equal(sixthCreated.response.status,201,JSON.stringify(sixthCreated.body));
+    const sixth=sixthCreated.body.proposal;
+    const expiredId=randomUUID();
+    const expireClient=await pool.connect();
+    try{
+      await expireClient.query("BEGIN");
+      await expireClient.query(`INSERT INTO group_settlement_bilateral_proposals
+        (id,group_id,cycle_id,party_low,party_high,version,
+         request_key,request_digest,source_fingerprint,snapshot_fingerprint,
+         created_by,offset_minor,source_count,allocation_count,created_at)
+        SELECT $2,group_id,cycle_id,party_low,party_high,7,
+          $3,$4,source_fingerprint,snapshot_fingerprint,created_by,
+          offset_minor,source_count,allocation_count,
+          clock_timestamp()-interval '73 hours'
+        FROM group_settlement_bilateral_proposals WHERE id=$1`,
+        [sixth.id,expiredId,randomUUID(),"f".repeat(64)]);
+      await expireClient.query(`INSERT INTO group_settlement_bilateral_sources
+        (proposal_id,group_id,cycle_id,party_low,party_high,obligation_id,
+         debtor_id,creditor_id,occurred_on,expense_version,original_minor,
+         confirmed_cash_minor,pending_cash_minor,confirmed_setoff_minor,
+         pending_setoff_minor,available_before_minor,proposed_minor,
+         available_after_minor)
+        SELECT $2,group_id,cycle_id,party_low,party_high,obligation_id,
+         debtor_id,creditor_id,occurred_on,expense_version,original_minor,
+         confirmed_cash_minor,pending_cash_minor,confirmed_setoff_minor,
+         pending_setoff_minor,available_before_minor,proposed_minor,
+         available_after_minor
+        FROM group_settlement_bilateral_sources WHERE proposal_id=$1`,
+        [sixth.id,expiredId]);
+      await expireClient.query(`UPDATE group_settlement_bilateral_heads
+        SET version=7,current_proposal_id=$2
+        WHERE group_id=$1 AND cycle_id=$3`,[bnGroup,expiredId,bnCycle]);
+      await expireClient.query("COMMIT");
+    }catch(e){await expireClient.query("ROLLBACK");throw e;}
+    finally{expireClient.release();}
+    const expiredUrl=bnDecisionUrl(expiredId);
+    const expiredGet=await expenseRequest("GET",expiredUrl,undefined,jar);
+    assert.equal(expiredGet.response.status,200);
+    assert.equal(expiredGet.body.status,"expired");
+    assert.equal(expiredGet.body.approvalCount,0);
+    const expiredPost=await expenseRequest("POST",expiredUrl,
+      decisionBody("approve",7,sixth.sourceFingerprint),jar);
+    assert.equal(expiredPost.response.status,409,
+      "expiry must be committed before rejecting a late approval");
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM
+      group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='expired'`,
+      [expiredId])).rows[0].n,1);
+    assert.equal((await expenseRequest("POST",expiredUrl,
+      decisionBody("approve",7,sixth.sourceFingerprint),otherJar))
+      .response.status,409);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM
+      group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='expired'`,
+      [expiredId])).rows[0].n,1,"retry must not duplicate expiry event");
     // No proposal approval/revocation/rejection may modify actual cash.
     assert.equal((await pool.query(`SELECT count(*)::int AS n FROM
       settlement_allocations WHERE group_id=$1`,[bnGroup])).rows[0].n,3);
