@@ -39,7 +39,7 @@
 | SC-004 | P0 | Eligible obligation snapshots: date boundary, cash confirmed/pending, late bills, frozen versions, canonical SQL | SC-003 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; REVIEW PENDING |
 | SC-005 | P0 | Same-direction batch repayment by pair, 50+ allocations, idempotent requests and scoped confirmation | SC-004 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; RELEASE GATED OFF |
 | BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO LEDGER |
-| BN-002 | P0 | Bilateral proposal persistence, one group+cycle+pair+version, stable fingerprint and conflict handling | BN-001 | TODO |
+| BN-002 | P0 | Bilateral proposal persistence, one group+cycle+pair+version, stable fingerprint and conflict handling | BN-001 | DONE ON FEATURE BRANCH — CI + POSTGRES/HTTP PASS; NO APPROVAL / NO LEDGER |
 | BN-003 | P0 | Dual approval with identities, invalidation/rejection/expiry/revoke, no auto-apply | BN-002 | TODO |
 | BN-004 | P0 | Atomic noncash set-off ledger + reservations, exact A↔B balance conservation, immutable audit | BN-003 | TODO |
 | BN-005 | P0 | Integrate `confirmed_setoff` into **all** outstanding, available, leave/archive, paid, completion and report queries | BN-004 | TODO |
@@ -210,6 +210,47 @@ payment, proposal or stored set-off. Reproducible experiment fixture:
 BN-004 ledger, SC-006 late adjustments, financial schema or API changes.
 `SETTLEMENT_CYCLE_ENGINE_READY=false`, Draft PR #16, no deployment or
 shared Neon migration.
+
+## BN-002 — one-pair versioned proposals (current conversation)
+
+**DONE on feature branch; NOT RELEASED.** Authenticated, explicit bilateral
+opt-in; exactly two active counterparties within one locked cycle and VND.
+A canonical unordered pair has exactly one atomic version HEAD. Every
+proposal version and all original-obligation source proof rows are IMMUTABLE.
+No proposal reserves money, automatically confirms payment or applies set-off.
+
+**DB:** `016_bilateral_proposal_documents.sql` with unique pair/version
+and actor/request-key constraints, append-only proposal/source triggers,
+cycle snapshot composite FKs, full source count and exact symmetric
+money conservation. SQL publication trigger also checks
+`offset=min(available_A_to_B,available_B_to_A)` and **BN-001 FIFO**
+(local day, UUID), preventing two equal but arbitrarily misallocated sums.
+Creator-only invoice completion metadata version is recognized without
+changing original financial source values.
+
+**Service/API:** `lib/settlement-cycles/proposals.ts`,
+`GET/POST /api/groups/:groupId/settlement-cycle/cycles/:cycleId/bilateral-proposals`.
+Canonical ledger fingerprint includes immutable snapshot and ALL live
+original source/cash statuses, including pending and zero-available rows.
+Group→cycle→pair head→original obligations are locked before checking
+`expectedVersion` and `expectedFingerprint`. Same-key retried
+requests recover their original ID; stale or racing version returns 409.
+Party-only auth; unrelated owner/admin/delegate denied.
+
+**Tests:** 122 original obligations (61 per direction, >50 each),
+different-key race [201,409], same-key race [201,200], explicit opt-in,
+rejected fake fingerprint and foreign actor, stale fingerprint after cash
+confirmation, immutable historical revision, SQL update/delete guards,
+failed raw SQL canonical-FIFO spoof rollback, creator completion, no
+proposal-created money/ledger changes, group disable and read-only history.
+[CI success](https://github.com/mnhtng/group-expense/actions/runs/41944569337);
+[disposable PostgreSQL17/HTTP success](https://github.com/mnhtng/group-expense/actions/runs/41944569536).
+See [BN-002-PROPOSALS.md](./BN-002-PROPOSALS.md).
+
+**Hard exclusions:** BN-003 approvals/rejections/expiry, BN-004 actual
+noncash entries, BN-005 balance integration, SC-006 later adjustments and
+any production activation. Financial engine flag remains OFF. PR #16
+remains Draft; no shared Neon migration, merge or deploy.
 
 ## Design debt & migration/release gates
 

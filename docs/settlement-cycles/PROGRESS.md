@@ -340,13 +340,69 @@ flag changes.
   untouched. No staging/prod deployment or shared Neon migrations.
 - PR #16 remains DRAFT and never merged automatically.
 
-## NEXT CONVERSATION: BN-002 ONLY
+## 2026-11-05 — BN-002: DONE (code and isolated PostgreSQL/HTTP verified; NO money rollout)
 
-BN-001 is complete and verified. Next separate conversation may
-implement **BN-002: immutable bilateral proposal persistence with exact
-snapshot/live ledger fingerprint and conflict handling**. Read the
-entire `docs/settlement-cycles/` directory before any work.
-Do NOT implement BN-003 approvals, BN-004 noncash ledger application,
-SC-006 adjustments or enable actual cycle money in BN-002.
-PR #16 stays Draft; no shared Neon migration or deployment without
-explicit release authorization.
+**One-ticket scope:** ONE canonical two-person/one-cycle VND proposal
+HEAD, immutable per-version document with full original source proof,
+live-ledger SHA-256 fingerprint, optimistic version and idempotency.
+No proposal approval or noncash offset application.
+
+**Implementation**
+- `016_bilateral_proposal_documents.sql`: new heads, proposals and
+  original-source proof tables only; no writes to existing financial
+  ledgers. Composite snapshot FK and immutable proposal/source triggers;
+  atomic head guard checks source count, current cash states, both
+  directional sums, maximal offset and strict BN-001 FIFO allocation.
+- `lib/settlement-cycles/proposals.ts`: read all exact original
+  obligations from locked cycle snapshot + live cash ledger under
+  repeatable-read preview and group-locked transaction for publication.
+  Hash binds immutable snapshot, exact pair, all source IDs/versions,
+  confirmed/pending cash and proposed FIFO allocations, INCLUDING
+  fully paid zero-available sources. A creator-only completed invoice
+  does not invalidate its unchanged original financial source version.
+- `GET/POST .../settlement-cycle/cycles/:cycleId/bilateral-proposals`:
+  anonymous 401; only actual two active participants may preview/create,
+  no manager/admin impersonation. Requires both explicit feature opt-ins
+  and locked snapshot for writes. New document only when expected pair
+  version and exact live fingerprint match. Repeated same request key
+  returns original document, even if pair head later advances/opt-out.
+  All outputs state `approvalEnabled:false`,
+  `financialEngineEnabled:false`.
+- Earlier document versions remain immutable and head version advances
+  one step at a time; there is no mutable approval or reservation status.
+- Detailed contract: `BN-002-PROPOSALS.md`.
+
+**Final acceptance evidence: source code commit
+`3fdc257173217a6eed68414261c2c38c3d92bce4`**
+- [GitHub CI — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41944569337):
+  lint, typecheck, native unit tests, Next.js build.
+- [PostgreSQL 17 + HTTP integration — SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41944569536):
+  all migrations twice/checksum, SQL regression, real authenticated HTTP.
+- Reproducible HTTP fixture tests 122 source obligations and 61 positive
+  allocations in EACH direction, plus pending cash. Two different
+  request keys published concurrently [201,409], identical keys
+  concurrently [200,201] with matching IDs. Old fingerprint after
+  confirmed cash fails 409; immutable version 1 remains while a new
+  version 2 publishes; all proposal writes leave settlements and
+  settlement_allocations unchanged.
+- Negative DB check directly writes equal directional totals with
+  FALSE FIFO allocation; head publication rejected and entire
+  transaction rolled back. Frozen original invoices can still be
+  creator-completed after full cash confirmation; proposal fingerprint
+  correctly ignores only that nonfinancial version bump.
+- No shared Neon/staging/production migration; no merge into
+  `develop`/`main`; PR #16 stays Draft.
+
+**Release safety:** `SETTLEMENT_CYCLE_ENGINE_READY=false`. Proposal
+metadata may be authored by two participants only after deliberate
+opt-in, but does NOT reserve, pay or discharge one dong. Subsequent
+BN-003/BN-004 MUST revalidate the live ledger and immutably hashed
+document before any approvals or noncash application.
+
+## NEXT CONVERSATION: BN-003 ONLY
+
+Begin ONLY the dual independent approvals/invalidation/rejection/expiry
+ticket after reading all `docs/settlement-cycles/`. All financial
+source validity checks and race-safe cancellation must be re-evaluated.
+BN-003 must NOT apply a noncash set-off (BN-004) or enable money features.
+Keep Draft PR #16, no shared Neon migration or deployment.
