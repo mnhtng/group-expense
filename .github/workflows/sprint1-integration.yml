@@ -83,6 +83,8 @@ jobs:
       BN006_TEST_ONLY: isolated-pg17
       # SC-007 reconciliation/concurrency tests may run ONLY in disposable PG17.
       SC007_TEST_ONLY: isolated-pg17
+      # SC-009 daily reminders are exercised only against disposable PG17.
+      SC009_TEST_ONLY: isolated-pg17
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
