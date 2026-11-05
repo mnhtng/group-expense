@@ -211,6 +211,16 @@ export async function decideBilateralProposal(groupId:string,cycleId:string,
       [groupId,actorId,input.requestKey,p.id]);
     if(reused.rowCount)throw error(409,
       "Mã yêu cầu đã sử dụng ở phiên bản đề xuất khác.");
+    // BN-004: signed consent is immutable once financially applied.
+    // Never allow a late signer revocation (or rejection) after noncash
+    // conservation has committed; the application is append-only.
+    if(input.action==="revoke"||input.action==="reject"){
+      const applied=await client.query(
+        `SELECT 1 FROM group_settlement_bilateral_applications
+         WHERE proposal_id=$1 LIMIT 1`,[p.id]);
+      if(applied.rowCount)throw error(409,
+        "Đề xuất đã được ghi bù trừ; không thể thu hồi hoặc từ chối.");
+    }
     const c=await cycle(client,groupId,cycleId,true);
     if(c.snapshotFingerprint!==p.snapshotFingerprint)
       throw error(409,"Bản snapshot của kỳ không còn khớp.");
