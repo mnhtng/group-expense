@@ -44,7 +44,7 @@
 | BN-004 | P0 | Atomic two-sided NONCASH application under row locks, exact A↔B conservation, immutable original-source audit; no persistent interim reservations | BN-003 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
 | BN-005 | P0 | Integrate `confirmed_setoff` into **all** outstanding, available, leave/archive, paid, completion and report queries | BN-004 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
 | BN-006 | P0 | Net residual cash settlement through the pre-existing two-party confirmation flow | BN-005,SC-005 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
-| SC-006 | P0 | Invoice/recurring/member-leave/group-archive integration, unlock/adjustment policy, no retroactive edits | SC-004,BN-005 | TODO |
+| SC-006 | P0 | Immutable next-REVIEW attribution of late original invoices; recurring catchup order; leave/creator/recurring-template/archive guards; no historic edits or unlock | SC-004,BN-005 | DONE ON FEATURE BRANCH — PG17/HTTP VERIFIED; NOT RELEASED |
 | SC-007 | P0 | Full financial concurrency, authz, property-based and E2E regression suite; release gate | SC-006,BN-006 | TODO |
 | SC-008 | P1 | Cycle and set-off mobile UI: list/review/confirm, per-obligation traceability, clarity for each role | SC-007 | TODO |
 | SC-009 | P1 | In-app notifications, reminders, disputes, late adjustments, audit/export and reconciliation reports | SC-008 | TODO |
@@ -417,6 +417,54 @@ other-party rejection/confirmation, and exact zero residual.
 **Hard exclusions:** no SC-006 lifecycle/adjustments, no SC-007+,
 no shared Neon migration, no staging/production deploy, no merge,
 PR #16 remains DRAFT.
+
+## SC-006 — source-safe late adjustments and membership/recurring lifecycle
+
+**DONE ON FEATURE BRANCH; NOT RELEASED.** The original LOCKED cycle is
+immutable. Late manual and recurring invoices are existing ORIGINAL
+`expenses` and `obligations`, never duplicate expenses or cash.
+An owner or explicit active cycle-manager delegate can attach a
+previously unrecorded historical invoice once to the chronologically
+first later REVIEW cycle, with strict idempotency and immutable SQL
+audit `group_settlement_cycle_adjustments`. Original dates and IDs
+never change. Target snapshot preview/fingerprint and the
+PostgreSQL state-transition guard both include the attributed ORIGINAL
+source, while an out-of-period source without audited attribution
+remains forbidden. Target locks only after revalidation.
+
+**Hard edit policy:** attribution itself immediately freezes invoice
+money/date/item shares/obligations against normal API and direct SQL.
+Only original creator may mark the invoice completed when source
+debts are confirmed by cash/noncash and no pending cash remains.
+No unlocking sealed snapshots, cloning obligation amounts, silent
+negative corrections or backdating.
+
+**Recurring:** original daily Vercel Cron runs overdue recurring
+generation BEFORE cycle metadata catch-up; incomplete/error/full-cap
+batch defers metadata, while `UNIQUE(rule_id,period)` prevents
+duplicate monthly bills. All generated original expenses are
+eligible for the same late-source attribution logic.
+
+**Membership/archive:** prevent a creator departing with any unfinished
+snapshot/attributed/late historical invoice even if monetary balance
+is zero; leaving/removal atomically pauses affected active monthly
+templates, keeps old occurrences, revokes delegated manager rights.
+Group archive refuses open/review periods, unresolved frozen debts or
+creator approvals, and unassigned late original invoices. A locked
+fully reconciled cycle remains permanently auditable and does not
+block archiving by itself.
+
+**Implementation:** migration `021_settlement_cycle_late_adjustments.sql`,
+`lib/settlement-cycles/adjustments.ts`, authenticated
+`GET/POST .../cycles/:originCycleId/late-adjustments`,
+snapshot preview/write and SQL guard updates, recurring Cron ordering,
+leave/archive services, matching UI reason, HTTP/SQL and unit tests.
+No real financial engine activation, shared Neon migrations,
+staging/production deploy or PR merge. **PR #16 remains Draft.**
+
+**Contract:** [SC-006-LIFECYCLE-ADJUSTMENTS.md](./SC-006-LIFECYCLE-ADJUSTMENTS.md).
+**Next:** SC-007 full release-safety, concurrency and E2E tests.
+Do not start SC-007 in this ticket.
 
 ## Design debt & migration/release gates
 
