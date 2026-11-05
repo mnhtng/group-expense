@@ -3472,6 +3472,103 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     },"no duplicate original invoice, obligation or frozen snapshot");
     assert.equal((await expenseRequest("GET",lateApi,undefined,jar))
       .body.lateInvoices[0].assignedTargetId,sc006Target);
+    // SC-006: zero-debt creator responsibility is independent of ledger
+    // balances. One cannot abandon an invoice frozen in a cycle and make
+    // it impossible for the only creator to confirm completion.
+    const sc006ExitGroup=randomUUID(),sc006ExitRev=randomUUID();
+    await pool.query(`INSERT INTO groups(id,owner_id,name)
+      VALUES($1,$2,'SC006 lifecycle group')`,
+      [sc006ExitGroup,registered.user.id]);
+    for(const [userId,role] of [[registered.user.id,"owner"],[otherUser.id,"member"]])
+      await pool.query(`INSERT INTO group_members(group_id,user_id,role)
+        VALUES($1,$2,$3)`,[sc006ExitGroup,userId,role]);
+    const exitSettings=`${origin}/api/groups/${sc006ExitGroup}/settlement-cycle/settings`;
+    const exitCycles=`${origin}/api/groups/${sc006ExitGroup}/settlement-cycle/cycles`;
+    const exitInvoices=`${origin}/api/groups/${sc006ExitGroup}/expenses`;
+    const exitMembership=`${origin}/api/groups/${sc006ExitGroup}/membership/leave`;
+    assert.equal((await expenseRequest("PATCH",exitSettings,
+      config(0,true,false),jar)).response.status,200);
+    await pool.query(`UPDATE group_settlement_config_events
+      SET recorded_at=$2::timestamptz
+      WHERE group_id=$1 AND event_type='settings_changed'`,
+      [sc006ExitGroup,sc003Date(-8)+"T00:00:00Z"]);
+    await pool.query(`INSERT INTO group_settlement_schedule_heads
+      (group_id,updated_by) VALUES($1,$2)`,
+      [sc006ExitGroup,registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,1,'manual','UTC',$3,$4,$5)`,
+      [sc006ExitRev,sc006ExitGroup,sc003Date(-7),
+        sc003Date(-7)+"T00:00:00Z",registered.user.id]);
+    const exitCycle=await expenseRequest("POST",exitCycles,{
+      expectedScheduleVersion:1,requestKey:randomUUID(),
+      startDate:sc003Date(-6),endDate:sc003Date(-3),
+    },jar);
+    assert.equal(exitCycle.response.status,201);
+    const exitCycleId=exitCycle.body.cycle.id;
+    const selfInvoice=await expenseRequest("POST",exitInvoices,{
+      title:"B paid own meal (no pair debt)",occurredOn:sc003Date(-5),
+      payerId:otherUser.id,items:[{name:"Self meal",quantity:1,
+        unitPriceMinor:"12000",participants:[otherUser.id]}],
+    },otherJar);
+    assert.equal(selfInvoice.response.status,201,JSON.stringify(selfInvoice.body));
+    assert.equal((await expenseRequest("POST",
+      `${exitCycles}/${exitCycleId}/review`,{expectedVersion:1},jar))
+      .response.status,200);
+    const exitSnapUrl=`${exitCycles}/${exitCycleId}/snapshot`;
+    const exitPreview=(await expenseRequest("GET",exitSnapUrl,undefined,jar)).body.snapshot;
+    assert.equal(exitPreview.obligationCount,0);
+    assert.equal(exitPreview.expenseCount,1);
+    assert.equal((await expenseRequest("POST",exitSnapUrl,{
+      expectedVersion:2,requestKey:randomUUID(),
+      expectedFingerprint:exitPreview.fingerprint,
+    },jar)).response.status,200);
+    const ownExit=(await expenseRequest("GET",exitMembership,undefined,otherJar)).body.eligibility;
+    assert.equal(ownExit.toPayMinor,"0");
+    assert.equal(ownExit.toReceiveMinor,"0");
+    assert.equal(ownExit.uncompletedInvoiceCount,1);
+    assert.equal(ownExit.canLeave,false);
+    assert.equal(ownExit.reason,"creator_confirmation");
+    assert.equal((await expenseRequest("POST",exitMembership,{},otherJar))
+      .response.status,409,"cannot leave when only creator can finalize frozen invoice");
+    assert.equal((await expenseRequest("POST",
+      `${exitInvoices}/${selfInvoice.body.id}/complete`,
+      {expectedVersion:1},jar)).response.status,403,
+      "group owner must not finalize B's invoice");
+    assert.equal((await expenseRequest("POST",
+      `${exitInvoices}/${selfInvoice.body.id}/complete`,
+      {expectedVersion:1},otherJar)).response.status,200);
+
+    // Recurring template with departed creator must be paused in the SAME
+    // membership transaction, never generate invoices for a former member.
+    const recurringExit=await expenseRequest("POST",
+      `${origin}/api/groups/${sc006ExitGroup}/recurring`,{
+        title:"B monthly own fixed expense",notes:"",
+        dayOfMonth:Number(sc003Date(1).slice(8)),
+        startsOn:sc003Date(1),payerId:otherUser.id,
+        items:[{name:"Monthly",quantity:1,unitPriceMinor:"5000",
+          participants:[otherUser.id]}],
+      },otherJar);
+    assert.equal(recurringExit.response.status,201,JSON.stringify(recurringExit.body));
+    const recurringId=recurringExit.body.id;
+    assert.equal((await pool.query(`SELECT status FROM recurring_expense_rules
+      WHERE id=$1`,[recurringId])).rows[0].status,"active");
+    assert.equal((await expenseRequest("GET",exitMembership,undefined,otherJar))
+      .body.eligibility.canLeave,true);
+    assert.equal((await expenseRequest("POST",exitMembership,{},otherJar))
+      .response.status,200);
+    assert.equal((await pool.query(`SELECT status FROM recurring_expense_rules
+      WHERE id=$1`,[recurringId])).rows[0].status,"paused");
+    assert.equal((await pool.query(`SELECT status FROM group_members
+      WHERE group_id=$1 AND user_id=$2`,
+      [sc006ExitGroup,otherUser.id])).rows[0].status,"left");
+    const archiveAfter=await expenseRequest("POST",
+      `${origin}/api/groups/${sc006ExitGroup}/archive`,
+      {confirmation:"SC006 lifecycle group"},jar);
+    assert.equal(archiveAfter.response.status,200,JSON.stringify(archiveAfter.body));
+    assert.ok((await pool.query("SELECT archived_at FROM groups WHERE id=$1",
+      [sc006ExitGroup])).rows[0].archived_at,
+      "archival allowed once immutable cycle audit and creator responsibilities are resolved");
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
