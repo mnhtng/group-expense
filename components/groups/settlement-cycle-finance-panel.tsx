@@ -112,6 +112,7 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
   const [revision,setRevision]=useState(0);
   const [intent,setIntent]=useState<Command|null>(null);
   const [accepted,setAccepted]=useState(false);
+  const [showSources,setShowSources]=useState(false);
   const keyRef=useRef<{digest:string;key:string}|null>(null);
   const name=(id:string)=>people.find(p=>p.id===id)?.name??"Thành viên";
   useEffect(()=>{
@@ -224,11 +225,14 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
           Đây là số tính thử từ nghĩa vụ gốc. Chưa phải giao dịch đã thực hiện.
         </p>
       </div>
-      <details className="rounded-2xl border p-3">
-        <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">
-          Xem các nghĩa vụ gốc dùng để tính bù trừ
-        </summary>
-        <div className="space-y-3 pt-3">
+      <div className="rounded-2xl border p-3">
+        <button type="button" aria-expanded={showSources}
+          aria-controls="cycle-noncash-source-lines"
+          onClick={()=>setShowSources(v=>!v)}
+          className="min-h-11 w-full py-2 text-left text-sm font-semibold">
+          {showSources?"Ẩn nghĩa vụ gốc":"Xem nghĩa vụ gốc dùng để tính bù trừ"}
+        </button>
+        {showSources&&<div id="cycle-noncash-source-lines" className="space-y-3 pt-3">
           {[
             ["Chiều 1",live.calculation.aOwesB.allocations],
             ["Chiều 2",live.calculation.bOwesA.allocations],
@@ -244,8 +248,8 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
             {(items as typeof live.calculation.aOwesB.allocations).length===0&&
               <p className="text-xs text-muted-foreground">Không có nghĩa vụ đủ điều kiện.</p>}
           </div>)}
-        </div>
-      </details>
+        </div>}
+      </div>
       {doc&&<div className="space-y-3 rounded-2xl border p-4">
         <h3 className="font-semibold">Đề xuất hiện tại · phiên bản {doc.version}</h3>
         <p className="text-sm">Số tiền đề xuất: <strong className="tabular-nums">{money(doc.offsetMinor)}</strong> mỗi chiều</p>
