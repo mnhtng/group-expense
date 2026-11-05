@@ -64,7 +64,8 @@ export function classifyOpsOutcome(
 export function operationalAlerts(input:{
   latestCompletedAt:string|null;latestStatus:string|null;
   staleRunning:number;failedCheckpoints:number;
-  deadPushJobs:number;overdueReviews:number;nowMs:number;
+  recurringFailedCheckpoints:number;deadPushJobs:number;
+  overdueReviews:number;nowMs:number;
 }):string[]{
   const alerts:string[]=[];
   if(!input.latestCompletedAt){
@@ -76,6 +77,8 @@ export function operationalAlerts(input:{
     alerts.push("LAST_RUN_NEEDS_OPERATOR_REVIEW");
   if(input.staleRunning>0)alerts.push("STUCK_CRON_RUN");
   if(input.failedCheckpoints>0)alerts.push("RECENT_GROUP_CHECKPOINT_ERRORS");
+  if(input.recurringFailedCheckpoints>0)
+    alerts.push("RECENT_RECURRING_CHECKPOINT_ERRORS");
   if(input.deadPushJobs>0)alerts.push("DEAD_PUSH_DELIVERIES");
   if(input.overdueReviews>0)alerts.push("CYCLES_AWAITING_HUMAN_REVIEW");
   return alerts;
