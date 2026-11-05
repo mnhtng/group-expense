@@ -169,6 +169,25 @@ CREATE TRIGGER sc009_no_disputed_cash BEFORE INSERT
  ON group_settlement_cycle_repayments
  FOR EACH ROW EXECUTE FUNCTION sc009_no_disputed_money();
 
+-- Even an already-created PENDING cash request must not become
+-- CONFIRMED while an ORIGINAL allocated obligation is disputed.
+-- It stays pending until the two real people settle the dispute first.
+CREATE FUNCTION sc009_no_disputed_cash_confirmation()
+RETURNS trigger LANGUAGE plpgsql AS $sc009$
+BEGIN
+ IF OLD.status='pending' AND NEW.status='confirmed' AND EXISTS(
+   SELECT 1 FROM settlement_allocations sa
+   JOIN sc009_dispute_states d ON d.obligation_id=sa.obligation_id
+   WHERE sa.settlement_id=NEW.id
+     AND d.status IN('open','awaiting_reporter')
+ ) THEN RAISE EXCEPTION 'SC-009 disputed original obligation cannot be cash-confirmed';
+ END IF;
+ RETURN NEW;
+END;$sc009$;
+CREATE TRIGGER sc009_no_disputed_cash_confirmation
+ BEFORE UPDATE OF status ON settlements
+ FOR EACH ROW EXECUTE FUNCTION sc009_no_disputed_cash_confirmation();
+
 -- Insert a deduplicated, push-compatible notification from a trusted
 -- existing event. The same event can be replayed without duplicate alerts.
 CREATE FUNCTION sc009_emit_notice(
