@@ -2438,8 +2438,11 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       action,expectedVersion:version,expectedFingerprint:fingerprint,requestKey,
     });
     const oldUrl=bnDecisionUrl(bnFirst.id);
-    assert.equal((await expenseRequest("GET",oldUrl,undefined,otherJar))
-      .body.status,"superseded","an old version can never be approved");
+    const oldDecisionView=(await expenseRequest("GET",oldUrl,undefined,otherJar)).body;
+    assert.equal(oldDecisionView.isCurrent,false,
+      "previous proposal cannot become current after new version");
+    assert.equal(oldDecisionView.status,"invalidated",
+      "automatic cash invalidation is immutable, even after supersession");
     assert.equal((await expenseRequest("POST",oldUrl,
       decisionBody("approve",1,bnFirst.sourceFingerprint),otherJar))
       .response.status,409);
