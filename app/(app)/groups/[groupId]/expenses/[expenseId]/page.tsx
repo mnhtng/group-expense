@@ -27,7 +27,7 @@ export default async function ExpenseDetailPage({params}:{
   const pending=BigInt(expense.pendingMinor);
   const due=BigInt(expense.dueMinor);
   const confirmed=BigInt(expense.confirmedMinor);
-  const allSettled=remaining===0n && pending===0n;
+  const allSettled=remaining===0n && pending===0n && expense.invalidCount===0;
   const editable=canEdit&&!completed&&confirmed===0n&&pending===0n;
   const percent=due===0n?100:Number((confirmed*100n)/due);
   const status=completed?"Đã hoàn thành"
