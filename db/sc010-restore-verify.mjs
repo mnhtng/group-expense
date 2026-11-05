@@ -65,6 +65,8 @@ const comparisons=[
   ["cron_evidence",`SELECT id::text,mode,status,
     started_at::text,completed_at::text,stage_results::text
     FROM settlement_cycle_operational_runs ORDER BY id`],
+  ["recurring_scan_checkpoints",`SELECT rule_id::text,last_checked_at::text,
+    last_error_at::text FROM recurring_cron_checkpoints ORDER BY rule_id`],
   ["canonical_live_balances",`SELECT obligation_id::text,
     original_minor::text,confirmed_cash_minor::text,
     confirmed_setoff_minor::text,pending_cash_minor::text,
