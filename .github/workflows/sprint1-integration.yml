@@ -85,6 +85,8 @@ jobs:
       SC007_TEST_ONLY: isolated-pg17
       # SC-009 daily reminders are exercised only against disposable PG17.
       SC009_TEST_ONLY: isolated-pg17
+      # SC-010 logical restore drill only on the disposable GitHub Actions PG17.
+      SC010_TEST_ONLY: isolated-pg17
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -102,3 +104,5 @@ jobs:
       - run: pnpm build
       - run: pnpm test:http
       - run: pnpm test:finance:audit
+      - name: SC-010 disposable logical backup and restore drill
+        run: bash scripts/sc010-restore-drill.sh
