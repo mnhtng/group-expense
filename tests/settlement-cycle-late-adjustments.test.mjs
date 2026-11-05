@@ -10,7 +10,7 @@ test("SC-006 audit is immutable and can never duplicate a source invoice",()=>{
   assert.match(sql,/SC-006 adjustment audit is immutable/);
   assert.match(sql,/orig\.state<>'locked' OR target\.state<>'review'/);
   assert.match(sql,/bill\.created_at<=old_cutoff AND bill\.updated_at<=old_cutoff/);
-  assert.match(sql,/first future unlocked cycle/);
+  assert.match(sql,/earliest future unlocked cycle/);
   assert.match(sql,/group_settlement_cycle_snapshot_expenses/);
   assert.doesNotMatch(sql,/INSERT INTO (?:expenses|obligations|settlements|settlement_allocations)/i);
 });
