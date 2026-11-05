@@ -24,6 +24,24 @@ test("SC-008 has a member-visible mobile cycle list and contextual cycle detail"
   assert.match(detail,/settings\.canManage/);
 });
 
+test("SC-008 every old cycle remains readable by direct authorized ID, history paginates",()=>{
+  const life=read("lib/settlement-cycles/lifecycle.ts");
+  const list=read("app/(app)/groups/[groupId]/cycles/page.tsx");
+  const detail=read("app/(app)/groups/[groupId]/cycles/[cycleId]/page.tsx");
+  assert.match(life,/export async function getSettlementCycleById/);
+  assert.match(life,/export async function listSettlementCycleHistoryPage/);
+  assert.match(life,/getSettlementSettings\\(groupId,actorId\\)/);
+  assert.match(life,/LIMIT 50 OFFSET \\$2/);
+  assert.match(list,/Phân trang lịch sử kỳ/);
+  assert.match(list,/records\\.totalPages/);
+  assert.match(detail,/getSettlementCycleById\\(groupId,cycleId,user\\.id\\)/);
+  assert.doesNotMatch(detail,/listSettlementCycles\\(groupId,user\\.id,100\\)/);
+  for(const page of [list,detail]){
+    assert.match(page,/getMemberRole\\(groupId,user\\.id\\)/);
+    assert.match(page,/if\\(!await getMemberRole\\(groupId,user\\.id\\)\\)notFound\\(\\)/);
+  }
+});
+
 test("SC-008 source list derives totals from ORIGINAL unpaginated BN-005 source, never displayed page",()=>{
   const source=read("lib/settlement-cycles/ui-read.ts");
   const ui=read("components/groups/settlement-cycle-source-list.tsx");
