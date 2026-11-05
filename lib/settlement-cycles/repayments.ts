@@ -32,7 +32,8 @@ export type BatchPairPreview={
 type Source={
   obligationId:string;expenseVersion:number;originalMinor:string;
   debtorId:string;creditorId:string;
-  confirmedMinor:string;pendingMinor:string;availableMinor:string;
+  confirmedMinor:string;confirmedCashMinor:string;confirmedSetoffMinor:string;
+  pendingMinor:string;availableMinor:string;
 };
 type CashRow=Source & {isValid:boolean};
 type Cycle={id:string;state:string;version:number};
@@ -45,23 +46,18 @@ const sourceSql=`
  SELECT o.id AS "obligationId",o.expense_version AS "expenseVersion",
     o.amount_minor::text AS "originalMinor",
     o.debtor_id AS "debtorId",o.creditor_id AS "creditorId",
-    COALESCE(pay.confirmed,0)::text AS "confirmedMinor",
-    COALESCE(pay.pending,0)::text AS "pendingMinor",
-    (o.amount_minor::numeric-COALESCE(pay.confirmed,0)-COALESCE(pay.pending,0))::text
-      AS "availableMinor",
+    (bal.confirmed_cash_minor+bal.confirmed_setoff_minor)::text AS "confirmedMinor",
+    bal.confirmed_cash_minor::text AS "confirmedCashMinor",
+    bal.confirmed_setoff_minor::text AS "confirmedSetoffMinor",
+    bal.pending_cash_minor::text AS "pendingMinor",
+    bal.available_minor::text AS "availableMinor",
     (o.voided_at IS NULL AND e.deleted_at IS NULL
       AND o.expense_version=src.expense_version
       AND o.amount_minor=src.original_minor) AS "isValid"
  FROM group_settlement_cycle_snapshot_obligations src
  JOIN obligations o ON o.id=src.obligation_id AND o.group_id=src.group_id
  JOIN expenses e ON e.id=o.expense_id AND e.group_id=o.group_id
- LEFT JOIN LATERAL (
-   SELECT COALESCE(sum(a.amount_minor) FILTER(WHERE s.status='confirmed'),0) AS confirmed,
-     COALESCE(sum(a.amount_minor) FILTER(WHERE s.status='pending'),0) AS pending
-   FROM settlement_allocations a
-   JOIN settlements s ON s.id=a.settlement_id AND s.group_id=o.group_id
-   WHERE a.obligation_id=o.id
- ) pay ON true
+ JOIN bn005_obligation_balances bal ON bal.obligation_id=o.id
  WHERE src.cycle_id=$1 AND src.group_id=$2
 `;
 function canonical(rows:readonly CashRow[],cycleId:string,debtor:string,creditor:string){
@@ -74,7 +70,10 @@ function canonical(rows:readonly CashRow[],cycleId:string,debtor:string,creditor
   const allocations:{obligationId:string;amountMinor:string}[]=[];
   for(const row of filtered){
     const original=BigInt(row.originalMinor);
-    const confirmed=BigInt(row.confirmedMinor),reserved=BigInt(row.pendingMinor);
+    const confirmedCash=BigInt(row.confirmedCashMinor);
+    const confirmedSetoff=BigInt(row.confirmedSetoffMinor);
+    const confirmed=confirmedCash+confirmedSetoff;
+    const reserved=BigInt(row.pendingMinor);
     const available=BigInt(row.availableMinor);
     if(!row.isValid||original<=0n||confirmed<0n||reserved<0n||
        available<0n||original-confirmed-reserved!==available){
@@ -83,7 +82,8 @@ function canonical(rows:readonly CashRow[],cycleId:string,debtor:string,creditor
     // Include zero-available sources in fingerprint, to prevent stale
     // confirmation/pending status being silently ignored on retry.
     hash.update(JSON.stringify([row.obligationId,row.expenseVersion,
-      row.originalMinor,row.confirmedMinor,row.pendingMinor,row.availableMinor])+"\n");
+      row.originalMinor,row.confirmedCashMinor,row.confirmedSetoffMinor,
+      row.pendingMinor,row.availableMinor])+"\n");
     pending+=reserved;
     if(available>0n){
       total+=available;count++;
