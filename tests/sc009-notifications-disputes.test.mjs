@@ -60,6 +60,7 @@ test("SC-009 client never accepts spoofed actor or confirmation, export is sourc
 test("SC-009 daily reminders are bounded, deduplicated and unconditionally OFF outside gated CI",()=>{
  const reminder=read("lib/settlement-cycles/reminders.ts");
  const cron=read("app/api/internal/push-drain/route.ts");
+ const runner=read("lib/settlement-cycles/ops-runner.ts");
  const workflow=read(".github/workflows/sprint1-integration.yml");
  assert.match(reminder,/SETTLEMENT_CYCLE_ENGINE_READY/);
  assert.match(reminder,/process.env.CI==="true"/);
@@ -67,7 +68,8 @@ test("SC-009 daily reminders are bounded, deduplicated and unconditionally OFF o
  assert.match(reminder,/postgresql:\/\/test:test@localhost:5432\/group_expense/);
  assert.match(reminder,/LIMIT \$1/);
  assert.match(reminder,/remind:\$\{day\}/);
- assert.match(cron,/issueCycleReminders\(40\)/);
+ assert.match(cron,/runDailySettlementOperations/);
+ assert.match(runner,/issueCycleReminders\(OPS_LIMITS\.reminders\)/);
  assert.match(workflow,/SC009_TEST_ONLY: isolated-pg17/);
  assert.match(read("lib/settlement-cycles/settings.ts"),
   /SETTLEMENT_CYCLE_ENGINE_READY = false/);
