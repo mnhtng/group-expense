@@ -43,7 +43,7 @@
 | BN-003 | P0 | Dual approval with identities, invalidation/rejection/expiry/revoke, no auto-apply | BN-002 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO NONCASH LEDGER |
 | BN-004 | P0 | Atomic two-sided NONCASH application under row locks, exact A↔B conservation, immutable original-source audit; no persistent interim reservations | BN-003 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
 | BN-005 | P0 | Integrate `confirmed_setoff` into **all** outstanding, available, leave/archive, paid, completion and report queries | BN-004 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
-| BN-006 | P0 | Net residual cash settlement through the pre-existing two-party confirmation flow | BN-005,SC-005 | TODO |
+| BN-006 | P0 | Net residual cash settlement through the pre-existing two-party confirmation flow | BN-005,SC-005 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
 | SC-006 | P0 | Invoice/recurring/member-leave/group-archive integration, unlock/adjustment policy, no retroactive edits | SC-004,BN-005 | TODO |
 | SC-007 | P0 | Full financial concurrency, authz, property-based and E2E regression suite; release gate | SC-006,BN-006 | TODO |
 | SC-008 | P1 | Cycle and set-off mobile UI: list/review/confirm, per-obligation traceability, clarity for each role | SC-007 | TODO |
@@ -375,6 +375,48 @@ adjustment/membership lifecycle improvements; SC-008 UI expansion;
 group/cycle finance activation; Neon/staging/production migrations;
 merge to `develop`/`main`. PR #16 remains Draft,
 `SETTLEMENT_CYCLE_ENGINE_READY=false`.
+
+## BN-006 — original-source net residual cash, real two-party confirmation
+
+**DONE ON FEATURE BRANCH; NO REAL FINANCIAL RELEASE.** Creates one
+ordinary pending cash settlement and all original-obligation allocations
+for the ONLY remaining direction after a committed BN-004 two-sided
+set-off. The amount is live BN-005 outstanding, not old snapshot money,
+and no third party or other group/cycle is involved.
+
+**Implementation:** migration
+`020_bilateral_residual_cash_repayments.sql`,
+`lib/settlement-cycles/residual-repayments.ts` and the authenticated
+`GET/POST .../cycles/:cycleId/bilateral-applications/:applicationId/residual`
+API. The old `PATCH .../settlements/:settlementId` alone confirms,
+rejects or cancels the actual cash report using the original
+counterparty; the initiator can never confirm their own transfer.
+
+**Atomicity:** group → cycle → sorted original obligations lock;
+validate exact two-person source set, live BN-005 balance, applied BN-004
+fingerprint, all source versions, no pending existing cash, zero
+opposite-direction balance, fixed pair/cycle, current opt-in and
+authorization. Only the server selects the full allocation/amount;
+never accept client-supplied debtor/creditor, amount, allocations or
+status. Insert original `settlements` pending, source allocations,
+SC-005 provenance, new immutable BN-006 provenance, existing event and
+notification in ONE transaction. Reject/cancel frees the reservation
+and may create a NEW attempt; same-key retry returns the original
+history. No auto-confirm or bank transfer.
+
+**Security:** POST only if `CI=true` AND
+`BN006_TEST_ONLY=isolated-pg17` AND the exact disposable
+`postgresql://test:test@localhost:5432/group_expense` URL.
+`SETTLEMENT_CYCLE_ENGINE_READY=false` stays unchanged.
+Tests verify 122 original sources, noncash conservation, held cash
+blocking, direct actor/amount spoofing denied, same-key concurrent
+[200,201], double-spend prevention, immutable provenance,
+other-party rejection/confirmation, and exact zero residual.
+
+**Contract:** [BN-006-RESIDUAL-CASH.md](./BN-006-RESIDUAL-CASH.md).
+**Hard exclusions:** no SC-006 lifecycle/adjustments, no SC-007+,
+no shared Neon migration, no staging/production deploy, no merge,
+PR #16 remains DRAFT.
 
 ## Design debt & migration/release gates
 
