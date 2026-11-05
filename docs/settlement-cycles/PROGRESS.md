@@ -503,10 +503,66 @@ yet; BN-005 must implement that with its own tests before any release.
 No shared Neon DB, staging/production deployment, merge to
 `develop` or `main`. PR #16 remains Draft.
 
-## NEXT CONVERSATION: BN-005 ONLY
+## 2026-11-05 — BN-005: DONE (live balance integration; financial release still OFF)
 
-Read the canonical backlog and all docs, then implement BN-005
-integration of confirmed noncash discharge into all balance,
-availability, leave/archive, invoice completion and report queries.
-Do NOT implement BN-006 residual cash, SC-006 integration or release.
-Keep PR #16 Draft, no shared database migrations or deployment.
+**Only BN-005:** Integrate previously committed BN-004 noncash application
+allocations into ALL outstanding, available, report, exit/archive,
+creator-only invoice completion, ordinary cash and cycle-batch preview
+decisions. No new settlement/offset write outside existing BN-004.
+Global `SETTLEMENT_CYCLE_ENGINE_READY=false` remains unchanged.
+
+**Changes**
+- `019_bilateral_setoff_balance_integration.sql`: a live unmaterialized
+  `bn005_obligation_balances` view; `original - confirmed_cash -
+  confirmed_setoff`; `available=outstanding-pending_cash`.
+  Deferred SQL guards reject cash/no-cash overbooking and the existing
+  frozen-invoice creator-only trigger uses setoff-aware remaining amounts.
+- `lib/debts/service.ts`: original debt and group/personal reports,
+  source-traceable noncash audit and uncapped group total query.
+- `lib/settlements/service.ts` and
+  `lib/settlement-cycles/repayments.ts`: manual/batched cash never
+  reserves an amount previously discharged by noncash setoff.
+- `lib/settlement-cycles/proposals.ts`: live fingerprint includes
+  applied original-source noncash; re-proposal for the same already
+  discharged original pair+cycle returns conflict.
+- `lib/expenses/service.ts`: readiness/progress/creator completion
+  and debt-amount ranking recognize confirmed noncash while requiring
+  zero unresolved pending cash and valid original source balances.
+- `lib/groups/membership.ts` and `lib/groups/service.ts`:
+  exact live outstanding for group leave/archive; corrupt balances
+  fail closed, not zero-clamped.
+- Debt/invoice summaries disclose separately confirmed cash vs noncash
+  and do not represent a setoff as a bank transfer.
+- `tests/preview-http.smoke.mjs`: actual PostgreSQL 17 + Better Auth
+  HTTP fixture checks 122 ORIGINAL obligations, original bilateral
+  netting conservation, group and personal reports, setoff provenance,
+  creator-only close, member leave/archival restrictions, one-direction
+  cash batch preview, manual cash overdraw and direct SQL rollback,
+  noncash history immutability and pending/cancel/confirm residual
+  states. Previous SC-001…BN-004 tests remain intact.
+
+**Verified source commit `2d2cd9011af9958e7384c80eeb0bf2a78d845485`:**
+- [CI SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41973907754):
+  lint, TypeScript, native unit tests and Next.js production build.
+- [Isolated PostgreSQL 17 + HTTP SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41973907437):
+  migration 019 installed twice, SQL integration + authenticated
+  HTTP money/permission/concurrency regression, exact double-spend denial.
+- Detailed [BN-005-BALANCE-INTEGRATION.md](./BN-005-BALANCE-INTEGRATION.md).
+
+**Release hold remains in force:** BN-004 test write requires strict
+`CI=true` + `BN004_TEST_ONLY=isolated-pg17` + exact disposable
+PostgreSQL localhost URL. No shared Neon DB migration or staging,
+production, merge to `develop`/`main`. PR #16 stays Draft.
+
+**Explicitly NOT included:** BN-006 net-residual cash orchestration,
+SC-006 late-source/leave-invoice lifecycle enhancements,
+SC-008 full mobile UI, notifications or settlement cycle completion.
+The existing settlement cash flow is tested for compatibility only.
+
+## NEXT CONVERSATION: BN-006 ONLY
+
+Read the full canonical docs on the same feature branch. Implement only
+the residual cash workflow through the original two-counterparty
+confirmation after BN-005, with strict separate CI acceptance and no
+real-money release. Never start automatically in this conversation.
+Keep PR #16 Draft and no shared database/deployment.
