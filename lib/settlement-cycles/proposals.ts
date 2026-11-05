@@ -328,8 +328,10 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
       const details=await client.query<{created_at:Date}>(
         "SELECT created_at FROM group_settlement_bilateral_proposals WHERE id=$1",
         [current.id]);
+      const dbNow=await client.query<{now:Date}>("SELECT clock_timestamp() AS now");
       const expired=details.rows[0]?
-        Date.now()>=details.rows[0].created_at.getTime()+72*60*60*1000:false;
+        dbNow.rows[0].now.getTime()>=
+          details.rows[0].created_at.getTime()+72*60*60*1000:false;
       if(!decisions.rowCount&&!expired)
         throw err(409,"Đề xuất cho số liệu này đã tồn tại.");
     }
