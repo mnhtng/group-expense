@@ -45,7 +45,7 @@
 | BN-005 | P0 | Integrate `confirmed_setoff` into **all** outstanding, available, leave/archive, paid, completion and report queries | BN-004 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
 | BN-006 | P0 | Net residual cash settlement through the pre-existing two-party confirmation flow | BN-005,SC-005 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
 | SC-006 | P0 | Immutable next-REVIEW attribution of late original invoices; recurring catchup order; leave/creator/recurring-template/archive guards; no historic edits or unlock | SC-004,BN-005 | DONE ON FEATURE BRANCH — PG17/HTTP VERIFIED; NOT RELEASED |
-| SC-007 | P0 | Full financial concurrency, authz, property-based and E2E regression suite; release gate | SC-006,BN-006 | TODO |
+| SC-007 | P0 | Full financial concurrency, authz, property-based and HTTP E2E regression suite; fail-closed release gate | SC-006,BN-006 | DONE ON FEATURE BRANCH — CI + PG17/HTTP AUDIT PASS; RELEASE NO-GO |
 | SC-008 | P1 | Cycle and set-off mobile UI: list/review/confirm, per-obligation traceability, clarity for each role | SC-007 | TODO |
 | SC-009 | P1 | In-app notifications, reminders, disputes, late adjustments, audit/export and reconciliation reports | SC-008 | TODO |
 | SC-010 | P1 | Operational runbooks, cron catch-up, monitoring, recovery / rollback, staged production rollout | SC-009 | TODO |
@@ -465,6 +465,58 @@ staging/production deploy or PR merge. **PR #16 remains Draft.**
 **Contract:** [SC-006-LIFECYCLE-ADJUSTMENTS.md](./SC-006-LIFECYCLE-ADJUSTMENTS.md).
 **Next:** SC-007 full release-safety, concurrency and E2E tests.
 Do not start SC-007 in this ticket.
+
+## SC-007 — full financial regression, reproducible races and conservative NO-GO release gate
+
+**DONE on feature branch; financial release remains NO-GO.**
+
+- `tests/sc007-financial-properties.test.mjs`: 1,500 deterministic
+  seeded random bilateral scenarios, BigInt exact obligations, FIFO,
+  permutation/pair swap metamorphic assertions, equal noncash
+  discharge, no fake confirmed cash, pending reservation and 10,000
+  source records / 51+ allocations per direction. Forged/overdrawn,
+  overflow, cross-pair/group/cycle and stale originals fail closed.
+- `tests/sc007-financial-concurrency.integration.mjs`: 16
+  independent two-session REAL PostgreSQL 17 races on original
+  10,000-VND obligations. Each pair simultaneously attempts
+  7,000+7,000: EXACTLY one commit, the other rolls back with
+  BN-005 capacity error or PostgreSQL `40P01` deadlock;
+  final durable amount is exactly 7,000 pending / 3,000 available.
+  Raw SQL cross-group allocation and 3,001-VND overbook after
+  7,000 pending also fail with no side effects.
+- `db/sc007-audit.mjs`: fail-closed disposable-DB-only,
+  REPEATABLE READ READ ONLY independent reconciliation of original
+  obligations vs cash/noncash and BN-005 views, exact per-payment
+  allocations, BN-004 pair conservation/provenance, BN-006 cash
+  history, SC-006 historic source and recurring uniqueness. CI
+  runs this BEFORE and AFTER full authenticated HTTP E2E.
+- Existing HTTP suite exercises 550+ same-direction cash sources,
+  122 opposite-direction immutable noncash sources, real bilateral
+  signatures, rejection/revocation/expiry, idempotency and concurrent
+  same-key 200/201, distinct-actor consent, source immutability,
+  late adjustment, leave/archive, and full balance conservation.
+- `tests/sc007-release-safety.test.mjs` verifies real engine is
+  hardcoded OFF; all guarded money writes require BOTH CI and
+  isolated flag and EXACT localhost disposable PostgreSQL URL.
+  The workflow cannot silently flip the production money engine.
+- Release-critical bug fixed: SC-006 audited historical late
+  invoices were present in target snapshot but BN-001 rejected
+  their historic `occurredOn`. `proposals.ts` now proves
+  adjustment/target/source-version via PostgreSQL, and BN-001
+  only accepts this explicitly proven exception. Original
+  invoice date/ID and FIFO remain unchanged. New real
+  HTTP test verifies the later locked cycle can preview
+  its actual pairwise noncash offset.
+- [SC-007-RELEASE-SAFETY.md](./SC-007-RELEASE-SAFETY.md) records
+  the precise independent test commands, coverage, verified
+  fixture statistics, PASS/NO-GO gate, and remaining roll-out
+  prerequisites. **SC-008 UI, SC-009 UX/notification and SC-010
+  operational verification are NOT implemented.**
+
+**No real release:** PR #16 is still Draft/unmerged.
+`SETTLEMENT_CYCLE_ENGINE_READY=false`, no shared Neon migration,
+no staging/production deployment, no actual money enablement.
+Do not start SC-008 in this conversation.
 
 ## Design debt & migration/release gates
 
