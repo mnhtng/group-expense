@@ -48,7 +48,7 @@
 | SC-007 | P0 | Full financial concurrency, authz, property-based and HTTP E2E regression suite; fail-closed release gate | SC-006,BN-006 | DONE ON FEATURE BRANCH — CI + PG17/HTTP AUDIT PASS; RELEASE NO-GO |
 | SC-008 | P1 | Member-visible mobile-first cycle/history/review; original-obligation cash vs noncash; bilateral consent previews; manager late-source workflow; source paging and release gating | SC-007 | DONE ON FEATURE BRANCH — SSR/HTTP + CI VERIFIED; FINANCIAL RELEASE NO-GO |
 | SC-009 | P1 | In-app event + dedup reminders, true bilateral immutable disputes, late adjustment notices, source-preserving audit/CSV and full live reconciliation | SC-008 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; FINANCIAL RELEASE NO-GO |
-| SC-010 | P1 | Operational runbooks, cron catch-up, monitoring, recovery / rollback, staged production rollout | SC-009 | TODO |
+| SC-010 | P1 | Audited single-flight Cron + fair bounded catch-up, redacted monitoring/alerts, PG17 full backup/restore drill, isolated Neon preflight and staged release NO-GO runbook | SC-009 | IMPLEMENTED ON FEATURE BRANCH — CI + PG17 RESTORE VERIFIED; NEON FULL REHEARSAL/PRODUCTION RELEASE PENDING |
 | BN-007 | P2 | Optional future refinements strictly **within two parties**, never 3+-party debt simplification | SC-010 | BACKLOG |
 
 ## SC-001 — completed in first conversation (code in draft PR #16)
@@ -645,6 +645,89 @@ rollout, shared Neon migration, PR merge and any real
 financial release. PR #16 stays **Draft**;
 `SETTLEMENT_CYCLE_ENGINE_READY=false` remains unchanged.
 Do not start SC-010 without a separate user request.
+
+## SC-010 — operational and staged-release safety (feature branch)
+
+**IMPLEMENTED ON FEATURE BRANCH; FINANCIAL PRODUCTION RELEASE NO-GO.**
+
+- New `023_settlement_cycle_operational_runs.sql` persists
+  append-only terminal operational run evidence. Existing
+  daily Vercel Cron `/api/internal/push-drain` now obtains
+  a session-level PostgreSQL advisory lock before all
+  stages; overlapping GET/POST returns HTTP 202 instead
+  of creating a second run. The redacted log records
+  scheduled vs operator reason-coded replay, aggregate
+  counters, stage statuses, cap/backlog warnings and
+  immutable success/partial/failure.
+- Source-safe catch-up: recurring templates are scanned
+  fairly with new `recurring_cron_checkpoints`, a 201st
+  sentinel for the 200-rule cap and a single bulk SQL
+  checkpoint update. `hasMoreRules`, generated-cap or
+  any recurring error **prevents moving cycle metadata**
+  ahead of uncreated original invoices. Scheduled cycle
+  candidate scanning now detects a 31st group and each
+  group's 24-period work cap; hitting any limit returns
+  HTTP 503 (partial), not a fake success.
+- Read-only `GET /api/internal/settlement-ops/status`
+  gives bearer-secret-protected counts and health
+  alerts for missing/stale Cron, stuck run, recent
+  recurring/cycle checkpoint errors, dead push jobs
+  and manual REVIEW backlog. No PII, invoice text,
+  source financial identities or secrets in telemetry.
+  An authorized `POST /api/internal/push-drain`
+  with a whitelisted `x-ops-replay-reason` can
+  safely rerun the same idempotent bounded sequence.
+  No external monitor is auto-configured or claimed.
+- CI on disposable PostgreSQL 17 now runs a real
+  full custom-format `pg_dump` and `pg_restore`
+  into a **new** `group_expense_sc010_restore`
+  database. `db/sc010-restore-verify.mjs` compares
+  SHA-256/checksum proofs of ORIGINAL invoices,
+  obligations, CASH allocations, BN-004 NONCASH
+  source and allocations, SC-004 snapshot, SC-006
+  late provenance, SC-009 disputes, notifications,
+  SC-010 Cron evidence, recurring checkpoints,
+  BN-005 canonical balances and ALL migration
+  checksum versions. CI refuses any non-disposable
+  connection string and removes its temporary dump.
+- Isolated Neon **child** `sc010-rehearsal-20261105`
+  (`br-curly-rice-b3xenws6`) was created FROM
+  the existing development branch only. **Read-only**
+  preflight found 10 pre-existing migrations and
+  an empty child-vs-parent schema diff. Shared
+  development and production branches are unchanged.
+  **Migration 011–023 and full managed-Neon
+  restoration NOT executed** pending a separate
+  explicit schema-migration authorization. The
+  dedicated test branch remains for that future
+  independent rehearsal.
+- The operator runbook documents replay, monitoring
+  severity/thresholds, no implicit approval of money,
+  append-only recovery, non-destructive rollback,
+  isolated Neon migration rehearsal, staged release
+  1→5→25 opted-in groups, operational signoff
+  and all pending production gates. No feature
+  flags were flipped; no shared Neon migrations,
+  manual staging/production deployment, merge or
+  production activation.
+- Vercel Git integration may create automated
+  **feature-preview** builds; these are NOT
+  staging/prod promotion, and without Neon
+  migrations are NOT valid feature E2E proof.
+  Physical iOS/Android interaction, real provider
+  monitoring, production PITR and controlled
+  release remain separate red NO-GO gates.
+
+**Contract/runbook:**
+[SC-010-OPERATIONS-ROLLOUT.md](./SC-010-OPERATIONS-ROLLOUT.md).
+
+**Explicit release boundary:** PR #16 must stay Draft,
+base `develop`, `SETTLEMENT_CYCLE_ENGINE_READY=false`
+unchanged. No automatic merging, migration, promotion,
+or any BN-007 multi-party expansion. The ticket's
+operational CODE is implemented and tested; full
+managed-Neon rehearsal and live launch are
+**NOT** certified.
 
 ## Design debt & migration/release gates
 
