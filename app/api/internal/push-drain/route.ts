@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { drainPushQueue } from "@/lib/notifications/push-worker";
 import { generateDueRecurringExpenses } from "@/lib/recurring/service";
 import { processCycleMetadataCron } from "@/lib/settlement-cycles/lifecycle";
+import {issueCycleReminders} from "@/lib/settlement-cycles/reminders";
 
 /**
  * Reuse the existing single daily Vercel cron. On Hobby, schedules can
@@ -37,14 +38,28 @@ export async function GET(request:Request) {
   if(cycles.status==="rejected")
     console.error("Cycle metadata Cron failed",
       cycles.reason instanceof Error?cycles.reason.name:"Unknown");
+  const reminders=(await Promise.allSettled([issueCycleReminders(40)]))[0];
+  if(reminders.status==="rejected")
+    console.error("Cycle reminder Cron failed",
+      reminders.reason instanceof Error?reminders.reason.name:"Unknown");
+  // Reminders are enqueued after the first push drain; run a second bounded
+  // drain only when new notices were inserted, without touching money.
+  const reminderPush=reminders.status==="fulfilled"&&reminders.value.inserted>0
+    ?(await Promise.allSettled([drainPushQueue(undefined,30)]))[0]
+    :null;
   // A metadata failure deserves an observable 500 so the job can be retried;
   // finance stays disabled regardless of cron success.
   const failed=recurring.status==="rejected"||push.status==="rejected"||
     cycles.status==="rejected"||
-    (cycles.status==="fulfilled"&&cycles.value.errors>0);
+    (cycles.status==="fulfilled"&&cycles.value.errors>0)||
+    reminders.status==="rejected"||
+    reminderPush?.status==="rejected";
   return Response.json({
     recurring:recurring.status==="fulfilled"?recurring.value:{error:"Recurring task failed"},
     push:push.status==="fulfilled"?push.value:{error:"Push delivery failed"},
     cycles:cycles.status==="fulfilled"?cycles.value:{error:"Metadata cycle task failed"},
+    reminders:reminders.status==="fulfilled"?reminders.value:{error:"Reminder task failed"},
+    reminderPush:reminderPush?.status==="fulfilled"?reminderPush.value:
+      reminderPush?.status==="rejected"?{error:"Reminder delivery deferred"}:null,
   },{status:failed?500:200,headers:{"Cache-Control":"private, no-store"}});
 }
