@@ -79,6 +79,8 @@ jobs:
       SC005_TEST_ONLY: isolated-pg17
       # BN-004 noncash financial writes exist ONLY in disposable PG17 HTTP CI.
       BN004_TEST_ONLY: isolated-pg17
+      # BN-006 residual cash available only in disposable PG17 integration.
+      BN006_TEST_ONLY: isolated-pg17
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
