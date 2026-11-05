@@ -42,7 +42,7 @@
 | BN-002 | P0 | Bilateral proposal persistence, one group+cycle+pair+version, stable fingerprint and conflict handling | BN-001 | DONE ON FEATURE BRANCH — CI + POSTGRES/HTTP PASS; NO APPROVAL / NO LEDGER |
 | BN-003 | P0 | Dual approval with identities, invalidation/rejection/expiry/revoke, no auto-apply | BN-002 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO NONCASH LEDGER |
 | BN-004 | P0 | Atomic two-sided NONCASH application under row locks, exact A↔B conservation, immutable original-source audit; no persistent interim reservations | BN-003 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
-| BN-005 | P0 | Integrate `confirmed_setoff` into **all** outstanding, available, leave/archive, paid, completion and report queries | BN-004 | TODO |
+| BN-005 | P0 | Integrate `confirmed_setoff` into **all** outstanding, available, leave/archive, paid, completion and report queries | BN-004 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
 | BN-006 | P0 | Net residual cash settlement through the pre-existing two-party confirmation flow | BN-005,SC-005 | TODO |
 | SC-006 | P0 | Invoice/recurring/member-leave/group-archive integration, unlock/adjustment policy, no retroactive edits | SC-004,BN-005 | TODO |
 | SC-007 | P0 | Full financial concurrency, authz, property-based and E2E regression suite; release gate | SC-006,BN-006 | TODO |
@@ -332,6 +332,49 @@ staging/production deployment. There are NO persistent pending setoff
 reservations: both original sides are row-locked and applied atomically
 in one transaction, rather than staged as a pending reservation.
 PR #16 remains Draft and unmerged.
+
+## BN-005 — canonical live cash + confirmed noncash accounting (this conversation)
+
+**DONE ON FEATURE BRANCH; NOT RELEASED.** New migration
+`019_bilateral_setoff_balance_integration.sql` defines a single
+`bn005_obligation_balances` view over ORIGINAL obligations. The exact
+equations are `outstanding=original-confirmed_cash-confirmed_setoff`
+and `available=outstanding-pending_cash` (BN-004 has no persistent
+pending-setoff reservations). Cash statuses remain distinct from
+the immutable BN-004 confirmed noncash application, with no synthetic
+bank transfer, duplicate invoice or change to frozen snapshot amounts.
+
+**Consumers:** original group/personal debt and debt-detail reports,
+uncapped group totals, manual cash availability, SC-005 batch preview,
+BN-002 source previews (with same pair+cycle replay refused),
+creator-only invoice progress/completion, leave and archive guards.
+Expense and debt cards disclose cash and noncash as SEPARATE categories
+while showing combined discharged obligations; no setoff is displayed
+as a bank transfer. PostgreSQL frozen completion trigger recognizes
+noncash discharge without granting noncreator approval.
+
+**Fail-closed:** database deferred constraints protect cash allocation
+creation/status changes and noncash proof insert from spending more than
+the original balance. Negative live balances block exit, archive and
+invoice completion. Cash still uses the original bilateral confirmation.
+All queries derive live balances from the canonical view under existing
+group/obligation write locking. No UI pagination limit enters rollups.
+
+**Tests:** migration installed twice on disposable PG17;
+CI lint/typecheck/unit/production build; full SQL/HTTP regression with
+122 original obligations, bilateral conservation, source setoff audit,
+manual cash overdraw denial, direct SQL overdraw rollback, client/server
+report agreement, creator-only completion after noncash discharge,
+leave/archive blocking, SC-005 preview and pending cash cancellation
+and confirmation against the residual. The original noncash proof and
+cash histories stay immutable.
+
+**Contract:** [BN-005-BALANCE-INTEGRATION.md](./BN-005-BALANCE-INTEGRATION.md).
+**Hard exclusions:** BN-006 residual-cash workflow; SC-006 late
+adjustment/membership lifecycle improvements; SC-008 UI expansion;
+group/cycle finance activation; Neon/staging/production migrations;
+merge to `develop`/`main`. PR #16 remains Draft,
+`SETTLEMENT_CYCLE_ENGINE_READY=false`.
 
 ## Design debt & migration/release gates
 
