@@ -24,6 +24,11 @@ CREATE TABLE group_settlement_bilateral_decision_events (
   CONSTRAINT bn003_pair_actor CHECK (actor_id IS NULL OR actor_id IN (party_low,party_high)),
   CONSTRAINT bn003_request_unique UNIQUE(proposal_id,request_key)
 );
+-- One idempotency key cannot represent two decisions by the same
+-- participant, even across separate versions of the same group's cycle.
+CREATE UNIQUE INDEX bn003_actor_request_scope
+ ON group_settlement_bilateral_decision_events(group_id,actor_id,request_key)
+ WHERE actor_id IS NOT NULL;
 CREATE UNIQUE INDEX bn003_one_approval_per_party
  ON group_settlement_bilateral_decision_events(proposal_id,actor_id)
  WHERE event_type='approve';
@@ -49,7 +54,11 @@ DECLARE p record; old_terminal boolean; old_approvals integer;
   same_actor_approval boolean; current_head uuid;
   is_live boolean; source_changed boolean; active_pair boolean;
 BEGIN
-  SELECT * INTO p FROM group_settlement_bilateral_proposals WHERE id=NEW.proposal_id;
+  -- Serialize independent SQL workers on the SAME immutable proposal.
+  -- Without this lock a concurrent APPROVE and REJECT could both observe
+  -- no terminal event before either INSERT commits.
+  SELECT * INTO p FROM group_settlement_bilateral_proposals
+    WHERE id=NEW.proposal_id FOR UPDATE;
   IF NOT FOUND OR NEW.source_fingerprint<>p.source_fingerprint
      OR NEW.group_id<>p.group_id OR NEW.cycle_id<>p.cycle_id
      OR NEW.party_low<>p.party_low OR NEW.party_high<>p.party_high
