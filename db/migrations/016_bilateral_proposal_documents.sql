@@ -135,7 +135,9 @@ BEGIN
          AND o.voided_at IS NULL AND e.deleted_at IS NULL
          AND src.original_minor=NEW.original_minor
          AND src.expense_version=NEW.expense_version
-         AND e.version=NEW.expense_version
+         AND (e.version=NEW.expense_version
+           OR (e.version=NEW.expense_version+1 AND e.completed_at IS NOT NULL
+             AND e.completed_by=e.created_by))
          AND o.expense_version=NEW.expense_version
          AND e.occurred_on=NEW.occurred_on AND se.occurred_on=NEW.occurred_on
      ) THEN
@@ -262,7 +264,10 @@ BEGIN
     ) cash ON true
     WHERE x.proposal_id=p.id
       AND (o.voided_at IS NOT NULL OR e.deleted_at IS NOT NULL
-        OR e.version<>x.expense_version OR o.expense_version<>x.expense_version
+        OR (e.version<>x.expense_version AND NOT (
+          e.version=x.expense_version+1 AND e.completed_at IS NOT NULL
+          AND e.completed_by=e.created_by))
+        OR o.expense_version<>x.expense_version
         OR o.amount_minor<>x.original_minor
         OR cash.paid<>x.confirmed_cash_minor
         OR cash.pending<>x.pending_cash_minor
