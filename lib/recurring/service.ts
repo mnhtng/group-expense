@@ -217,19 +217,25 @@ export async function setRecurringStatus(groupId:string,id:string,actorId:string
  */
 export async function generateDueRecurringExpenses(
   today=todayVietnamISO(),maxGenerated=20,onlyRuleId?:string,
-):Promise<{generated:number;ignored:number;paused:number;errors:number}> {
+):Promise<{generated:number;ignored:number;paused:number;errors:number;
+  checked:number;hasMoreRules:boolean}> {
   // Validate date before any database activity.
   dueDatesThrough(today,today,1);
   const rows=await pool.query<{id:string;group_id:string}>(
     `SELECT r.id,r.group_id FROM recurring_expense_rules r
      JOIN groups g ON g.id=r.group_id
+     LEFT JOIN recurring_cron_checkpoints cp ON cp.rule_id=r.id
      WHERE r.status='active' AND g.archived_at IS NULL
        AND ($1::uuid IS NULL OR r.id=$1)
-     ORDER BY r.created_at,r.id LIMIT 200`,
+     ORDER BY cp.last_checked_at ASC NULLS FIRST,r.id LIMIT 201`,
     [onlyRuleId??null],
   );
-  const result={generated:0,ignored:0,paused:0,errors:0};
-  for(const target of rows.rows) {
+  const result={generated:0,ignored:0,paused:0,errors:0,
+    checked:0,hasMoreRules:false};
+  // LIMIT 201 reveals whether the bounded 200-rule scan is incomplete.
+  // PostgreSQL checkpoints rotate the oldest last-checked rules to
+  // prevent starving newly activated recurring rules.
+  for(const target of rows.rows.slice(0,200)) {
     if(result.generated>=maxGenerated)break;
     try {
       const current=await tx(async client=>{
@@ -306,7 +312,19 @@ export async function generateDueRecurringExpenses(
       result.errors++;
       console.error("Recurring generation failed",error instanceof Error?error.name:"Unknown");
     }
+    if(!onlyRuleId){
+      await pool.query(`INSERT INTO recurring_cron_checkpoints
+        (rule_id,last_checked_at,last_error_at)
+        VALUES($1,clock_timestamp(),
+          CASE WHEN $2 THEN clock_timestamp() ELSE NULL END)
+        ON CONFLICT(rule_id) DO UPDATE SET
+          last_checked_at=EXCLUDED.last_checked_at,
+          last_error_at=EXCLUDED.last_error_at`,
+        [target.id,false]);
+    }
+    result.checked++;
   }
+  result.hasMoreRules=rows.rows.length>result.checked;
   return result;
 }
 export function recurringNextDate(rule:Pick<RecurringRule,"startsOn"|"dayOfMonth"|"lastPeriod">) {
