@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {notFound} from "next/navigation";
 import {requireUser} from "@/lib/auth/session";
-import {getGroupDetails} from "@/lib/groups/service";
+import {getMemberRole,getGroupDetails} from "@/lib/groups/service";
 import {getSettlementSettings} from "@/lib/settlement-cycles/settings";
 import {listSettlementCycles} from "@/lib/settlement-cycles/lifecycle";
 import {formatDateDMY} from "@/lib/date-format";
@@ -12,6 +12,7 @@ export default async function GroupCyclesPage({params}:{
 }){
   const {groupId}=await params;
   const user=await requireUser();
+  if(!await getMemberRole(groupId,user.id))notFound();
   const [group,setting,records]=await Promise.all([
     getGroupDetails(groupId,user.id),
     getSettlementSettings(groupId,user.id),
