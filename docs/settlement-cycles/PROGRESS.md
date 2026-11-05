@@ -848,12 +848,110 @@ untouched, PR #16 remains Draft/open/unmerged against
 `develop`. No shared Neon migrations and no Vercel
 staging/production deployments.
 
-## NEXT CONVERSATION: SC-009 ONLY
+## 2026-11-05 — SC-009 DONE on isolated feature branch (release NO-GO)
 
-Implement SC-009 in-app notifications, reminders, dispute UX,
-late-adjustment follow-up, immutable audit/export and user
-reconciliation reporting with financial-engine OFF, correct
-pair identity and without inventing a bank transfer. Complete
-appropriate CI + PG17/HTTP/UI regression, only after explicit
-new request. Keep PR #16 Draft and do not deploy/merge.
+**Scope only SC-009:** in-app notifications and overdue reminders,
+actual two-person disputes, manager late-invoice follow-up,
+source-immutable chronological audit, original-ledger CSV export
+and full live debt reconciliation. No new money entry, ledger
+discharge, fake bank transfer, invoice/snapshot modification
+or automatic cycle completion.
 
+**Implementation**
+- `022_settlement_cycle_notifications_disputes.sql`: compatible
+  extension of existing cash notification schema, nullable
+  system actor, scoped original cycle+group FK and unique
+  recipient/event-key idempotency. Immutable event triggers
+  emit pair-specific proposal/decision/NONCASH notices,
+  review/snapshot lock notice, SC-006 actual late-invoice
+  attribution notice, pair-dispute lifecycle notices.
+  Original settlement notification history stays unchanged,
+  push preferences and queued delivery are reused.
+- Original locked-cycle obligation dispute has immutable
+  `group_settlement_cycle_disputes` and append-only
+  `group_settlement_cycle_dispute_events`. Signed real
+  counterparty only; `respond` from counterpart,
+  `resolve`/ `withdraw` only from reporter. Idempotent
+  per actor/request key; no owner/admin impersonation.
+  SQL direct writes cannot UPDATE/DELETE documents.
+  Only real pair can read private correspondence, including
+  in audit/CSV. A 3rd-party group admin receives NO
+  pair-specific dispute contents.
+- OPEN/awaiting original dispute blocks both new original
+  manual CASH allocations and SC-005 batch CASH against
+  affected original, BN-004 NONCASH application and
+  confirmation of pre-existing original pending CASH.
+  It does not auto-cancel or rewrite settled money.
+  SC-005 returns a controlled HTTP 409, not SQL 500.
+- `lib/settlement-cycles/disputes.ts`: active group
+  lock, exact original pair and locked cycle checks,
+  optimistic source safety, original event reuse, repeat
+  200 vs fresh 201 and conflict 409; immutable history.
+  Two signed HTTP routes implement list/open/respond/
+  resolve/withdraw. No client actorId/amount/status.
+- `lib/settlement-cycles/reconciliation.ts`: source
+  exact BN-005 cash, noncash, pending, remaining
+  conservation under repeatable-read read-only SQL;
+  incomplete creator invoice, current live unresolved
+  proposal, disputed source and pending original CASH
+  counters; readiness is informational only.
+  Chronological audit combines existing immutable
+  financial and cycle sources, with original IDs
+  and pair privacy, 50-event page, 20k CSV ceiling
+  (refuse, never silently truncate).
+- `components/groups/settlement-cycle-ops-panel.tsx`
+  is a mobile-first detail panel with human readable
+  live report, external CSV downloads, private
+  original-source dispute selector, inline consent,
+  counterpart responses and historical events.
+  Existing cash/nonce workbench and creator-only
+  invoice completion remain unchanged.
+- `lib/settlement-cycles/reminders.ts` and existing
+  authenticated Cron reuse original push queue;
+  bounded 40 daily event/recipient idempotent reminders
+  for review/approval/pending CASH/late original/
+  dispute. New reminders remain disabled on real
+  environments while financial release is OFF.
+  CI-only gate requires EXACT `CI=true` +
+  `SC009_TEST_ONLY=isolated-pg17` + disposable
+  PostgreSQL localhost URL.
+
+**Verification source SHA `fad9d53a8ad508d4ffff20321276f9a2827a4bde`:**
+- [CI Success](https://github.com/mnhtng/group-expense/actions/runs/42021023429):
+  lint, TypeScript, unit + UI contract, production build.
+- [Disposable PostgreSQL 17 / authenticated HTTP Success](https://github.com/mnhtng/group-expense/actions/runs/42021023156):
+  migration 001–022 installed twice; full financial SQL,
+  native tests, 16 concurrent cash races, BN-004 pair
+  conservation, before/after independent financial audit.
+  Real signed flow: opens one pair-private original dispute
+  and notification, rejects admin/third party and fake
+  actor/changed key, original pending CASH cannot be
+  confirmed, new manual or cycle CASH allocation cannot
+  be created against active dispute, immutable note audit,
+  original counterpart responds, original reporter resolves,
+  source money unchanged. JSON and CSV export enforce
+  membership and private pair history. Event-key
+  notification idempotency checked under concurrent
+  direct PostgreSQL calls.
+- [SC-009 canonical document](./SC-009-NOTIFICATIONS-DISPUTES-RECONCILIATION.md)
+  describes source identities, endpoints, security,
+  CSV/notifications/reminder policy, testing and
+  release limits.
+
+**Explicit release hold:** `SETTLEMENT_CYCLE_ENGINE_READY=false`
+unchanged. No shared Neon branch migration, no
+staging/production deploy, no merge to develop/main.
+PR #16 open Draft targeting develop. This is
+CI + PostgreSQL/HTTP verification, not physical
+browser/iOS/Android E2E or real platform release.
+No SC-010 operational runbook/recovery plan implemented
+in this conversation.
+
+## NEXT CONVERSATION: SC-010 ONLY
+
+Develop operational safe rollout gates, Cron backlog
+and observability, recovery/rollback, isolated Neon
+rehearsal and staged launch runbooks, strictly
+on the feature branch and only after an explicit
+new user request. Preserve financial engine OFF,
+PR #16 Draft and no shared environment release.
