@@ -3308,6 +3308,170 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       WHERE o.group_id=$1 AND o.voided_at IS NULL`,[bnGroup])).rows[0].due;
     assert.equal(allZero,"0","entire pair now settled only after other-person confirmation");
 
+    // SC-006: retroactive entry after a sealed snapshot is NOT silently
+    // imported or cloned. An explicitly authorized manager attributes the
+    // ORIGINAL invoice to the earliest subsequent REVIEW cycle.
+    const sc006Group=randomUUID(),sc006Revision=randomUUID();
+    const sc006GroupName="SC006 late adjustment";
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,$3)",
+      [sc006Group,registered.user.id,sc006GroupName]);
+    for(const [u,role] of [[registered.user.id,"owner"],
+      [otherUser.id,"member"],[thirdUser.id,"admin"]])
+      await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,$3)",
+        [sc006Group,u,role]);
+    const sc006Settings=`${origin}/api/groups/${sc006Group}/settlement-cycle/settings`;
+    const sc006Api=`${origin}/api/groups/${sc006Group}/settlement-cycle/cycles`;
+    const sc006Expenses=`${origin}/api/groups/${sc006Group}/expenses`;
+    assert.equal((await expenseRequest("PATCH",sc006Settings,
+      config(0,true,false),jar)).response.status,200);
+    await pool.query(`UPDATE group_settlement_config_events
+      SET recorded_at=$2::timestamptz
+      WHERE group_id=$1 AND event_type='settings_changed'`,
+      [sc006Group,sc003Date(-12)+"T00:00:00Z"]);
+    await pool.query(`INSERT INTO group_settlement_schedule_heads
+      (group_id,updated_by) VALUES($1,$2)`,[sc006Group,registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,1,'manual','UTC',$3,$4,$5)`,
+      [sc006Revision,sc006Group,sc003Date(-11),
+        sc003Date(-11)+"T00:00:00Z",registered.user.id]);
+    const sc006OriginMade=await expenseRequest("POST",sc006Api,{
+      expectedScheduleVersion:1,requestKey:randomUUID(),
+      startDate:sc003Date(-10),endDate:sc003Date(-7),
+    },jar);
+    assert.equal(sc006OriginMade.response.status,201,
+      JSON.stringify(sc006OriginMade.body));
+    const sc006Origin=sc006OriginMade.body.cycle.id;
+    const sc006Original=await expenseRequest("POST",sc006Expenses,{
+      title:"Original on-time purchase",occurredOn:sc003Date(-9),
+      payerId:registered.user.id,items:[{name:"Food",quantity:1,
+        unitPriceMinor:"10000",participants:[otherUser.id]}],
+    },jar);
+    assert.equal(sc006Original.response.status,201);
+    assert.equal((await expenseRequest("POST",
+      `${sc006Api}/${sc006Origin}/review`,{expectedVersion:1},jar))
+      .response.status,200);
+    const originSnapshotUrl=`${sc006Api}/${sc006Origin}/snapshot`;
+    const originPreview=(await expenseRequest("GET",
+      originSnapshotUrl,undefined,jar)).body.snapshot;
+    assert.equal(originPreview.expenseCount,1);
+    assert.equal((await expenseRequest("POST",originSnapshotUrl,{
+      expectedVersion:2,requestKey:randomUUID(),
+      expectedFingerprint:originPreview.fingerprint,
+    },jar)).response.status,200);
+
+    const late=await expenseRequest("POST",sc006Expenses,{
+      title:"Late original grocery invoice",occurredOn:sc003Date(-9),
+      payerId:otherUser.id,items:[{name:"Groceries",quantity:1,
+        unitPriceMinor:"7000",participants:[registered.user.id]}],
+    },otherJar);
+    assert.equal(late.response.status,201);
+    const lateId=late.body.id;
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_cycle_snapshot_expenses
+      WHERE cycle_id=$1 AND expense_id=$2`,
+      [sc006Origin,lateId])).rows[0].n,0,
+      "late historical invoice never mutates the sealed origin");
+    const lateApi=`${sc006Api}/${sc006Origin}/late-adjustments`;
+    const lateBefore=await expenseRequest("GET",lateApi,undefined,jar);
+    assert.equal(lateBefore.response.status,200,JSON.stringify(lateBefore.body));
+    assert.equal(lateBefore.body.total,1);
+    assert.equal(lateBefore.body.lateInvoices[0].id,lateId);
+    assert.equal(lateBefore.body.eligibleTarget,null);
+    assert.equal((await expenseRequest("GET",lateApi,undefined,new Map()))
+      .response.status,401);
+
+    const targetMade=await expenseRequest("POST",sc006Api,{
+      expectedScheduleVersion:1,requestKey:randomUUID(),
+      startDate:sc003Date(-7),endDate:sc003Date(-4),
+    },jar);
+    assert.equal(targetMade.response.status,201,JSON.stringify(targetMade.body));
+    const sc006Target=targetMade.body.cycle.id;
+    const onTimeTarget=await expenseRequest("POST",sc006Expenses,{
+      title:"Current cycle purchase",occurredOn:sc003Date(-6),
+      payerId:registered.user.id,items:[{name:"Dinner",quantity:1,
+        unitPriceMinor:"3000",participants:[otherUser.id]}],
+    },jar);
+    assert.equal(onTimeTarget.response.status,201);
+    assert.equal((await expenseRequest("POST",
+      `${sc006Api}/${sc006Target}/review`,{expectedVersion:1},jar))
+      .response.status,200);
+    const targetSnapshotUrl=`${sc006Api}/${sc006Target}/snapshot`;
+    const targetBefore=(await expenseRequest("GET",
+      targetSnapshotUrl,undefined,jar)).body.snapshot;
+    assert.equal(targetBefore.expenseCount,1);
+    const assignment=(key=randomUUID(),target=sc006Target,version=1)=>({
+      expenseId:lateId,targetCycleId:target,
+      expectedExpenseVersion:version,requestKey:key,
+      note:"Ghi nhận hóa đơn nhập muộn ở kỳ kế tiếp",
+    });
+    assert.equal((await expenseRequest("POST",lateApi,
+      assignment(),thirdJar)).response.status,403,
+      "admin without explicit cycle manager grant cannot attribute");
+    assert.equal((await expenseRequest("POST",lateApi,
+      assignment(),otherJar)).response.status,403,
+      "only owner/delegated manager, not invoice creator, may attribute");
+    assert.equal((await expenseRequest("POST",lateApi,{
+      ...assignment(),amountMinor:"1"},jar)).response.status,400,
+      "client must not supply a financial adjustment amount");
+    const key006=randomUUID();
+    const doubleAssign=await Promise.all([
+      expenseRequest("POST",lateApi,assignment(key006),jar),
+      expenseRequest("POST",lateApi,assignment(key006),jar),
+    ]);
+    assert.deepEqual(doubleAssign.map(x=>x.response.status).sort(),[200,201]);
+    assert.equal(doubleAssign[0].body.adjustment.id,
+      doubleAssign[1].body.adjustment.id);
+    assert.equal((await expenseRequest("POST",lateApi,
+      assignment(key006,sc006Target,2),jar)).response.status,409);
+    assert.equal((await expenseRequest("POST",lateApi,
+      assignment(),jar)).response.status,409,
+      "cannot allocate one original invoice twice");
+    const changedPreview=(await expenseRequest("GET",
+      targetSnapshotUrl,undefined,jar)).body.snapshot;
+    assert.equal(changedPreview.expenseCount,2,
+      "target snapshot includes both current and attributed ORIGINAL invoice");
+    assert.equal(changedPreview.obligationCount,2);
+    assert.notEqual(changedPreview.fingerprint,targetBefore.fingerprint);
+    assert.equal((await expenseRequest("POST",targetSnapshotUrl,{
+      expectedVersion:2,requestKey:randomUUID(),
+      expectedFingerprint:targetBefore.fingerprint,
+    },jar)).response.status,409,"stale snapshot fingerprint fails closed");
+    const frozenLateEdit=await expenseRequest("PATCH",
+      `${sc006Expenses}/${lateId}`,{
+        expectedVersion:1,title:"Forged historical change",
+        occurredOn:sc003Date(-9),payerId:otherUser.id,
+        items:[{name:"Changed",quantity:1,unitPriceMinor:"8000",
+          participants:[registered.user.id]}],
+      },otherJar);
+    assert.equal(frozenLateEdit.response.status,409,
+      "attributed invoice must be frozen even BEFORE target lock");
+    await assert.rejects(pool.query(`
+      UPDATE expenses SET occurred_on=$2::date WHERE id=$1`,
+      [lateId,sc003Date(-8)]),/Frozen cycle expense/);
+    await assert.rejects(pool.query(`
+      DELETE FROM group_settlement_cycle_adjustments WHERE expense_id=$1`,
+      [lateId]),/immutable/);
+    assert.equal((await expenseRequest("POST",targetSnapshotUrl,{
+      expectedVersion:2,requestKey:randomUUID(),
+      expectedFingerprint:changedPreview.fingerprint,
+    },jar)).response.status,200,
+      "target lock must preserve historical occurred_on under explicit attribution");
+    const sourceRows=await pool.query(`SELECT
+      (SELECT count(*)::int FROM group_settlement_cycle_snapshot_expenses
+       WHERE cycle_id=$1) AS origin_count,
+      (SELECT count(*)::int FROM group_settlement_cycle_snapshot_expenses
+       WHERE cycle_id=$2) AS target_count,
+      (SELECT count(*)::int FROM group_settlement_cycle_snapshot_obligations
+       WHERE expense_id=$3) AS original_obligation_count,
+      (SELECT count(*)::int FROM expenses WHERE id=$3) AS original_invoice_count`,
+      [sc006Origin,sc006Target,lateId]);
+    assert.deepEqual(sourceRows.rows[0],{
+      origin_count:1,target_count:2,
+      original_obligation_count:1,original_invoice_count:1,
+    },"no duplicate original invoice, obligation or frozen snapshot");
+    assert.equal((await expenseRequest("GET",lateApi,undefined,jar))
+      .body.lateInvoices[0].assignedTargetId,sc006Target);
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
