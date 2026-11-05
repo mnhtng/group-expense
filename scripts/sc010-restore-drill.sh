@@ -29,7 +29,7 @@ test -s "$backup_path"
 docker run --rm --network host -e PGPASSWORD=test postgres:17 \
   psql -h 127.0.0.1 -U test -d postgres -v ON_ERROR_STOP=1 \
   -c 'CREATE DATABASE group_expense_sc010_restore'
-docker run --rm --network host -e PGPASSWORD=test postgres:17 \
+docker run --rm -i --network host -e PGPASSWORD=test postgres:17 \
   pg_restore -h 127.0.0.1 -U test \
   -d group_expense_sc010_restore --no-owner --no-acl --exit-on-error \
   < "$backup_path"
