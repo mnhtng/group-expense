@@ -157,11 +157,19 @@ async function noHorizontalOverflow(page,name){
   assert.ok(dims.scroll<=dims.client+2,
     name+" horizontal overflow "+JSON.stringify(dims));
 }
-async function scenario(engine,project,options){
+async function scenario(engine,project,options,actors){
   const browser=await engine.launch({headless:true});
   const users=[];
   const create=async tag=>{
-    const u=await userFor(browser,options,tag);
+    // Reuse one actual server-issued Better Auth identity per human role
+    // across independent browser profiles. Every scenario creates a NEW
+    // browser context with its own cookie jar and NEW isolated group.
+    // We do not spoof tokens or relax signup rate limits.
+    const actor=actors[tag];
+    assert.ok(actor,"missing signed fixture actor: "+tag);
+    const context=await browser.newContext({...options,baseURL:ORIGIN,
+      acceptDownloads:true,serviceWorkers:"allow",storageState:actor.storageState});
+    const u={context,page:await context.newPage(),id:actor.id,name:actor.name};
     users.push(u);
     return u;
   };
@@ -437,9 +445,26 @@ test("RR-002 signed Chromium/WebKit browser interactions on disposable PG17",{
         ...playwright.devices["Pixel 7"],
       }],
     ];
+    // Four real signups TOTAL, not four for each browser engine. A
+    // separate disposable browser establishes legitimate Better Auth
+    // sessions once, then each profile imports those signed cookies.
+    // Waiting on the actual rate limiter is retained as a fallback.
+    const bootstrap=await playwright.chromium.launch({headless:true});
+    const actors={};
+    try{
+      for(const tag of ["owner","counterparty","admin","outsider"]){
+        const u=await userFor(bootstrap,{viewport:{width:1280,height:800}},tag);
+        try{
+          actors[tag]={id:u.id,name:u.name,
+            storageState:await u.context.storageState()};
+        }finally{
+          await u.context.close();
+        }
+      }
+    }finally{await bootstrap.close();}
     for(const [project,engine,options] of scenarios){
       await t.test(project,{timeout:1000*60*6},async()=>{
-        await scenario(engine,project,options);
+        await scenario(engine,project,options,actors);
         console.log("RR002 browser PASS: "+project);
       });
     }
