@@ -1,6 +1,6 @@
 import {authorizedOpsRequest} from "@/lib/settlement-cycles/ops-auth";
 import {readSettlementOpsHealth} from "@/lib/settlement-cycles/ops-runner";
-export const dynamic="force-dynamic";
+
 const noStore={"Cache-Control":"private, no-store",
   "X-Content-Type-Options":"nosniff"};
 /** Bearer-only, redacted counts/status, no group/member/invoice identifiers. */
