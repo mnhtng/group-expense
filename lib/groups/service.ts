@@ -62,11 +62,12 @@ export async function archiveGroup(groupId: string, ownerId: string, confirmatio
          WHERE s.group_id=g.id AND s.status='pending')
        AND NOT EXISTS(
          SELECT 1 FROM obligations o
+         JOIN expenses e ON e.id=o.expense_id
          WHERE o.group_id=g.id AND o.voided_at IS NULL
-           AND o.amount_minor >
-             COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
-               JOIN settlements s ON s.id=a.settlement_id
-               WHERE a.obligation_id=o.id AND s.status='confirmed'),0)
+           AND e.deleted_at IS NULL
+           AND EXISTS(
+             SELECT 1 FROM bn005_obligation_balances b
+             WHERE b.obligation_id=o.id AND b.outstanding_minor>0)
        )`,
     [groupId, ownerId, confirmation.trim()],
   );
