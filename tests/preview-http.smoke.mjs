@@ -3605,6 +3605,24 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal((await expenseRequest("POST",sc009Disputes,{
       ...sc009Opening,actorId:thirdUser.id,
     },jar)).response.status,400,"client cannot spoof dispute actor");
+    // A genuine pre-existing PENDING original cash request is retained
+    // as history when the counterparty opens a new dispute. No auto-cancel.
+    const sc009PendingId=randomUUID(),manual=await pool.connect();
+    try{
+      await manual.query("BEGIN");
+      await manual.query(`INSERT INTO settlements
+        (id,group_id,debtor_id,creditor_id,initiated_by,status,amount_minor,
+         request_key,request_fingerprint) VALUES($1,$2,$3,$4,$5,'pending',1,$6,$7)`,
+        [sc009PendingId,sc006Group,sc009Original.debtor,
+          sc009Original.creditor,registered.user.id,randomUUID(),"a".repeat(64)]);
+      await manual.query(`INSERT INTO settlement_allocations
+        (settlement_id,obligation_id,group_id,debtor_id,creditor_id,amount_minor)
+        VALUES($1,$2,$3,$4,$5,1)`,
+        [sc009PendingId,sc009Original.id,sc006Group,sc009Original.debtor,
+          sc009Original.creditor]);
+      await manual.query("COMMIT");
+    }catch(e){await manual.query("ROLLBACK");throw e;}
+    finally{manual.release();}
     const sc009Opened=await expenseRequest("POST",sc009Disputes,
       sc009Opening,jar);
     assert.equal(sc009Opened.response.status,201,JSON.stringify(sc009Opened.body));
@@ -3658,22 +3676,6 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       FROM group_settlement_cycle_repayments WHERE group_id=$1 AND cycle_id=$2`,
       [sc006Group,sc006Target])).rows[0].n,sc009CashBefore);
 
-    const sc009PendingId=randomUUID(),manual=await pool.connect();
-    try{
-      await manual.query("BEGIN");
-      await manual.query(`INSERT INTO settlements
-        (id,group_id,debtor_id,creditor_id,initiated_by,status,amount_minor,
-         request_key,request_fingerprint) VALUES($1,$2,$3,$4,$5,'pending',1,$6,$7)`,
-        [sc009PendingId,sc006Group,sc009Original.debtor,
-          sc009Original.creditor,registered.user.id,randomUUID(),"a".repeat(64)]);
-      await manual.query(`INSERT INTO settlement_allocations
-        (settlement_id,obligation_id,group_id,debtor_id,creditor_id,amount_minor)
-        VALUES($1,$2,$3,$4,$5,1)`,
-        [sc009PendingId,sc009Original.id,sc006Group,sc009Original.debtor,
-          sc009Original.creditor]);
-      await manual.query("COMMIT");
-    }catch(e){await manual.query("ROLLBACK");throw e;}
-    finally{manual.release();}
     await assert.rejects(pool.query(`
       UPDATE settlements SET status='confirmed',resolved_at=now(),resolved_by=$2
       WHERE id=$1`,[sc009PendingId,otherUser.id]),
