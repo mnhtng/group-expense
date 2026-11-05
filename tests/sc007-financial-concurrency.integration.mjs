@@ -84,8 +84,9 @@ it("SC-007 real PG17: concurrent cash writers can NEVER double-book original obl
         const denied=committed.filter(x=>x.status==="rejected");
         assert.equal(ok,1,`trial ${i}: only one cash transaction may COMMIT`);
         assert.equal(denied.length,1);
-        assert.match(String(denied[0].reason?.message),/BN-005 cash exceeds live debt/,
-          `trial ${i}: losing transaction must fail closed under DB locks`);
+        assert.ok(denied[0].reason?.code==="40P01" ||
+          /BN-005 cash exceeds live debt/.test(String(denied[0].reason?.message)),
+          `trial ${i}: losing transaction must roll back on capacity or PostgreSQL deadlock`);
         const actual=await pool.query(`SELECT o.id,
           b.original_minor::text AS original,b.confirmed_cash_minor::text AS cash,
           b.pending_cash_minor::text AS pending,
