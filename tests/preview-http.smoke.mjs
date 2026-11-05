@@ -2429,6 +2429,170 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       `SELECT count(*)::int AS n FROM settlement_allocations WHERE group_id=$1`,
       [bnGroup])).rows[0].n,2);
 
+    // BN-003 decision lifecycle; NO ledger application whatsoever.
+    // Re-enable preparation after BN-002 opt-out to isolate signatory rules.
+    assert.equal((await expenseRequest("PATCH",bnSetting,
+      config(3,true,true),jar)).response.status,200);
+    const bnDecisionUrl=id=>`${bnProposalUrl}/${id}/decisions`;
+    const decisionBody=(action,version,fingerprint,requestKey=randomUUID())=>({
+      action,expectedVersion:version,expectedFingerprint:fingerprint,requestKey,
+    });
+    const oldUrl=bnDecisionUrl(bnFirst.id);
+    assert.equal((await expenseRequest("GET",oldUrl,undefined,otherJar))
+      .body.status,"superseded","an old version can never be approved");
+    assert.equal((await expenseRequest("POST",oldUrl,
+      decisionBody("approve",1,bnFirst.sourceFingerprint),otherJar))
+      .response.status,409);
+    const bnStaleUrl=bnDecisionUrl(bnSecond.body.proposal.id);
+    const initialStale=await expenseRequest("GET",bnStaleUrl,undefined,jar);
+    assert.equal(initialStale.response.status,200);
+    assert.equal(initialStale.body.status,"invalidated",
+      "confirmed payment after proposal publication invalidates signatures");
+    assert.equal((await expenseRequest("POST",bnStaleUrl,
+      decisionBody("approve",2,bnSecond.body.proposal.sourceFingerprint),jar))
+      .response.status,409,"stale document cannot collect an approval");
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='invalidated'`,
+      [bnSecond.body.proposal.id])).rows[0].n,1,
+      "invalidated event persists even though the HTTP approval returns 409");
+
+    const bnRevision3=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(2,randomUUID(),bnAfterComplete.body.fingerprint),jar);
+    assert.equal(bnRevision3.response.status,201,JSON.stringify(bnRevision3.body));
+    const bnThird=bnRevision3.body.proposal;
+    assert.equal(bnThird.version,3);
+    const decisionUrl=bnDecisionUrl(bnThird.id);
+    assert.equal((await expenseRequest("GET",decisionUrl,undefined,new Map()))
+      .response.status,401);
+    assert.equal((await expenseRequest("GET",decisionUrl,undefined,thirdJar))
+      .response.status,403,"unrelated admin is not a signatory");
+    assert.equal((await expenseRequest("POST",decisionUrl,
+      decisionBody("approve",3,bnThird.sourceFingerprint),thirdJar))
+      .response.status,403);
+    assert.equal((await expenseRequest("POST",decisionUrl,{
+      ...decisionBody("approve",3,bnThird.sourceFingerprint),actorId:thirdUser.id,
+    },jar)).response.status,400,"no client-supplied identity");
+    const aKey=randomUUID();
+    const sameSigner=await Promise.all([
+      expenseRequest("POST",decisionUrl,
+        decisionBody("approve",3,bnThird.sourceFingerprint,aKey),jar),
+      expenseRequest("POST",decisionUrl,
+        decisionBody("approve",3,bnThird.sourceFingerprint,aKey),jar),
+    ]);
+    assert.deepEqual(sameSigner.map(x=>x.response.status).sort(),[200,201],
+      "concurrent same-key double click must record ONE signed approval");
+    assert.equal(sameSigner[0].body.decisionId,sameSigner[1].body.decisionId);
+    assert.equal(sameSigner[0].body.view.approvalCount,1);
+    assert.equal((await expenseRequest("POST",decisionUrl,
+      decisionBody("approve",3,bnThird.sourceFingerprint),jar))
+      .response.status,409,"same signer cannot approve twice with new key");
+    assert.equal((await expenseRequest("POST",decisionUrl,
+      decisionBody("reject",3,bnThird.sourceFingerprint,aKey),jar))
+      .response.status,409,"one request key cannot switch action");
+
+    const bApprove=await expenseRequest("POST",decisionUrl,
+      decisionBody("approve",3,bnThird.sourceFingerprint),otherJar);
+    assert.equal(bApprove.response.status,201,JSON.stringify(bApprove.body));
+    assert.equal(bApprove.body.view.status,"agreed");
+    assert.equal(bApprove.body.view.approvalCount,2);
+    assert.equal(bApprove.body.view.readyForApplication,false,
+      "two approvals still cannot execute a financial set-off in BN-003");
+    assert.equal((await expenseRequest("POST",decisionUrl,
+      decisionBody("reject",3,bnThird.sourceFingerprint),otherJar))
+      .response.status,409,"fully agreed version cannot be rejected; signer must revoke");
+    const revokeKey=randomUUID();
+    const aRevoked=await expenseRequest("POST",decisionUrl,
+      decisionBody("revoke",3,bnThird.sourceFingerprint,revokeKey),jar);
+    assert.equal(aRevoked.response.status,201,JSON.stringify(aRevoked.body));
+    assert.equal(aRevoked.body.status,"revoked");
+    assert.equal((await expenseRequest("POST",decisionUrl,
+      decisionBody("revoke",3,bnThird.sourceFingerprint,revokeKey),jar))
+      .response.status,200,"same revocation request is idempotent");
+    assert.equal((await expenseRequest("POST",decisionUrl,
+      decisionBody("approve",3,bnThird.sourceFingerprint),otherJar))
+      .response.status,409,"revoked document cannot be approved again");
+    const bnRevokedEvents=(await pool.query(`SELECT event_type,actor_id
+      FROM group_settlement_bilateral_decision_events WHERE proposal_id=$1
+      ORDER BY recorded_at,id`,[bnThird.id])).rows;
+    assert.equal(bnRevokedEvents.filter(x=>x.event_type==="approve").length,2);
+    assert.equal(bnRevokedEvents.filter(x=>x.event_type==="revoke").length,1);
+    await assert.rejects(pool.query(`DELETE FROM group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1`,[bnThird.id]),/append-only/);
+    await assert.rejects(pool.query(`UPDATE group_settlement_bilateral_decision_events
+      SET actor_id=$2 WHERE proposal_id=$1`,[bnThird.id,thirdUser.id]),/append-only/);
+
+    // A rejected proposal also terminates ONLY that immutable version.
+    // Recreating the same live fingerprint is permitted after termination,
+    // but no earlier approvals are transferred to the next version.
+    const afterRevocation=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(3,randomUUID(),bnAfterComplete.body.fingerprint),otherJar);
+    assert.equal(afterRevocation.response.status,201,JSON.stringify(afterRevocation.body));
+    const fourth=afterRevocation.body.proposal;
+    assert.equal(fourth.version,4);
+    const fourthUrl=bnDecisionUrl(fourth.id);
+    assert.equal((await expenseRequest("GET",fourthUrl,undefined,jar))
+      .body.approvalCount,0);
+    const rejected=await expenseRequest("POST",fourthUrl,
+      decisionBody("reject",4,fourth.sourceFingerprint),otherJar);
+    assert.equal(rejected.response.status,201);
+    assert.equal(rejected.body.status,"rejected");
+    assert.equal((await expenseRequest("POST",fourthUrl,
+      decisionBody("approve",4,fourth.sourceFingerprint),jar))
+      .response.status,409);
+
+    const fifthResponse=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(4,randomUUID(),bnAfterComplete.body.fingerprint),jar);
+    assert.equal(fifthResponse.response.status,201,JSON.stringify(fifthResponse.body));
+    const fifth=fifthResponse.body.proposal,fifthUrl=bnDecisionUrl(fifth.id);
+    assert.equal((await expenseRequest("POST",fifthUrl,
+      decisionBody("approve",5,fifth.sourceFingerprint),jar))
+      .response.status,201);
+
+    // Simultaneous cash reservation changes source fingerprint while
+    // approval is pending; neither stale signature nor future BN-004
+    // may use the old version.
+    const extraBnOb=(await pool.query(`SELECT o.id FROM obligations o
+      JOIN expenses e ON e.id=o.expense_id
+      WHERE e.group_id=$1 AND e.title='BN002 Bulk 2'`,[bnGroup])).rows[0].id;
+    const bnChangedMoney=await expenseRequest("POST",bnCash,{
+      requestKey:randomUUID(),allocations:[
+        {obligationId:extraBnOb,amountMinor:"100"}],
+    },otherJar);
+    assert.equal(bnChangedMoney.response.status,201);
+    assert.equal((await expenseRequest("GET",fifthUrl,undefined,jar))
+      .body.status,"invalidated");
+    assert.equal((await expenseRequest("POST",fifthUrl,
+      decisionBody("approve",5,fifth.sourceFingerprint),otherJar))
+      .response.status,409);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM
+      group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='invalidated'`,
+      [fifth.id])).rows[0].n,1);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM
+      group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='approve'`,
+      [fifth.id])).rows[0].n,1,
+      "old approval must remain for audit, never count towards a new proposal");
+
+    const dbNow=(await pool.query("SELECT clock_timestamp() AS now")).rows[0].now;
+    const expiryRejected=await assert.rejects(pool.query(`
+      INSERT INTO group_settlement_bilateral_decision_events
+        (id,proposal_id,group_id,cycle_id,party_low,party_high,
+         actor_id,event_type,request_key,request_digest,source_fingerprint)
+      SELECT $2,p.id,p.group_id,p.cycle_id,p.party_low,p.party_high,
+        NULL,'expired',$3,$4,p.source_fingerprint
+      FROM group_settlement_bilateral_proposals p WHERE p.id=$1`,
+      [fifth.id,randomUUID(),randomUUID(),"a".repeat(64)]),
+      /BN-003 proposal has not expired/);
+    void dbNow;void expiryRejected;
+    // No proposal approval/revocation/rejection may modify actual cash.
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM
+      settlement_allocations WHERE group_id=$1`,[bnGroup])).rows[0].n,3);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM
+      group_settlement_bilateral_decision_events WHERE proposal_id=$1`,
+      [bnThird.id])).rows[0].n,3);
+
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
