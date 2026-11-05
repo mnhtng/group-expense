@@ -2533,10 +2533,10 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const fourthUrl=bnDecisionUrl(fourth.id);
     assert.equal((await expenseRequest("GET",fourthUrl,undefined,jar))
       .body.approvalCount,0);
-    const rejected=await expenseRequest("POST",fourthUrl,
+    const bn003Rejected=await expenseRequest("POST",fourthUrl,
       decisionBody("reject",4,fourth.sourceFingerprint),otherJar);
-    assert.equal(rejected.response.status,201);
-    assert.equal(rejected.body.status,"rejected");
+    assert.equal(bn003Rejected.response.status,201);
+    assert.equal(bn003Rejected.body.status,"rejected");
     assert.equal((await expenseRequest("POST",fourthUrl,
       decisionBody("approve",4,fourth.sourceFingerprint),jar))
       .response.status,409);
