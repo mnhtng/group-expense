@@ -323,12 +323,12 @@ async function scenario(engine,project,options){
     await owner.page.getByLabel("Chọn nghĩa vụ gốc cần đối soát")
       .selectOption({index:1});
     await owner.page.getByLabel("Lý do (10–500 ký tự)").fill(reason);
-    const create=owner.page.getByRole("button",{name:"Gửi tranh chấp"});
-    assert.equal(await create.isDisabled(),true,
+    const createDisputeButton=owner.page.getByRole("button",{name:"Gửi tranh chấp"});
+    assert.equal(await createDisputeButton.isDisabled(),true,
       "Dispute submission must require a separate acknowledgement");
     await owner.page.getByRole("checkbox",{name:/Tôi hiểu tranh chấp không tự hủy nợ/})
       .check();
-    await create.click();
+    await createDisputeButton.click();
     await owner.page.getByText(reason).first().waitFor();
     const disputeResponse=await must(owner,"GET",apiFor(groupId,cycleId)+"/disputes");
     const disputeId=disputeResponse.disputes.find(x=>x.reason===reason)?.id;
