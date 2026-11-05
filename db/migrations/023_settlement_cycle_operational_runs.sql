@@ -52,3 +52,15 @@ CREATE TRIGGER sc010_operational_history_guard
 
 -- Only aggregated system counts; never persist credentials, member IDs,
 -- invoice text, payee identities or mutable settlement state in this log.
+
+-- SC-010: rotate active recurring rule scans; a fixed oldest-200 LIMIT
+-- would starve newer templates forever when a group has >200 templates.
+-- Checkpoints store only rule identity and scheduling diagnostics.
+CREATE TABLE recurring_cron_checkpoints (
+  rule_id uuid PRIMARY KEY REFERENCES recurring_expense_rules(id)
+    ON DELETE CASCADE,
+  last_checked_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  last_error_at timestamptz
+);
+CREATE INDEX sc010_recurring_checked
+  ON recurring_cron_checkpoints(last_checked_at,rule_id);
