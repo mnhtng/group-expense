@@ -1648,6 +1648,23 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       assert.equal(info.releaseDecision,"NO-GO");
       assert.ok(info.latestRuns.some(x=>x.id===data.runId));
       assert.ok(!JSON.stringify(info).includes("PGPASSWORD"));
+      const replay=await fetch(`${origin}/api/internal/push-drain`,{
+        method:"POST",
+        headers:{authorization:`Bearer ${sc003CronSecret}`,
+          "x-ops-replay-reason":"retry"},
+        signal:AbortSignal.timeout(20000),
+      });
+      assert.equal(replay.status,200,"authorized replay is idempotently safe after success");
+      const replayData=await replay.json();
+      assert.equal(replayData.status,"success");
+      assert.notEqual(replayData.runId,data.runId);
+      assert.equal((await pool.query(`SELECT mode,
+        stage_results->>'reasonCode' AS reason
+        FROM settlement_cycle_operational_runs WHERE id=$1`,
+        [replayData.runId])).rows[0].mode,"manual-replay");
+      assert.equal((await pool.query(`SELECT stage_results->>'reasonCode' AS reason
+        FROM settlement_cycle_operational_runs WHERE id=$1`,
+        [replayData.runId])).rows[0].reason,"retry");
       const beforeBusy=(await pool.query(`SELECT count(*)::int AS n
         FROM settlement_cycle_operational_runs`)).rows[0].n;
       // Two overlapping Cron workers cannot both start a run.
