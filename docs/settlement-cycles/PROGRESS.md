@@ -947,11 +947,130 @@ browser/iOS/Android E2E or real platform release.
 No SC-010 operational runbook/recovery plan implemented
 in this conversation.
 
-## NEXT CONVERSATION: SC-010 ONLY
+## 2026-11-05 — SC-010 operational implementation DONE; financial RELEASE NO-GO
 
-Develop operational safe rollout gates, Cron backlog
-and observability, recovery/rollback, isolated Neon
-rehearsal and staged launch runbooks, strictly
-on the feature branch and only after an explicit
-new user request. Preserve financial engine OFF,
-PR #16 Draft and no shared environment release.
+**One ticket only:** operational runbooks, bounded/fair
+recurring and cycle catch-up, durable redacted Cron audit,
+single-flight manual replay, private health and alerts,
+PostgreSQL 17 backup/restore with independent immutable
+ledger hashes, isolated Neon branch preflight and
+controlled staged-rollout design. No ledger/CASH/NONCASH
+release work, no third-party netting and no automatic
+cycle completion.
+
+**Code and operational effects**
+- `023_settlement_cycle_operational_runs.sql` adds
+  append-only terminal Cron run records and fair
+  `recurring_cron_checkpoints`. Run can change
+  from `running` to success/partial/failed only once;
+  interrupted runs are detectable. Finance sources
+  are unchanged.
+- `lib/settlement-cycles/ops-runner.ts` uses a
+  session-level `pg_try_advisory_lock(230010,2026)`
+  to prevent concurrent Cron/authorized manual replays;
+  second worker returns 202 without a duplicate run.
+  The existing daily Vercel Cron remains one schedule
+  at 02:00 UTC; signed POST with whitelisted
+  `x-ops-replay-reason` reuses same idempotent pipeline.
+- Recurring template scan rotates fairly across
+  active rule checkpoints, uses 201st sentinel
+  for 200 rules, bulk checkpoint update, never
+  silently starves rule 201+. If invoices
+  generated hit cap, have source errors, or a
+  rule scan is incomplete, cycle metadata defers.
+  Group metadata Cron checks 31st candidate and
+  24-period per-group capacity. All caps/deferred
+  states return 503 partial rather than
+  claiming full completion.
+- Read-only `GET /api/internal/settlement-ops/status`
+  requires `CRON_SECRET` Bearer, reports aggregate
+  health, missing/stale runs, stuck >25m,
+  recent recurring/group checkpoint errors,
+  dead/pending push jobs and human-review
+  backlog. No group IDs, invoice text, names,
+  credentials or payment counterparties in
+  operational telemetry.
+- Original source-sensitive mutations remain
+  controlled by SC-001…SC-009. No change to
+  `SETTLEMENT_CYCLE_ENGINE_READY=false`.
+  No further release flag, financial write API
+  or unapproved feature activation.
+- New `scripts/sc010-restore-drill.sh`
+  runs a PostgreSQL 17 `pg_dump` and
+  `pg_restore` into a distinct CI-only
+  `group_expense_sc010_restore` database,
+  with exact localhost/CI flags; no shared
+  DB URL accepted, temporary dump deleted.
+  `db/sc010-restore-verify.mjs` compares
+  exact SHA-256 hashes/counts of ORIGINAL
+  obligations, invoices, cash settlements/
+  allocations, BN-004 application sources,
+  locked snapshots, SC-006 late source,
+  SC-009 disputes, notifications, Cron
+  records, fair recurring checkpoints,
+  BN-005 canonical LIVE balances and
+  schema_migrations checksums.
+- `tests/sc010-operations.test.mjs` covers
+  per-stage failure vs partial/backlog
+  classifier, stale Cron alerts, secret-only
+  access and strict disposable restore guard.
+  Real Better Auth + PostgreSQL 17 HTTP
+  tests check Cron run audit immutability,
+  401/400 denial, authorized manual replay
+  with reason code, 202 advisory lock overlap,
+  stuck old run 503 alert and no engine activation.
+  Full SC-007 before/after ledger audit
+  and older SC-006/SC-009 tests still pass.
+
+**Verified operational code commit
+`c54b765407007aa5cd7037162c062adeddc81e3a`:**
+- [CI SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/42031601918)
+- [PG17 Migration+HTTP+financial audit+fresh DB restore SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/42031601882)
+
+**Neon isolated child prepared, not schema-migrated:**
+- Production: `br-round-salad-b39y4yce` (untouched).
+- Development: `br-dry-poetry-b31cudmb` (untouched).
+- New child from development:
+  `sc010-rehearsal-20261105`, ID `br-curly-rice-b3xenws6`.
+- Read-only inspected child: 10 migrations
+  (001–010), original source totals; schema
+  diff against development was empty.
+- **No migration 011–023 on this child**:
+  a separate explicit Neon schema-change
+  authorization and its rollback/compare
+  gate are still required. This is NOT a
+  completed managed-Neon rehearsal and NOT
+  permission to release money.
+
+**Release:** PR #16 remains Draft against
+`develop`, not merged. No manual staging/
+production deploy or Neon shared migration.
+Vercel Git may build automatic feature
+previews; the un-migrated preview DB does
+not constitute finance validation.
+External monitoring subscription, production
+backup/PITR restore drill, managed Neon
+migration rehearsal, mobile physical
+Chromium/WebKit/iOS/Android E2E and security/
+finance stakeholder signoff remain outstanding.
+The release decision is **NO-GO**.
+
+[SC-010 operations / incident response / staged
+rollout specification](./SC-010-OPERATIONS-ROLLOUT.md)
+contains actionable commands, severity,
+redacted alert codes, backup/rollback
+policies and gated future rollout stages.
+
+## NEXT WORK — separate approval required
+
+Do not auto-start BN-007, merge PR #16,
+enable real money, deploy or migrate shared
+Neon. The next **release-readiness** stage
+requires a separately authorized migration
+011–023 and full integrity rehearsal on
+the dedicated isolated Neon child, a
+separate test/restore of a real recoverable
+backup, a configured monitor and actual
+mobile/browser interaction testing.
+Any real rollout requires an explicit
+production release decision at a reviewed SHA.
