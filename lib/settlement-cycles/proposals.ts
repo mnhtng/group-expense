@@ -153,8 +153,7 @@ async function state(client:PoolClient,groupId:string,cycleId:string,
     [groupId,cycleId,low,high]);
   return r.rows[0]?.version??0;
 }
-function validRows(rows:readonly Row[],groupId:string,cycleId:string,c:Cycle,
-  a:string,b:string):BilateralEligibleObligation[]{
+function validRows(rows:readonly Row[],groupId:string,cycleId:string):BilateralEligibleObligation[]{
   if(rows.length>MAX_SOURCES)throw err(409,"Số lượng nguồn vượt giới hạn 20.000 nghĩa vụ.");
   return rows.map(r=>{
     if(r.sourceOriginalMinor!==r.originalMinor||
@@ -177,7 +176,7 @@ async function computed(client:PoolClient,groupId:string,cycleId:string,c:Cycle,
   // All source rows, including completely paid ones, bind the fingerprint.
   const r=await client.query<Row>(selectSources+
     (lock?" FOR UPDATE OF o":""),[cycleId,groupId,low,high]);
-  const eligible=validRows(r.rows,groupId,cycleId,c,low,high);
+  const eligible=validRows(r.rows,groupId,cycleId);
   let calculation:BilateralCalculation;
   try{
     calculation=calculateBilateralSetoff({
@@ -245,12 +244,10 @@ export async function previewBilateralProposal(groupId:string,cycleId:string,
     await activeGroup(client,groupId,actorId,false);
     await pairActive(client,groupId,low,high);
     const c=await cycle(client,groupId,cycleId,false);
-    const [writable,version,current,live]=await Promise.all([
-      enabled(client,groupId),
-      state(client,groupId,cycleId,low,high,false),
-      currentProposal(client,groupId,cycleId,low,high),
-      computed(client,groupId,cycleId,c,low,high,false),
-    ]);
+    const writable=await enabled(client,groupId);
+    const version=await state(client,groupId,cycleId,low,high,false);
+    const current=await currentProposal(client,groupId,cycleId,low,high);
+    const live=await computed(client,groupId,cycleId,c,low,high,false);
     await client.query("COMMIT");
     return {fingerprint:live.fingerprint,snapshotFingerprint:c.snapshotFingerprint,
       calculation:live.calculation,eligibleSourceCount:live.sources.length,
