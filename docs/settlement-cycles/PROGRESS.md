@@ -281,7 +281,7 @@ No BN-* offset, no SC-006 adjustment attribution, no SC-008 full mobile UI.
 - CI-only testing exception must never become a user-facing release switch;
   production finance remains OFF pending a separate audited rollout.
 
-## 2026-11-05 — BN-001: IMPLEMENTED, OFFICIAL CI/DB-HTTP VERIFICATION PENDING
+## 2026-11-05 — BN-001: DONE (code and native CI + PostgreSQL/HTTP verified; release OFF)
 
 **Ticket:** Pure two-member BigInt noncash offset calculator. STRICTLY
 no proposal, approval, ledger, SQL migration, external API, UI or release
@@ -310,22 +310,25 @@ flag changes.
   assumptions, exact conservation invariants and exclusions.
 - `BACKLOG.md`: status remains pending until official CI acceptance.
 
-**Test evidence:**
-- Independent JavaScript-equivalent execution of the exact algorithm and
-  its 16 scenario groups completed **16/16 PASS** (including seeded
-  properties and 10k rows). This is NOT a substitute for native Node
-  TypeScript test runner, Next.js typecheck/build and full PostgreSQL/HTTP
-  regressions.
-- Latest financial application regression before BN-001:
-  [CI passed](https://github.com/mnhtng/group-expense/actions/runs/41875625725)
-  and [PostgreSQL/HTTP passed](https://github.com/mnhtng/group-expense/actions/runs/41875625586).
-- **New BN-001 CI run is still QUEUED**, not yet a pass:
-  https://github.com/mnhtng/group-expense/actions/runs/41878181217
-- **New BN-001 PostgreSQL/HTTP regression is still QUEUED**:
-  https://github.com/mnhtng/group-expense/actions/runs/41878181224
-- Preserve status `IMPLEMENTED — UNIT/CI VERIFICATION PENDING`
-  until code+tests HEAD is accepted; failures must be fixed within
-  BN-001 and nothing beyond it may be started.
+**Final acceptance — commit `45279fa2182728857229813e90e7f2cb4a1657c3`:**
+- [GitHub CI SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41938338962):
+  lint, typecheck, **86 unit tests passed, 0 failed**, Next.js build.
+- [GitHub PostgreSQL 17 + HTTP Integration SUCCESS](https://github.com/mnhtng/group-expense/actions/runs/41938338952):
+  isolated DB migrations and full existing financial HTTP regression.
+- `tests/bilateral-calculator.test.mjs`: 16 pure calculator scenarios,
+  1,200 deterministic property cases, 10,000 original obligations.
+- `tests/bilateral-calculator-experiment.test.mjs`: six dinner-related
+  invoices in one weekly cycle. A->B: outstanding 240,000; pending
+  35,000; available 205,000 VND. B->A: outstanding 220,000;
+  pending 30,000; available 190,000 VND. Exact symmetrical
+  hypothetical set-off: **190,000 VND per direction**.
+  A->B allocations: 80k, 90k, 20k; B->A: 100k, 50k, 40k.
+  Available residual A->B 15,000 VND, B->A 0.
+  Input permutation does not change allocations; third-party,
+  foreign-cycle, excessive pending and out-of-range invoice are denied.
+- This is a READ-ONLY mathematical experiment; no actual cash or
+  noncash discharge was posted, and no live user data was touched.
+- Detailed result: `BN-001-EXPERIMENT.md`.
 
 **Prohibitions and release gate:**
 - No financial schema migration or any writes to original
@@ -337,17 +340,13 @@ flag changes.
   untouched. No staging/prod deployment or shared Neon migrations.
 - PR #16 remains DRAFT and never merged automatically.
 
-## NEXT CONVERSATION: VERIFY BN-001 CI UNTIL COMPLETE; THEN BN-002 ONLY
+## NEXT CONVERSATION: BN-002 ONLY
 
-If CI/DB-HTTP is still QUEUED/FAIL, complete BN-001 acceptance first and
-do not start BN-002. After BOTH suites pass, a separate conversation
-may implement ONLY BN-002 (persist immutable one-pair proposal with
-fingerprint). NEVER apply noncash offsets or unlock real money in BN-002.
-
-
-**Ticket:** Pure BigInt calculator for STRICT pairwise bilateral offsets,
-deterministic allocation and eligibility (only TWO persons, no third-party
-simplification, no real set-off, no proposal persistence or financial ledger
-mutation). Read all `docs/settlement-cycles/*.md` first. Work only on
-`feat/settlement-cycles-bilateral`; maintain Draft PR, test before claiming
-completion. No BN-002, SC-006 or deployment in this next conversation.
+BN-001 is complete and verified. Next separate conversation may
+implement **BN-002: immutable bilateral proposal persistence with exact
+snapshot/live ledger fingerprint and conflict handling**. Read the
+entire `docs/settlement-cycles/` directory before any work.
+Do NOT implement BN-003 approvals, BN-004 noncash ledger application,
+SC-006 adjustments or enable actual cycle money in BN-002.
+PR #16 stays Draft; no shared Neon migration or deployment without
+explicit release authorization.

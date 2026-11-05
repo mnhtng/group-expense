@@ -38,7 +38,7 @@
 | SC-003 | P0 | Cycle state machine / immutable cycle identity + overlap prevention + manual/cron transitions | SC-002 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO FINANCIAL ACTIONS |
 | SC-004 | P0 | Eligible obligation snapshots: date boundary, cash confirmed/pending, late bills, frozen versions, canonical SQL | SC-003 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; REVIEW PENDING |
 | SC-005 | P0 | Same-direction batch repayment by pair, 50+ allocations, idempotent requests and scoped confirmation | SC-004 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; RELEASE GATED OFF |
-| BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | IMPLEMENTED — UNIT/CI VERIFICATION PENDING |
+| BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO LEDGER |
 | BN-002 | P0 | Bilateral proposal persistence, one group+cycle+pair+version, stable fingerprint and conflict handling | BN-001 | TODO |
 | BN-003 | P0 | Dual approval with identities, invalidation/rejection/expiry/revoke, no auto-apply | BN-002 | TODO |
 | BN-004 | P0 | Atomic noncash set-off ledger + reservations, exact A↔B balance conservation, immutable audit | BN-003 | TODO |
@@ -196,8 +196,13 @@ partial confirmed cash/set-off, pending cash/set-off, cancelled reservations,
 reversed pair labels, stale dates/versions, cross-group/cycle/3rd party,
 exact BigInt, 1,200 deterministic property scenarios and 10,000 sources.
 Direct independent JS-equivalent execution: 16/16 passed.
-Official GitHub CI, TypeScript build and PostgreSQL/HTTP regressions must
-also pass before changing status to DONE; do not skip this release gate.
+Final BN-001 verification PASSED on commit `45279fa2182728857229813e90e7f2cb4a1657c3`:
+[CI (86 unit tests)](https://github.com/mnhtng/group-expense/actions/runs/41938338962),
+[PostgreSQL/HTTP regressions](https://github.com/mnhtng/group-expense/actions/runs/41938338952).
+Real-world six-invoice weekly dinner example: 190,000 VND per direction
+netted hypothetically, A->B available residual 15,000 VND; no actual
+payment, proposal or stored set-off. Reproducible experiment fixture:
+`tests/bilateral-calculator-experiment.test.mjs`.
 
 **Detailed contract:** [BN-001-CALCULATOR.md](./BN-001-CALCULATOR.md).
 
