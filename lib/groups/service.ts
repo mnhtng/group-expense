@@ -67,7 +67,8 @@ export async function archiveGroup(groupId: string, ownerId: string, confirmatio
            AND e.deleted_at IS NULL
            AND EXISTS(
              SELECT 1 FROM bn005_obligation_balances b
-             WHERE b.obligation_id=o.id AND b.outstanding_minor>0)
+             WHERE b.obligation_id=o.id
+               AND (b.outstanding_minor<>0 OR b.available_minor<0))
        )`,
     [groupId, ownerId, confirmation.trim()],
   );
