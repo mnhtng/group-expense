@@ -2412,10 +2412,11 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal((await pool.query(
       `SELECT count(*)::int AS n FROM group_settlement_bilateral_proposals
        WHERE group_id=$1`,[bnGroup])).rows[0].n,2);
-    // No proposal is a confirmed set-off, pending set-off or payment.
+    // Both allocations were created explicitly through the existing cash
+    // API; merely creating proposals never added a settlement allocation.
     assert.equal((await pool.query(
       `SELECT count(*)::int AS n FROM settlement_allocations WHERE group_id=$1`,
-      [bnGroup])).rows[0].n,1);
+      [bnGroup])).rows[0].n,2);
 
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
