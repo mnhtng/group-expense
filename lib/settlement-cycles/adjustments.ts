@@ -51,7 +51,7 @@ const lateSql=`SELECT e.id,e.title,e.occurred_on::text AS "occurredOn",
     AND e.occurred_on >=$2::date AND e.occurred_on <$3::date
     AND (e.created_at>$4::timestamptz OR e.updated_at>$4::timestamptz)
     AND NOT EXISTS(SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
-      WHERE se.expense_id=e.id)
+      WHERE se.expense_id=e.id AND se.cycle_id=$5)
   ORDER BY e.occurred_on,e.created_at,e.id`;
 const adjustmentSelect=`SELECT id,group_id AS "groupId",
   origin_cycle_id AS "originCycleId",target_cycle_id AS "targetCycleId",
@@ -83,7 +83,7 @@ export async function listLateCycleAdjustments(groupId:string,originCycleId:stri
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const c=await original(client,groupId,originCycleId);
     const rows=await client.query<LateRow>(lateSql,
-      [groupId,c.periodStart,c.periodEnd,c.cutoffAt]);
+      [groupId,c.periodStart,c.periodEnd,c.cutoffAt,originCycleId]);
     const target=await earliestUnlocked(client,groupId,c.periodEnd);
     await client.query("COMMIT");
     return {originCycleId,lateInvoices:rows.rows,
