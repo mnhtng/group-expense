@@ -1607,6 +1607,77 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       const data=await cron.json();
       assert.equal(data.cycles.metadataOnly,true);
       assert.equal(data.cycles.errors,0);
+      // SC-010: exactly one durable operator run and no money activation.
+      assert.match(data.runId,/^[0-9a-f-]{36}$/i);
+      assert.equal(data.status,"success");
+      const savedRun=(await pool.query(`SELECT status,mode,
+        completed_at,stage_results FROM settlement_cycle_operational_runs
+        WHERE id=$1`,[data.runId])).rows[0];
+      assert.equal(savedRun.mode,"scheduled");
+      assert.equal(savedRun.status,"success");
+      assert.ok(savedRun.completed_at);
+      assert.equal(savedRun.stage_results.stages.recurring,"ok");
+      assert.equal(savedRun.stage_results.stages.cycles,"ok");
+      assert.deepEqual(savedRun.stage_results.warningCodes,[]);
+      await assert.rejects(pool.query(`UPDATE settlement_cycle_operational_runs
+        SET status='failed' WHERE id=$1`,[data.runId]),
+        /SC-010 completed operational run is immutable/);
+      await assert.rejects(pool.query(`DELETE FROM settlement_cycle_operational_runs
+        WHERE id=$1`,[data.runId]),
+        /SC-010 operational run history cannot be deleted/);
+      const opsUrl=`${origin}/api/internal/settlement-ops/status`;
+      assert.equal((await fetch(opsUrl)).status,401,
+        "private health endpoint requires cron Bearer");
+      assert.equal((await fetch(`${origin}/api/internal/push-drain`,{
+        method:"POST",headers:{"x-ops-replay-reason":"retry"},
+      })).status,401,"manual replay must be equally protected");
+      assert.equal((await fetch(`${origin}/api/internal/push-drain`,{
+        method:"POST",headers:{authorization:`Bearer ${sc003CronSecret}`},
+      })).status,400,"missing manual replay reason refused");
+      assert.equal((await fetch(`${origin}/api/internal/push-drain`,{
+        method:"POST",headers:{authorization:`Bearer ${sc003CronSecret}`,
+          "x-ops-replay-reason":"production-enable"},
+      })).status,400,"unknown operator reason refused");
+      const health=await fetch(opsUrl,{
+        headers:{authorization:`Bearer ${sc003CronSecret}`},
+      });
+      assert.ok([200,503].includes(health.status));
+      const info=await health.json();
+      assert.ok(Array.isArray(info.alertCodes));
+      assert.equal(info.financialEngineReady,false);
+      assert.equal(info.releaseDecision,"NO-GO");
+      assert.ok(info.latestRuns.some(x=>x.id===data.runId));
+      assert.ok(!JSON.stringify(info).includes("PGPASSWORD"));
+      const beforeBusy=(await pool.query(`SELECT count(*)::int AS n
+        FROM settlement_cycle_operational_runs`)).rows[0].n;
+      // Two overlapping Cron workers cannot both start a run.
+      const held=await pool.connect();
+      try{
+        await held.query("SELECT pg_advisory_lock(230010,2026)");
+        const overlap=await fetch(`${origin}/api/internal/push-drain`,{
+          headers:{authorization:`Bearer ${sc003CronSecret}`},
+          signal:AbortSignal.timeout(20000),
+        });
+        assert.equal(overlap.status,202);
+        assert.equal((await overlap.json()).status,"already-running");
+        assert.equal((await pool.query(`SELECT count(*)::int AS n
+          FROM settlement_cycle_operational_runs`)).rows[0].n,beforeBusy);
+      }finally{
+        await held.query("SELECT pg_advisory_unlock(230010,2026)");
+        held.release();
+      }
+      // A partial log entry left after a crashed process is observable
+      // without modifying frozen cycle financial sources.
+      const strandedRun=randomUUID();
+      await pool.query(`INSERT INTO settlement_cycle_operational_runs
+        (id,mode,status,started_at)
+        VALUES($1,'scheduled','running',now()-interval '40 minutes')`,
+        [strandedRun]);
+      const attention=await fetch(opsUrl,{
+        headers:{authorization:`Bearer ${sc003CronSecret}`},
+      });
+      assert.equal(attention.status,503);
+      assert.ok((await attention.json()).alertCodes.includes("STUCK_CRON_RUN"));
     }
     assert.equal((await expenseRequest("GET",sc003AutoApi,undefined,new Map()))
       .response.status,401);
