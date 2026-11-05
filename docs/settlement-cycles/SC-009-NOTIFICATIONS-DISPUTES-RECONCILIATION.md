@@ -94,8 +94,8 @@ to a specific group and a **LOCKED** cycle snapshot.
   individual dispute audit event; the group reconciliation
   report may show only a **count** of still-open cases.
 - Open/awaiting disputes block new cycle noncash applications,
-  cycle batch CASH requests against the affected original
-  outstanding and CONFIRMATION of an existing pending
+  all new manual/cycle CASH allocations against the affected
+  original outstanding and CONFIRMATION of an existing pending
   settlement allocating to that original obligation. They
   do not automatically cancel a pending settlement or reverse
   money already confirmed before the dispute. The original
