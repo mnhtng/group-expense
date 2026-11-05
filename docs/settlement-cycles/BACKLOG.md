@@ -41,7 +41,7 @@
 | BN-001 | P0 | Pairwise bilateral calculator (pure BigInt) + deterministic allocation and eligibility rules | SC-004 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO LEDGER |
 | BN-002 | P0 | Bilateral proposal persistence, one group+cycle+pair+version, stable fingerprint and conflict handling | BN-001 | DONE ON FEATURE BRANCH — CI + POSTGRES/HTTP PASS; NO APPROVAL / NO LEDGER |
 | BN-003 | P0 | Dual approval with identities, invalidation/rejection/expiry/revoke, no auto-apply | BN-002 | DONE ON FEATURE BRANCH — CI + DB/HTTP PASS; NO NONCASH LEDGER |
-| BN-004 | P0 | Atomic noncash set-off ledger + reservations, exact A↔B balance conservation, immutable audit | BN-003 | TODO |
+| BN-004 | P0 | Atomic two-sided NONCASH application under row locks, exact A↔B conservation, immutable original-source audit; no persistent interim reservations | BN-003 | DONE ON FEATURE BRANCH — CI + PG17/HTTP VERIFIED; NOT RELEASED |
 | BN-005 | P0 | Integrate `confirmed_setoff` into **all** outstanding, available, leave/archive, paid, completion and report queries | BN-004 | TODO |
 | BN-006 | P0 | Net residual cash settlement through the pre-existing two-party confirmation flow | BN-005,SC-005 | TODO |
 | SC-006 | P0 | Invoice/recurring/member-leave/group-archive integration, unlock/adjustment policy, no retroactive edits | SC-004,BN-005 | TODO |
@@ -285,6 +285,53 @@ Detailed contract: [BN-003-DECISIONS.md](./BN-003-DECISIONS.md).
 Release remains blocked: PR #16 Draft; no shared Neon migrations,
 no deploy or merge, `SETTLEMENT_CYCLE_ENGINE_READY=false`.
 BN-004 may be started only in a separate future conversation.
+
+## BN-004 — atomic noncash set-off application (this conversation)
+
+**DONE ON FEATURE BRANCH; FINANCIAL RELEASE REMAINS OFF.**
+BN-004 creates ONE immutable, noncash two-sided application for one
+fully signed BN-002 source proposal; no unapproved, revoked, expired,
+superseded or stale set-off may be applied. Two source directions must
+be exactly equal in VND, referencing original obligations and
+the BN-002 FIFO immutable source proof.
+
+**DB:** migration `018_bilateral_noncash_applications.sql` adds
+append-only application documents and obligation-level allocations,
+one application per original group/cycle/pair and no duplicate discharge
+of an original obligation. PostgreSQL trigger verifies two distinct
+BN-003 approvals, active source, exact proposal, opt-in and current
+head. A deferred constraint trigger verifies BOTH complete directional
+sums/counts before COMMIT. SQL direct writers cannot post only one
+side, forge allocations, edit/delete audit or race a signature revoke.
+The rows are ledger PROOF of NONCASH discharge only; they never create
+a cash payment, mutate original obligations or mark any invoice paid.
+
+**Service/API:** `lib/settlement-cycles/applications.ts` and
+authenticated `GET/POST .../bilateral-proposals/:proposalId/applications`.
+Recompute entire live BN-002 fingerprint under group->cycle->head/
+proposal->obligation locks; reject pending/confirmed cash change,
+expiry, revoked/invalidated signatures and duplicate pair application.
+Requests use session actor, immutable version/fingerprint and UUID
+idempotency key. Concurrent same-key retries return ONE document.
+The POST write is enabled **ONLY** with three simultaneous disposable
+CI conditions `CI=true`, `BN004_TEST_ONLY=isolated-pg17`,
+`DATABASE_URL=postgresql://test:test@localhost:5432/group_expense`.
+The global `SETTLEMENT_CYCLE_ENGINE_READY=false` remains unchanged.
+
+**Acceptance evidence:** `tests/preview-http.smoke.mjs` exercises
+122 original source obligations, two signers, outsider denial, one-
+sided SQL rollback, immutable audit, exact per-source source proof,
+concurrent request replay and cash-table nonmutation. The native unit
+suite guards release gates and SQL invariants; disposable PG17 applies
+all migrations twice. See [BN-004-NONCASH-APPLICATIONS.md](./BN-004-NONCASH-APPLICATIONS.md).
+
+**Hard exclusions:** BN-005 balance, leave/archive/report and invoice
+completion integration; BN-006 residual cash; SC-006 adjustments;
+SC-008 UI; notifications, release, shared Neon migrations and
+staging/production deployment. There are NO persistent pending setoff
+reservations: both original sides are row-locked and applied atomically
+in one transaction, rather than staged as a pending reservation.
+PR #16 remains Draft and unmerged.
 
 ## Design debt & migration/release gates
 
