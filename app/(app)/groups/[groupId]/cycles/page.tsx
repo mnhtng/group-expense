@@ -3,20 +3,24 @@ import {notFound} from "next/navigation";
 import {requireUser} from "@/lib/auth/session";
 import {getMemberRole,getGroupDetails} from "@/lib/groups/service";
 import {getSettlementSettings} from "@/lib/settlement-cycles/settings";
-import {listSettlementCycles} from "@/lib/settlement-cycles/lifecycle";
+import {listSettlementCycleHistoryPage} from "@/lib/settlement-cycles/lifecycle";
 import {formatDateDMY} from "@/lib/date-format";
 
 const stateText={open:"Đang mở",review:"Chờ rà soát",locked:"Đã khóa sổ"};
-export default async function GroupCyclesPage({params}:{
+export default async function GroupCyclesPage({params,searchParams}:{
   params:Promise<{groupId:string}>;
+  searchParams:Promise<{page?:string}>;
 }){
   const {groupId}=await params;
+  const {page:rawPage}=await searchParams;
+  const proposedPage=rawPage?Number(rawPage):1;
+  const page=Number.isSafeInteger(proposedPage)&&proposedPage>0&&proposedPage<=100000?proposedPage:1;
   const user=await requireUser();
   if(!await getMemberRole(groupId,user.id))notFound();
   const [group,setting,records]=await Promise.all([
     getGroupDetails(groupId,user.id),
     getSettlementSettings(groupId,user.id),
-    listSettlementCycles(groupId,user.id),
+    listSettlementCycleHistoryPage(groupId,user.id,page),
   ]);
   if(!group)notFound();
   return <main className="app-page space-y-5">
@@ -67,9 +71,16 @@ export default async function GroupCyclesPage({params}:{
         </div>
         <span aria-hidden="true" className="text-muted-foreground">→</span>
       </Link>)}
-      {records.cycles.length===50&&<p className="text-xs text-muted-foreground">
-        Đang hiển thị 50 kỳ gần nhất. Lịch sử cũ hơn vẫn được lưu trong cơ sở dữ liệu.
-      </p>}
+      {records.total>50&&<nav aria-label="Phân trang lịch sử kỳ"
+        className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm">
+        <span>Trang {records.page}/{records.totalPages}</span>
+        <div className="flex gap-2">
+          {records.page>1&&<Link href={`/groups/${groupId}/cycles?page=${records.page-1}`}
+            className="inline-flex min-h-11 items-center rounded-xl border px-4">Mới hơn</Link>}
+          {records.page<records.totalPages&&<Link href={`/groups/${groupId}/cycles?page=${records.page+1}`}
+            className="inline-flex min-h-11 items-center rounded-xl border px-4">Cũ hơn</Link>}
+        </div>
+      </nav>}
     </section>
   </main>;
 }
