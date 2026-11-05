@@ -5,7 +5,12 @@ import { pool } from "@/lib/db/pool";
 
 export type NotificationKind =
   | "settlement_requested" | "settlement_confirmed"
-  | "settlement_rejected" | "settlement_cancelled";
+  | "settlement_rejected" | "settlement_cancelled"
+  | "cycle_review" | "cycle_locked" | "setoff_proposed"
+  | "setoff_decision" | "setoff_applied"
+  | "late_invoice_attributed" | "cycle_dispute_opened"
+  | "cycle_dispute_responded" | "cycle_dispute_closed"
+  | "cycle_reminder";
 export type AppNotification = {
   id: string; kind: NotificationKind; title: string; body: string;
   href: string; readAt: string | null; createdAt: string;
@@ -75,8 +80,9 @@ export async function notificationList(userId: string, rawLimit: number, cursor?
   if (cursor !== undefined && !uuid(cursor)) throw new NotificationInputError(400,"Cursor không hợp lệ.");
   const rows = await pool.query<AppNotification>(
     `SELECT n.id,n.kind,n.title,n.body,n.href,n.read_at::text AS "readAt",
-      n.created_at::text AS "createdAt", actor.name AS "actorName",g.name AS "groupName"
-     FROM notifications n JOIN "user" actor ON actor.id=n.actor_id
+      n.created_at::text AS "createdAt",
+      COALESCE(actor.name,'Hệ thống') AS "actorName",g.name AS "groupName"
+     FROM notifications n LEFT JOIN "user" actor ON actor.id=n.actor_id
      JOIN groups g ON g.id=n.group_id
      WHERE n.recipient_id=$1
        AND ($2::uuid IS NULL OR (n.created_at,n.id) <
