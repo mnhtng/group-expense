@@ -241,6 +241,7 @@ exits before any DB calls for a shared/unknown URL.
 | Created dedicated child `sc010-rehearsal-20261105` | `br-curly-rice-b3xenws6` |
 | Parent used for child | Development branch only |
 | Initial read-only SQL on child | PASS: 10 installed migrations, baseline rows and balance counts |
+| Neon branch-to-development schema compare | PASS: empty schema diff at clone baseline |
 | Apply migrations 011–023 to child and compare full data | **NOT RUN — pending separate schema-migration authorization** |
 | Shared Neon schema and financial activation | **NOT AUTHORIZED / NO-GO** |
 
