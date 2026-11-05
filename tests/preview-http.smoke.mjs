@@ -3099,6 +3099,68 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       jar);
     assert.equal(reProposal.response.status,409,
       "one pair/cycle cannot re-bill discharged source even if balances change");
+    // Ordinary one-direction cash remains compatible with the remaining
+    // AVAILABLE portion after noncash set-off. Pending is NOT confirmed;
+    // cancellation releases the reservation; counterpart confirmation
+    // is still required for a successful cash settlement.
+    const residual=await pool.query(`
+      SELECT o.id,o.debtor_id,o.creditor_id,
+        b.available_minor::text AS available,
+        b.outstanding_minor::text AS outstanding,
+        b.confirmed_setoff_minor::text AS setoff,
+        b.confirmed_cash_minor::text AS cash
+      FROM obligations o
+      JOIN bn005_obligation_balances b ON b.obligation_id=o.id
+      WHERE o.group_id=$1 AND b.available_minor>0
+      ORDER BY b.confirmed_setoff_minor DESC,o.id LIMIT 1`,[bnGroup]);
+    assert.equal(residual.rowCount,1);
+    const left=residual.rows[0],amount="1000";
+    assert.ok(BigInt(left.available)>=BigInt(amount));
+    const cashDebtor=left.debtor_id===registered.user.id?jar:otherJar;
+    const cashOther=left.creditor_id===registered.user.id?jar:otherJar;
+    const pendingLeft=await expenseRequest("POST",bnCash,{
+      requestKey:randomUUID(),allocations:[
+        {obligationId:left.id,amountMinor:amount}],
+    },cashDebtor);
+    assert.equal(pendingLeft.response.status,201,JSON.stringify(pendingLeft.body));
+    const afterPending=(await pool.query(`
+      SELECT confirmed_setoff_minor::text AS setoff,
+        outstanding_minor::text AS outstanding,
+        available_minor::text AS available,pending_cash_minor::text AS pending
+      FROM bn005_obligation_balances WHERE obligation_id=$1`,[left.id])).rows[0];
+    assert.equal(afterPending.setoff,left.setoff);
+    assert.equal(afterPending.outstanding,left.outstanding,
+      "pending cash is a reservation, NOT debt discharge");
+    assert.equal(BigInt(afterPending.available),BigInt(left.available)-1000n);
+    const cancelled=await expenseRequest("PATCH",
+      `${bnCash}/${pendingLeft.body.id}`,{action:"cancel"},cashDebtor);
+    assert.equal(cancelled.response.status,200);
+    const released=(await pool.query(`
+      SELECT available_minor::text AS available,
+        confirmed_setoff_minor::text AS setoff
+      FROM bn005_obligation_balances WHERE obligation_id=$1`,
+      [left.id])).rows[0];
+    assert.equal(released.available,left.available);
+    assert.equal(released.setoff,left.setoff);
+    const validCash=await expenseRequest("POST",bnCash,{
+      requestKey:randomUUID(),allocations:[
+        {obligationId:left.id,amountMinor:amount}],
+    },cashDebtor);
+    assert.equal(validCash.response.status,201);
+    assert.equal((await expenseRequest("PATCH",`${bnCash}/${validCash.body.id}`,
+      {action:"confirm"},cashOther)).response.status,200,
+      "only the existing two-person cash confirmation discharges the residual");
+    const confirmedLeft=(await pool.query(`
+      SELECT confirmed_setoff_minor::text AS setoff,
+        confirmed_cash_minor::text AS cash,
+        outstanding_minor::text AS outstanding
+      FROM bn005_obligation_balances WHERE obligation_id=$1`,
+      [left.id])).rows[0];
+    assert.equal(confirmedLeft.setoff,left.setoff,
+      "immutable noncash history never changes when real cash is confirmed");
+    assert.equal(BigInt(confirmedLeft.cash),BigInt(left.cash)+1000n);
+    assert.equal(BigInt(confirmedLeft.outstanding),BigInt(left.outstanding)-1000n);
+
 
 
     const logout = await post("/api/auth/sign-out", {}, jar);
