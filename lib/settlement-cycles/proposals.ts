@@ -102,7 +102,7 @@ function scoped(groupId:string,cycleId:string,a:string,b:string){
 function summary(row:ProposalRow):ProposalSummary{
   return {...row,createdAt:row.createdAt.toISOString()};
 }
-async function activeGroup(client:PoolClient,groupId:string,actorId:string,write:boolean){
+export async function activeGroup(client:PoolClient,groupId:string,actorId:string,write:boolean){
   const g=await client.query(
     `SELECT 1 FROM groups WHERE id=$1 AND archived_at IS NULL ${write?"FOR UPDATE":""}`,[groupId]);
   if(!g.rowCount)throw err(404,"Không tìm thấy nhóm.");
@@ -111,7 +111,7 @@ async function activeGroup(client:PoolClient,groupId:string,actorId:string,write
     [groupId,actorId]);
   if(!member.rowCount)throw err(404,"Bạn không phải thành viên đang hoạt động.");
 }
-async function pairActive(client:PoolClient,groupId:string,a:string,b:string){
+export async function pairActive(client:PoolClient,groupId:string,a:string,b:string){
   const m=await client.query(
     `SELECT user_id FROM group_members
       WHERE group_id=$1 AND status='active' AND user_id=ANY($2::text[])`,
@@ -119,7 +119,7 @@ async function pairActive(client:PoolClient,groupId:string,a:string,b:string){
   if(m.rowCount!==2)throw err(409,
     "Cả hai người trong đề xuất phải đang là thành viên nhóm.");
 }
-async function cycle(client:PoolClient,groupId:string,cycleId:string,write:boolean){
+export async function cycle(client:PoolClient,groupId:string,cycleId:string,write:boolean){
   const result=await client.query<Cycle>(selectCycle+
     (write?" FOR UPDATE OF c":""),[groupId,cycleId]);
   const c=result.rows[0];
@@ -128,7 +128,7 @@ async function cycle(client:PoolClient,groupId:string,cycleId:string,write:boole
     throw err(409,"Chỉ có thể lập đề xuất cho kỳ đã khóa snapshot.");
   return c;
 }
-async function enabled(client:PoolClient,groupId:string){
+export async function enabled(client:PoolClient,groupId:string){
   const s=await client.query<{requested_enabled:boolean;requested_bilateral_netting:boolean}>(
     `SELECT requested_enabled,requested_bilateral_netting
       FROM group_settlement_settings WHERE group_id=$1`,[groupId]);
@@ -177,7 +177,7 @@ function validRows(rows:readonly Row[],groupId:string,cycleId:string):BilateralE
     };
   });
 }
-async function computed(client:PoolClient,groupId:string,cycleId:string,c:Cycle,
+export async function computed(client:PoolClient,groupId:string,cycleId:string,c:Cycle,
   low:string,high:string,lock:boolean){
   // All source rows, including completely paid ones, bind the fingerprint.
   const r=await client.query<Row>(selectSources+
@@ -231,7 +231,7 @@ async function computed(client:PoolClient,groupId:string,cycleId:string,c:Cycle,
   ])).digest("hex");
   return {calculation,fingerprint,sources};
 }
-async function transact<T>(work:(client:PoolClient)=>Promise<T>):Promise<T>{
+export async function transact<T>(work:(client:PoolClient)=>Promise<T>):Promise<T>{
   const client=await pool.connect();
   try{await client.query("BEGIN");const value=await work(client);
     await client.query("COMMIT");return value;
@@ -316,8 +316,23 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
     const live=await computed(client,groupId,cycleId,c,low,high,true);
     if(live.fingerprint!==input.expectedFingerprint)
       throw err(409,"Số dư công nợ đã thay đổi. Phải tính lại đề xuất.");
-    if(current?.sourceFingerprint===live.fingerprint)
-      throw err(409,"Đề xuất cho số liệu này đã tồn tại.");
+    if(current?.sourceFingerprint===live.fingerprint){
+      // BN-003 terminal decisions close ONE immutable version. A fresh
+      // proposal is allowed after reject/revoke/invalidate/72h expiry;
+      // none of the previous signatories' decisions may be inherited.
+      const decisions=await client.query(
+        `SELECT 1 FROM group_settlement_bilateral_decision_events
+         WHERE proposal_id=$1 AND event_type IN
+           ('reject','revoke','invalidated','expired') LIMIT 1`,
+        [current.id]);
+      const details=await client.query<{created_at:Date}>(
+        "SELECT created_at FROM group_settlement_bilateral_proposals WHERE id=$1",
+        [current.id]);
+      const expired=details.rows[0]?
+        Date.now()>=details.rows[0].created_at.getTime()+72*60*60*1000:false;
+      if(!decisions.rowCount&&!expired)
+        throw err(409,"Đề xuất cho số liệu này đã tồn tại.");
+    }
     if(!live.calculation.hasOffset||BigInt(live.calculation.offsetMinor)<=0n)
       throw err(409,"Hai người không có công nợ khả dụng để bù trừ.");
     const id=randomUUID(),next=version+1;
