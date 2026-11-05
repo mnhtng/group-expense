@@ -128,10 +128,9 @@ test("SC-007 model: 10,000 sources, >50 allocations and exact large VND",()=>{
       `2026-10-${String(1+i%30).padStart(2,"0")}`));
   }
   const result=calculateBilateralSetoff(base(rows));
-  assert.equal(result.offsetMinor,Math.min(
-    Number(sum(rows.filter(x=>x.debtorId===A),"originalMinor")),
-    Number(sum(rows.filter(x=>x.debtorId===B),"originalMinor"))).toString() // comparable 9e15 on this fixture
-  );
+  assert.equal(result.offsetMinor,min(
+    sum(rows.filter(x=>x.debtorId===A),"originalMinor"),
+    sum(rows.filter(x=>x.debtorId===B),"originalMinor")).toString());
   assert.ok(result.aOwesB.allocations.length>50);
   assert.ok(result.bOwesA.allocations.length>50);
   assert.equal(sum(result.aOwesB.allocations,"setoffMinor"),
