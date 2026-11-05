@@ -46,7 +46,7 @@ export function SettlementCycleSourceList({groupId,cycleId,source,members}:{
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <Link href={`/groups/${groupId}/expenses/${line.expenseId}`}
-              className="inline-flex min-h-10 items-center break-words font-semibold underline-offset-4 hover:underline">
+              className="inline-flex min-h-11 items-center break-words font-semibold underline-offset-4 hover:underline">
               {line.expenseTitle}
             </Link>
             <p className="text-xs text-muted-foreground">
