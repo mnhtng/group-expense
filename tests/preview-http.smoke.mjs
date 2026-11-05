@@ -3265,7 +3265,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(pendingPreview.preview.status,"blocked");
     assert.equal(pendingPreview.history[0].status,"pending");
     assert.equal((await expenseRequest("PATCH",`${bnCash}/${bn006Cash}`,
-      {action:"confirm"},jar===cashInitiator?jar:otherJar))
+      {action:"confirm"},jar))
       .response.status,403,"cash initiator cannot confirm own transfer");
     assert.equal((await pool.query(`SELECT status FROM settlements
       WHERE id=$1`,[bn006Cash])).rows[0].status,"pending");
@@ -3279,7 +3279,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     // Rejection releases original availability. Retry must create a new
     // immutable cash receipt (same original NONCASH proof) with a new key.
     assert.equal((await expenseRequest("PATCH",`${bnCash}/${bn006Cash}`,
-      {action:"reject"},cashCounterparty)).response.status,200);
+      {action:"reject"},otherJar)).response.status,200);
     const rejectedPreview=(await expenseRequest("GET",bn006Url,undefined,jar)).body;
     assert.equal(rejectedPreview.preview.status,"ready");
     assert.equal(rejectedPreview.preview.amountMinor,postHold.amountMinor);
