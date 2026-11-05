@@ -2776,6 +2776,177 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       group_settlement_bilateral_decision_events WHERE proposal_id=$1`,
       [bnThird.id])).rows[0].n,3);
 
+    // BN-004 — STRICT disposable PostgreSQL noncash application.
+    // Previous BN-003 fixtures deliberately archived this group. Restore
+    // activity and create a NEW version with two fresh independent approvals.
+    await pool.query("UPDATE groups SET archived_at=NULL WHERE id=$1",[bnGroup]);
+    const appPreview=(await expenseRequest("GET",bnReadUrl,undefined,jar)).body;
+    assert.equal(appPreview.currentVersion,10);
+    const appCreated=await expenseRequest("POST",bnProposalUrl,
+      bnPayload(10,randomUUID(),appPreview.fingerprint),jar);
+    assert.equal(appCreated.response.status,201,JSON.stringify(appCreated.body));
+    const appProposal=appCreated.body.proposal;
+    assert.equal(appProposal.version,11);
+    const appDecisions=bnDecisionUrl(appProposal.id);
+    const applyUrl=`${bnProposalUrl}/${appProposal.id}/applications`;
+    const applyBody=(key=randomUUID())=>({
+      expectedVersion:11,expectedFingerprint:appProposal.sourceFingerprint,
+      requestKey:key,
+    });
+    const appBefore=(await pool.query(`SELECT
+        (SELECT count(*)::int FROM settlements WHERE group_id=$1) AS cash_count,
+        (SELECT count(*)::int FROM settlement_allocations WHERE group_id=$1) AS allocation_count,
+        (SELECT count(*)::int FROM group_settlement_bilateral_applications WHERE group_id=$1) AS application_count`,
+      [bnGroup])).rows[0];
+    assert.equal(appBefore.application_count,0);
+    assert.equal((await expenseRequest("GET",applyUrl,undefined,new Map()))
+      .response.status,401);
+    assert.equal((await expenseRequest("GET",applyUrl,undefined,thirdJar))
+      .response.status,403);
+    assert.equal((await expenseRequest("POST",applyUrl,applyBody(),thirdJar))
+      .response.status,403,"unrelated group admin cannot apply");
+    assert.equal((await expenseRequest("POST",applyUrl,
+      {...applyBody(),appliedBy:registered.user.id},jar)).response.status,400,
+      "client cannot forge an application identity");
+    assert.equal((await expenseRequest("POST",applyUrl,applyBody(),jar))
+      .response.status,409,"no approval is not enough");
+
+    const oneApproval=await expenseRequest("POST",appDecisions,
+      decisionBody("approve",11,appProposal.sourceFingerprint),jar);
+    assert.equal(oneApproval.response.status,201);
+    assert.equal((await expenseRequest("POST",applyUrl,applyBody(),jar))
+      .response.status,409,"one signatory approval cannot apply");
+    // PostgreSQL also refuses a direct SQL bypass with just one signature.
+    await assert.rejects(pool.query(`
+      INSERT INTO group_settlement_bilateral_applications
+        (id,proposal_id,group_id,cycle_id,party_low,party_high,
+         applied_by,request_key,request_digest,source_fingerprint,
+         snapshot_fingerprint,proposal_version,offset_minor)
+      SELECT $2,p.id,p.group_id,p.cycle_id,p.party_low,p.party_high,
+        $3,$4,$5,p.source_fingerprint,p.snapshot_fingerprint,
+        p.version,p.offset_minor
+      FROM group_settlement_bilateral_proposals p WHERE p.id=$1`,
+      [appProposal.id,randomUUID(),registered.user.id,randomUUID(),"a".repeat(64)]),
+      /BN-004 requires two live/);
+
+    const twoApprovals=await expenseRequest("POST",appDecisions,
+      decisionBody("approve",11,appProposal.sourceFingerprint),otherJar);
+    assert.equal(twoApprovals.response.status,201);
+    assert.equal(twoApprovals.body.status,"agreed");
+    assert.equal((await expenseRequest("POST",applyUrl,{
+      ...applyBody(),expectedFingerprint:"a".repeat(64),
+    },jar)).response.status,409,"incorrect source fingerprint");
+    assert.equal((await expenseRequest("POST",applyUrl,{
+      ...applyBody(),expectedVersion:10,
+    },jar)).response.status,409,"stale proposal version");
+
+    // A fabricated partial application that posts only ONE direction must
+    // rollback at deferred COMMIT. This cannot persist unbalanced money.
+    const partial=await pool.connect();
+    try{
+      await partial.query("BEGIN");
+      const partialId=randomUUID();
+      await partial.query(`
+        INSERT INTO group_settlement_bilateral_applications
+          (id,proposal_id,group_id,cycle_id,party_low,party_high,
+           applied_by,request_key,request_digest,source_fingerprint,
+           snapshot_fingerprint,proposal_version,offset_minor)
+        SELECT $2,p.id,p.group_id,p.cycle_id,p.party_low,p.party_high,
+          $3,$4,$5,p.source_fingerprint,p.snapshot_fingerprint,
+          p.version,p.offset_minor
+        FROM group_settlement_bilateral_proposals p WHERE p.id=$1`,
+        [appProposal.id,partialId,registered.user.id,randomUUID(),"b".repeat(64)]);
+      await partial.query(`
+        INSERT INTO group_settlement_bilateral_application_allocations
+          (application_id,proposal_id,group_id,cycle_id,obligation_id,
+           debtor_id,creditor_id,amount_minor)
+        SELECT $1,proposal_id,group_id,cycle_id,obligation_id,
+          debtor_id,creditor_id,proposed_minor
+        FROM group_settlement_bilateral_sources
+        WHERE proposal_id=$2 AND proposed_minor>0
+        ORDER BY occurred_on,obligation_id LIMIT 1`,[partialId,appProposal.id]);
+      await assert.rejects(partial.query(
+        "SET CONSTRAINTS bn004_conservation_on_commit IMMEDIATE"),
+        /BN-004 both-direction amounts and source counts must conserve/);
+    } finally {await partial.query("ROLLBACK");partial.release();}
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_applications WHERE proposal_id=$1`,
+      [appProposal.id])).rows[0].n,0,"failed one-sided application rolled back");
+
+    const requestKey=randomUUID();
+    const concurrent=await Promise.all([
+      expenseRequest("POST",applyUrl,applyBody(requestKey),jar),
+      expenseRequest("POST",applyUrl,applyBody(requestKey),jar),
+    ]);
+    assert.deepEqual(concurrent.map(r=>r.response.status).sort(),[200,201],
+      "same-key concurrent apply must produce just one document");
+    const applied=concurrent[0].body.application;
+    assert.equal(applied.id,concurrent[1].body.application.id);
+    assert.equal(applied.noncash,true);
+    assert.equal(applied.cashTransferredMinor,"0");
+    assert.equal(applied.offsetMinor,appProposal.offsetMinor);
+    const appliedGet=await expenseRequest("GET",applyUrl,undefined,otherJar);
+    assert.equal(appliedGet.response.status,200);
+    assert.equal(appliedGet.body.application.id,applied.id);
+    assert.equal((await expenseRequest("POST",applyUrl,applyBody(),otherJar))
+      .response.status,409,"second party cannot double apply the same pair");
+    assert.equal((await expenseRequest("POST",applyUrl,applyBody(requestKey),jar))
+      .response.status,200,"lost HTTP response replay returns original proof");
+    assert.equal((await expenseRequest("POST",applyUrl,
+      {...applyBody(requestKey),expectedVersion:12},jar)).response.status,409,
+      "request key cannot authorize a different proposal version");
+    assert.equal((await expenseRequest("POST",applyUrl,
+      {...applyBody(requestKey),expectedFingerprint:"a".repeat(64)},jar))
+      .response.status,409,"request key cannot authorize different fingerprint");
+
+    const balanced=(await pool.query(`
+      SELECT a.debtor_id,a.creditor_id,
+         sum(a.amount_minor)::text AS total,count(*)::int AS n
+      FROM group_settlement_bilateral_application_allocations a
+      WHERE a.application_id=$1
+      GROUP BY a.debtor_id,a.creditor_id`,[applied.id])).rows;
+    assert.equal(balanced.length,2,"exactly two opposite directions posted");
+    assert.equal(balanced[0].total,appProposal.offsetMinor);
+    assert.equal(balanced[1].total,appProposal.offsetMinor);
+    const exactProof=await pool.query(`
+      SELECT count(*)::int AS n FROM group_settlement_bilateral_application_allocations a
+      JOIN group_settlement_bilateral_sources s
+        ON s.proposal_id=a.proposal_id AND s.obligation_id=a.obligation_id
+      WHERE a.application_id=$1 AND a.amount_minor=s.proposed_minor
+        AND a.debtor_id=s.debtor_id AND a.creditor_id=s.creditor_id`,[applied.id]);
+    assert.equal(exactProof.rows[0].n,
+      (await pool.query(`SELECT allocation_count FROM group_settlement_bilateral_proposals
+        WHERE id=$1`,[appProposal.id])).rows[0].allocation_count);
+    const appAfter=(await pool.query(`SELECT
+        (SELECT count(*)::int FROM settlements WHERE group_id=$1) AS cash_count,
+        (SELECT count(*)::int FROM settlement_allocations WHERE group_id=$1) AS allocation_count,
+        (SELECT count(*)::int FROM group_settlement_bilateral_applications WHERE group_id=$1) AS application_count`,
+      [bnGroup])).rows[0];
+    assert.equal(appAfter.cash_count,appBefore.cash_count,"noncash may not insert cash settlement");
+    assert.equal(appAfter.allocation_count,appBefore.allocation_count,
+      "noncash may not alter original cash allocations");
+    assert.equal(appAfter.application_count,1);
+    await assert.rejects(pool.query(`
+      UPDATE group_settlement_bilateral_applications SET offset_minor=1
+      WHERE id=$1`,[applied.id]),/append-only/);
+    await assert.rejects(pool.query(`
+      DELETE FROM group_settlement_bilateral_applications WHERE id=$1`,
+      [applied.id]),/append-only/);
+    await assert.rejects(pool.query(`
+      UPDATE group_settlement_bilateral_application_allocations
+      SET amount_minor=1 WHERE application_id=$1`,[applied.id]),/append-only/);
+    await assert.rejects(pool.query(`
+      DELETE FROM group_settlement_bilateral_application_allocations
+      WHERE application_id=$1`,[applied.id]),/append-only/);
+    assert.equal((await expenseRequest("POST",appDecisions,
+      decisionBody("revoke",11,appProposal.sourceFingerprint),jar))
+      .response.status,409,"applied agreement cannot be revoked");
+    assert.equal((await pool.query(`SELECT count(*)::int AS n
+      FROM group_settlement_bilateral_decision_events
+      WHERE proposal_id=$1 AND event_type='revoke'`,[appProposal.id])).rows[0].n,0);
+    // BN-005 deliberately NOT implemented: original obligation/cash
+    // balances and invoice/cycle completion states remain unchanged.
+
     const logout = await post("/api/auth/sign-out", {}, jar);
     assert.ok(logout.ok, `sign-out returned HTTP ${logout.status}`);
     assert.equal(await session(jar), null, "logout must revoke the session");
