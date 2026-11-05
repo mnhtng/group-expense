@@ -237,6 +237,7 @@ export async function generateDueRecurringExpenses(
   // prevent starving newly activated recurring rules.
   for(const target of rows.rows.slice(0,200)) {
     if(result.generated>=maxGenerated)break;
+    let failed=false;
     try {
       const current=await tx(async client=>{
         const members=await lockedGroup(client,target.group_id);
@@ -309,6 +310,7 @@ export async function generateDueRecurringExpenses(
       result.ignored+=current.ignored;
       result.paused+=current.paused;
     }catch(error) {
+      failed=true;
       result.errors++;
       console.error("Recurring generation failed",error instanceof Error?error.name:"Unknown");
     }
@@ -320,7 +322,7 @@ export async function generateDueRecurringExpenses(
         ON CONFLICT(rule_id) DO UPDATE SET
           last_checked_at=EXCLUDED.last_checked_at,
           last_error_at=EXCLUDED.last_error_at`,
-        [target.id,false]);
+        [target.id,failed]);
     }
     result.checked++;
   }
