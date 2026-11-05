@@ -14,11 +14,20 @@ export async function GET(request:Request) {
   const a=Buffer.from(secret??""),b=Buffer.from(provided);
   if(!secret||a.length!==b.length||!timingSafeEqual(a,b))
     return Response.json({error:"Unauthorized"},{status:401});
-  const [recurring,push,cycles]=await Promise.allSettled([
+  // SC-006: recurring invoices MUST be materialized (with UNIQUE
+  // rule+month idempotency) before cycle metadata catch-up/review.
+  // Never race two workers against the same group for late historic bills.
+  const [recurring,push]=await Promise.allSettled([
     generateDueRecurringExpenses(undefined,20),
     drainPushQueue(undefined,30),
-    processCycleMetadataCron(30,24),
   ]);
+  const recurringComplete=recurring.status==="fulfilled" &&
+    recurring.value.errors===0 && recurring.value.generated<20;
+  const cycles=recurringComplete
+    ? (await Promise.allSettled([processCycleMetadataCron(30,24)]))[0]
+    : ({status:"rejected",reason:new Error(
+      "Recurring catch-up incomplete; cycle metadata deferred safely.")
+    } as const);
   if(recurring.status==="rejected")
     console.error("Daily recurring expense task failed",
       recurring.reason instanceof Error?recurring.reason.name:"Unknown");
