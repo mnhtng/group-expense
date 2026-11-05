@@ -47,6 +47,11 @@ export type BilateralEligibleObligation = Readonly<{
   currentExpenseVersion: number;
   /** Must be proven from locked snapshot eligibility by the caller. */
   inLockedCycleSnapshot: boolean;
+  /** Independently verified SC-006 immutable adjustment to THIS locked cycle.
+   * Required ONLY if the ORIGINAL occurredOn is outside its attribution
+   * cycle. Not client input; the caller must prove it against PostgreSQL.
+   */
+  lateAttributionVerified?: boolean;
   /** Both the original obligation and invoice must still be active. */
   obligationVoided: boolean;
   expenseDeleted: boolean;
@@ -258,10 +263,15 @@ export function calculateBilateralSetoff(input: BilateralCalculatorInput): Bilat
       invalid("STALE_OR_INELIGIBLE_SOURCE",
         `Obligation ${obligationId} has invalid/stale source provenance.`);
     }
-    if (raw.occurredOn < input.periodStart ||
-        raw.occurredOn >= input.periodEnd) {
+    // SC-007: SC-006 can legitimately attribute an ORIGINAL late invoice
+    // from a historical locked period into the next locked REVIEW snapshot.
+    // The date itself stays original for audit and stable FIFO ordering.
+    // Unattributed out-of-period sources remain strictly forbidden.
+    if ((raw.occurredOn < input.periodStart ||
+         raw.occurredOn >= input.periodEnd) &&
+        raw.lateAttributionVerified !== true) {
       invalid("INVALID_SCOPE",
-        `Obligation ${obligationId} is outside the cycle's local [start,end) range.`);
+        `Obligation ${obligationId} is outside the cycle's [start,end) without audited attribution.`);
     }
     const original = checkedMinor(raw.originalMinor,
       `${obligationId}.originalMinor`, true);
