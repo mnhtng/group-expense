@@ -10,6 +10,7 @@ import {SettlementSnapshotPanel} from "@/components/groups/settlement-snapshot-p
 import {SettlementCycleFinancePanel} from "@/components/groups/settlement-cycle-finance-panel";
 import {SettlementLateInvoicePanel} from "@/components/groups/settlement-late-invoice-panel";
 import {SettlementCycleSourceList} from "@/components/groups/settlement-cycle-source-list";
+import {SettlementCycleOpsPanel} from "@/components/groups/settlement-cycle-ops-panel";
 
 export default async function CycleDetailPage({params,searchParams}:{
   params:Promise<{groupId:string;cycleId:string}>;
@@ -87,6 +88,9 @@ export default async function CycleDetailPage({params,searchParams}:{
         counterparts={people} requestedEnabled={settings.requestedEnabled}
         bilateralEnabled={settings.requestedBilateralNetting}
         financialEngineEnabled={settings.effectiveEnabled}/>
+      <SettlementCycleOpsPanel groupId={groupId} cycleId={cycleId}
+        userId={user.id} visibleSources={originalSources.lines}
+        members={[...people,{id:user.id,name:me}]}/>
       <section className="rounded-3xl border bg-card p-5 space-y-2">
         <h2 className="font-semibold">Ảnh chụp số liệu lúc khóa kỳ</h2>
         <p className="text-sm text-muted-foreground">
