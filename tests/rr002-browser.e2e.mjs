@@ -414,6 +414,17 @@ async function scenario(engine,project,options,actors){
       assert.equal(manifest.status(),200);
       await capture(owner.page,project,"resolved-cycle");
     }
+  }catch(error){
+    // On a browser assertion failure retain screenshots of ONLY synthetic
+    // CI test accounts and invoices. Never capture browser trace/network
+    // secrets, auth headers, storageState or real financial information.
+    for(let i=0;i<users.length;i++){
+      const user=users[i];
+      if(!user.page.isClosed()){
+        await capture(user.page,project,"failure-actor-"+i).catch(()=>{});
+      }
+    }
+    throw error;
   }finally{
     await Promise.allSettled(users.map(u=>u.context.close()));
     await browser.close();
