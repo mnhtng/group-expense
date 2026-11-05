@@ -23,7 +23,7 @@ type Row={
   originalMinor:string;confirmedCashMinor:string;pendingCashMinor:string;
   confirmedSetoffMinor:string;
   sourceOriginalMinor:string;sourceExpenseVersion:number;
-  voided:boolean;deleted:boolean;
+  voided:boolean;deleted:boolean;auditedLateAttribution:boolean;
 };
 type ProposalRow={
   id:string;version:number;partyLow:string;partyHigh:string;
@@ -74,7 +74,14 @@ const selectSources=`SELECT src.obligation_id AS "obligationId",
     bal.pending_cash_minor::text AS "pendingCashMinor",
     bal.confirmed_setoff_minor::text AS "confirmedSetoffMinor",
     (o.voided_at IS NOT NULL) AS "voided",
-    (e.deleted_at IS NOT NULL) AS "deleted"
+    (e.deleted_at IS NOT NULL) AS "deleted",
+    EXISTS(
+      SELECT 1 FROM group_settlement_cycle_adjustments adj
+      WHERE adj.target_cycle_id=src.cycle_id
+        AND adj.group_id=src.group_id
+        AND adj.expense_id=src.expense_id
+        AND adj.expense_version=src.expense_version
+    ) AS "auditedLateAttribution"
   FROM group_settlement_cycle_snapshot_obligations src
   JOIN obligations o ON o.id=src.obligation_id AND o.group_id=src.group_id
   JOIN expenses e ON e.id=o.expense_id AND e.group_id=src.group_id
@@ -167,6 +174,7 @@ function validRows(rows:readonly Row[],groupId:string,cycleId:string):BilateralE
       occurredOn:r.occurredOn,snapshotExpenseVersion:r.sourceVersion,
       currentExpenseVersion:r.currentVersion,inLockedCycleSnapshot:true,
       obligationVoided:r.voided,expenseDeleted:r.deleted,
+      lateAttributionVerified:r.auditedLateAttribution,
       originalMinor:r.originalMinor,
       confirmedCashMinor:r.confirmedCashMinor,pendingCashMinor:r.pendingCashMinor,
       confirmedSetoffMinor:r.confirmedSetoffMinor,pendingSetoffMinor:"0",
