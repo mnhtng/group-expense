@@ -2136,6 +2136,39 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
         unitPriceMinor:"100000",participants:[registered.user.id]}],
     },otherJar);
     assert.equal(bnBackward.response.status,201,JSON.stringify(bnBackward.body));
+    // 120 extra ORIGINAL obligations, 60 each way (oldest local date).
+    // The proposed amount will need 61 positive allocations per direction.
+    await pool.query(`INSERT INTO expenses
+      (id,group_id,payer_id,created_by,title,occurred_on,total_minor)
+      SELECT gen_random_uuid(),$1,
+        CASE WHEN g<=60 THEN $2 ELSE $3 END,
+        CASE WHEN g<=60 THEN $2 ELSE $3 END,
+        'BN002 Bulk '||g,$4::date,1000
+      FROM generate_series(1,120) AS g`,
+      [bnGroup,registered.user.id,otherUser.id,sc003Date(-3)]);
+    await pool.query(`INSERT INTO expense_items
+      (id,expense_id,group_id,position,name,quantity,unit_price_minor,amount_minor)
+      SELECT gen_random_uuid(),id,group_id,0,'Bulk',1,1000,1000
+      FROM expenses WHERE group_id=$1 AND title LIKE 'BN002 Bulk %'`,[bnGroup]);
+    await pool.query(`INSERT INTO expense_item_shares
+      (item_id,group_id,user_id,amount_minor)
+      SELECT i.id,i.group_id,
+        CASE WHEN e.payer_id=$2 THEN $3 ELSE $2 END,1000
+      FROM expense_items i JOIN expenses e ON e.id=i.expense_id
+      WHERE e.group_id=$1 AND e.title LIKE 'BN002 Bulk %'`,
+      [bnGroup,registered.user.id,otherUser.id]);
+    await pool.query(`INSERT INTO obligations
+      (id,group_id,expense_id,expense_version,debtor_id,creditor_id,amount_minor)
+      SELECT gen_random_uuid(),e.group_id,e.id,1,
+        CASE WHEN e.payer_id=$2 THEN $3 ELSE $2 END,e.payer_id,1000
+      FROM expenses e WHERE e.group_id=$1 AND e.title LIKE 'BN002 Bulk %'`,
+      [bnGroup,registered.user.id,otherUser.id]);
+    await pool.query(`INSERT INTO obligation_sources
+      (id,obligation_id,expense_item_id,item_name,amount_minor)
+      SELECT gen_random_uuid(),o.id,i.id,'Bulk',1000
+      FROM obligations o JOIN expense_items i ON i.expense_id=o.expense_id
+      JOIN expenses e ON e.id=o.expense_id
+      WHERE e.group_id=$1 AND e.title LIKE 'BN002 Bulk %'`,[bnGroup]);
     const bnOb=(await pool.query(`SELECT id,debtor_id,creditor_id
       FROM obligations WHERE expense_id=ANY($1::uuid[]) ORDER BY id`,
       [[bnForward.body.id,bnBackward.body.id]])).rows;
@@ -2165,8 +2198,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const bnReadOff=await expenseRequest("GET",bnReadUrl,undefined,jar);
     assert.equal(bnReadOff.response.status,200,JSON.stringify(bnReadOff.body));
     assert.equal(bnReadOff.body.writable,false);
-    assert.equal(bnReadOff.body.calculation.offsetMinor,"80000");
-    assert.equal(bnReadOff.body.eligibleSourceCount,2);
+    assert.equal(bnReadOff.body.calculation.offsetMinor,"140000");
+    assert.equal(bnReadOff.body.eligibleSourceCount,122);
     assert.equal(bnReadOff.body.approvalEnabled,false);
     const bnPayload=(version,key,fingerprint)=>({
       partyAId:registered.user.id,partyBId:otherUser.id,
@@ -2185,7 +2218,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.deepEqual([
       bnLive.body.calculation.aOwesB.availableBeforeMinor,
       bnLive.body.calculation.bOwesA.availableBeforeMinor,
-    ].sort(),["130000","80000"].sort(),
+    ].sort(),["140000","190000"].sort(),
       "canonical unordered pair must not depend on Better Auth user ID sort");
 
     const bnRejectedInput=await expenseRequest("POST",bnProposalUrl,{
@@ -2216,9 +2249,9 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const bnWinner=bnRace.findIndex(x=>x.response.status===201);
     const bnFirst=bnRace[bnWinner].body.proposal;
     assert.equal(bnFirst.version,1);
-    assert.equal(bnFirst.offsetMinor,"80000");
-    assert.equal(bnFirst.sourceCount,2);
-    assert.equal(bnFirst.allocationCount,2);
+    assert.equal(bnFirst.offsetMinor,"140000");
+    assert.equal(bnFirst.sourceCount,122);
+    assert.equal(bnFirst.allocationCount,122);
     assert.equal(bnRace[bnWinner].body.approvalEnabled,false);
     const bnAuthor=bnWinner===0?jar:otherJar;
     const bnSameKey=bnWinner===0?bnKeyA:bnKeyB;
@@ -2235,8 +2268,17 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       proposed_minor::text,available_before_minor::text
       FROM group_settlement_bilateral_sources
       WHERE proposal_id=$1 ORDER BY obligation_id`,[bnFirst.id])).rows;
-    assert.equal(bnSources.length,2);
-    assert.deepEqual(bnSources.map(x=>x.proposed_minor),["80000","80000"]);
+    assert.equal(bnSources.length,122);
+    for(const [debtor,creditor] of [
+      [registered.user.id,otherUser.id],
+      [otherUser.id,registered.user.id]]){
+      const direction=bnSources.filter(x=>x.debtor_id===debtor &&
+        x.creditor_id===creditor);
+      assert.equal(direction.length,61);
+      assert.equal(direction.reduce((n,x)=>n+BigInt(x.proposed_minor),0n),
+        140000n,"equal original-obligation allocations in both directions");
+      assert.equal(direction.filter(x=>BigInt(x.proposed_minor)>0n).length,61);
+    }
     assert.equal((await pool.query(
       "SELECT count(*)::int AS n FROM group_settlement_bilateral_proposals WHERE group_id=$1",
       [bnGroup])).rows[0].n,1);
@@ -2278,7 +2320,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
        WHERE group_id=$1 ORDER BY version`,[bnGroup])).rows.length,2);
     assert.equal((await pool.query(
       `SELECT offset_minor::text AS amount FROM group_settlement_bilateral_proposals
-       WHERE id=$1`,[bnFirst.id])).rows[0].amount,"80000",
+       WHERE id=$1`,[bnFirst.id])).rows[0].amount,"140000",
       "historical proposal version remains immutable after cash confirmation");
     assert.equal((await expenseRequest("PATCH",bnSetting,
       config(2,false,false),jar)).response.status,200);
