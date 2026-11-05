@@ -6,12 +6,17 @@ export type DebtRow = {
   expenseId: string; expenseTitle: string; expenseVersion: number;
   occurredOn: string; expenseTotalMinor: string; sourceCount: number; sourcePreview: string; debtorId: string; debtorName: string;
   creditorId: string; creditorName: string; amountMinor: string;
-  confirmedMinor: string; pendingMinor: string; outstandingMinor: string; availableMinor: string;
+  confirmedMinor: string; confirmedCashMinor: string; confirmedSetoffMinor: string;
+  pendingMinor: string; outstandingMinor: string; availableMinor: string;
 };
 export type DebtPayment = {
   id: string; status: "pending" | "confirmed" | "rejected" | "cancelled";
   amountMinor: string; initiatedBy: string; resolvedBy: string | null;
   note: string | null; createdAt: string; resolvedAt: string | null;
+};
+export type DebtSetoff = {
+  applicationId: string; proposalId: string; cycleId: string;
+  amountMinor: string; appliedBy: string; appliedAt: string;
 };
 export type DebtSource = {
   itemId: string; itemName: string; amountMinor: string;
@@ -48,19 +53,14 @@ const debtQuery = `
     o.debtor_id AS "debtorId", debtor.name AS "debtorName",
     o.creditor_id AS "creditorId", creditor.name AS "creditorName",
     o.amount_minor::text AS "amountMinor",
-    COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
-      JOIN settlements st ON st.id=a.settlement_id
-      WHERE a.obligation_id=o.id AND st.status='confirmed'),0)::text AS "confirmedMinor",
-    COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
-      JOIN settlements st ON st.id=a.settlement_id
-      WHERE a.obligation_id=o.id AND st.status='pending'),0)::text AS "pendingMinor",
-    (o.amount_minor-COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
-      JOIN settlements st ON st.id=a.settlement_id
-      WHERE a.obligation_id=o.id AND st.status='confirmed'),0))::text AS "outstandingMinor",
-    (o.amount_minor-COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
-      JOIN settlements st ON st.id=a.settlement_id
-      WHERE a.obligation_id=o.id AND st.status IN ('confirmed','pending')),0))::text AS "availableMinor"
+    (bal.confirmed_cash_minor+bal.confirmed_setoff_minor)::text AS "confirmedMinor",
+    bal.confirmed_cash_minor::text AS "confirmedCashMinor",
+    bal.confirmed_setoff_minor::text AS "confirmedSetoffMinor",
+    bal.pending_cash_minor::text AS "pendingMinor",
+    bal.outstanding_minor::text AS "outstandingMinor",
+    bal.available_minor::text AS "availableMinor"
   FROM obligations o
+  JOIN bn005_obligation_balances bal ON bal.obligation_id=o.id
   JOIN expenses e ON e.id=o.expense_id AND e.deleted_at IS NULL
   JOIN groups g ON g.id=o.group_id AND g.archived_at IS NULL
   JOIN "user" debtor ON debtor.id=o.debtor_id
@@ -89,7 +89,7 @@ export async function listExpenseDebts(groupId: string, expenseId: string, actor
 }
 
 export async function getDebtDetails(groupId: string, debtId: string, actorId: string):
-  Promise<{ debt: DebtRow; sources: DebtSource[]; payments: DebtPayment[] } | null> {
+  Promise<{ debt: DebtRow; sources: DebtSource[]; payments: DebtPayment[]; setoffs: DebtSetoff[] } | null> {
   if (!(await assertGroupMember(groupId, actorId)) || !validUUID(debtId)) return null;
   const result = await pool.query<DebtRow>(
     debtQuery + " AND o.group_id=$1 AND o.id=$2", [groupId, debtId],
@@ -112,20 +112,26 @@ export async function getDebtDetails(groupId: string, debtId: string, actorId: s
      ORDER BY s.created_at DESC, s.id DESC LIMIT 100`,
     [debtId, groupId],
   );
-  return { debt, sources: sources.rows, payments: payments.rows };
+  const setoffs=await pool.query<DebtSetoff>(
+    `SELECT a.application_id AS "applicationId",a.proposal_id AS "proposalId",
+       a.cycle_id AS "cycleId",a.amount_minor::text AS "amountMinor",
+       app.applied_by AS "appliedBy",app.created_at::text AS "appliedAt"
+     FROM group_settlement_bilateral_application_allocations a
+     JOIN group_settlement_bilateral_applications app ON app.id=a.application_id
+     WHERE a.group_id=$1 AND a.obligation_id=$2
+     ORDER BY app.created_at DESC,app.id DESC`,[groupId,debtId],
+  );
+  return { debt, sources: sources.rows, payments: payments.rows, setoffs: setoffs.rows };
 }
 
 export async function listPersonalDebts(userId: string): Promise<PersonalDebt[]> {
   const result = await pool.query<PersonalDebt>(
     `WITH live AS (
-       SELECT o.*,
-         COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
-           JOIN settlements st ON st.id=a.settlement_id
-           WHERE a.obligation_id=o.id AND st.status='confirmed'),0) AS confirmed,
-         COALESCE((SELECT sum(a.amount_minor) FROM settlement_allocations a
-           JOIN settlements st ON st.id=a.settlement_id
-           WHERE a.obligation_id=o.id AND st.status='pending'),0) AS pending
+       SELECT o.*,bal.outstanding_minor AS remaining,
+         bal.pending_cash_minor AS pending,
+         bal.available_minor AS available
        FROM obligations o
+       JOIN bn005_obligation_balances bal ON bal.obligation_id=o.id
        JOIN expenses e ON e.id=o.expense_id AND e.deleted_at IS NULL
        JOIN groups g ON g.id=o.group_id AND g.archived_at IS NULL
        JOIN group_members m ON m.group_id=o.group_id AND m.user_id=$1 AND m.status='active'
@@ -134,14 +140,14 @@ export async function listPersonalDebts(userId: string): Promise<PersonalDebt[]>
      SELECT CASE WHEN o.debtor_id=$1 THEN 'pay' ELSE 'receive' END AS direction,
        CASE WHEN o.debtor_id=$1 THEN o.creditor_id ELSE o.debtor_id END AS "counterpartyId",
        u.name AS "counterpartyName",o.group_id AS "groupId",g.name AS "groupName",
-       sum(o.amount_minor-o.confirmed)::text AS "amountMinor",
+       sum(o.remaining)::text AS "amountMinor",
        sum(o.pending)::text AS "pendingMinor",
-       sum(o.amount_minor-o.confirmed-o.pending)::text AS "availableMinor",
+       sum(o.available)::text AS "availableMinor",
        count(*)::int AS "obligationCount"
      FROM live o JOIN groups g ON g.id=o.group_id
      JOIN "user" u ON u.id=CASE WHEN o.debtor_id=$1 THEN o.creditor_id ELSE o.debtor_id END
      GROUP BY direction,"counterpartyId",u.name,o.group_id,g.name
-     HAVING sum(o.amount_minor-o.confirmed)>0
+     HAVING sum(o.remaining)>0
      ORDER BY g.name,u.name,direction`, [userId]
   );
   return result.rows;
@@ -153,9 +159,7 @@ export async function listPersonalDebtItems(userId: string): Promise<DebtRow[]> 
     debtQuery + ` AND (o.debtor_id=$1 OR o.creditor_id=$1)
       AND EXISTS (SELECT 1 FROM group_members m
         WHERE m.group_id=o.group_id AND m.user_id=$1 AND m.status='active')
-      AND o.amount_minor > COALESCE((SELECT sum(a.amount_minor)
-        FROM settlement_allocations a JOIN settlements st ON st.id=a.settlement_id
-        WHERE a.obligation_id=o.id AND st.status='confirmed'),0)
+      AND bal.outstanding_minor > 0
       ORDER BY e.occurred_on DESC, e.created_at DESC, o.id DESC LIMIT 250`,
     [userId],
   );
