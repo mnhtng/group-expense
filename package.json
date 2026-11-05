@@ -14,7 +14,8 @@
     "db:check": "node --env-file-if-exists=.env.local db/check.mjs",
     "test:integration": "node --env-file-if-exists=.env.local --test tests/*.integration.mjs",
     "db:neon-check": "node --env-file-if-exists=.env.local db/neon-check.mjs",
-    "test:http": "node --test tests/*.smoke.mjs"
+    "test:http": "node --test tests/*.smoke.mjs",
+    "test:finance:audit": "node db/sc007-audit.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
