@@ -2780,6 +2780,9 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     // Previous BN-003 fixtures deliberately archived this group. Restore
     // activity and create a NEW version with two fresh independent approvals.
     await pool.query("UPDATE groups SET archived_at=NULL WHERE id=$1",[bnGroup]);
+    await pool.query(`UPDATE group_members SET status='active',
+      left_at=NULL,rejoined_at=clock_timestamp()
+      WHERE group_id=$1 AND user_id=$2`,[bnGroup,thirdUser.id]);
     const appPreview=(await expenseRequest("GET",bnReadUrl,undefined,jar)).body;
     assert.equal(appPreview.currentVersion,10);
     const appCreated=await expenseRequest("POST",bnProposalUrl,
