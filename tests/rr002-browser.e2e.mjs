@@ -298,7 +298,7 @@ async function scenario(engine,project,options){
       name:"Xem nghĩa vụ gốc dùng để tính bù trừ"});
     await originals.focus();
     await owner.page.keyboard.press("Enter");
-    assert.equal(await originals.getAttribute("aria-expanded"),"true");
+    assert.equal(await owner.page.getByRole("button",{name:"Ẩn nghĩa vụ gốc"}).getAttribute("aria-expanded"),"true");
     await owner.page.getByRole("heading",{name:"Chiều 1"}).waitFor();
     await noHorizontalOverflow(owner.page,project+" locked detail");
     if(project.includes("phone"))await capture(owner.page,project,"locked-cycle");
@@ -365,7 +365,7 @@ async function scenario(engine,project,options){
     await owner.page.route("**/settlement-cycle/cycles/*/reconciliation",route=>
       route.abort("failed"));
     await owner.page.reload();
-    const panel=owner.page.getByRole("heading",{name:"Đối soát và trao đổi"}).locator("..");
+    const panel=owner.page.getByRole("region",{name:"Đối soát và trao đổi"});
     await panel.getByRole("alert").first().waitFor();
     assert.ok(!owner.page.url().includes("/sign-in"),
       "temporary fetch failure must not force a fresh login");
@@ -403,6 +403,7 @@ test("RR-002 signed Chromium/WebKit browser interactions on disposable PG17",{
     "node_modules/next/dist/bin/next","start","-p",String(port)
   ],{env:{...process.env,BETTER_AUTH_URL:ORIGIN},
     stdio:["ignore","pipe","pipe"]});
+  server.stdout.resume();
   server.stderr.resume();
   try{
     await waitForServer(server);
