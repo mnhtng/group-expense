@@ -2533,10 +2533,24 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const fourthUrl=bnDecisionUrl(fourth.id);
     assert.equal((await expenseRequest("GET",fourthUrl,undefined,jar))
       .body.approvalCount,0);
-    const bn003Rejected=await expenseRequest("POST",fourthUrl,
-      decisionBody("reject",4,fourth.sourceFingerprint),otherJar);
-    assert.equal(bn003Rejected.response.status,201);
+    assert.equal((await expenseRequest("POST",fourthUrl,
+      decisionBody("approve",4,fourth.sourceFingerprint,aKey),jar))
+      .response.status,409,
+      "same actor cannot reuse the prior proposal's request key");
+    // Two different signatories race APPROVE vs REJECT, with PostgreSQL
+    // serializing the immutable proposal decisions. Rejection is terminal
+    // regardless of which request obtained the group lock first.
+    const [fourthApprove,bn003Rejected]=await Promise.all([
+      expenseRequest("POST",fourthUrl,
+        decisionBody("approve",4,fourth.sourceFingerprint),jar),
+      expenseRequest("POST",fourthUrl,
+        decisionBody("reject",4,fourth.sourceFingerprint),otherJar),
+    ]);
+    assert.ok([201,409].includes(fourthApprove.response.status));
+    assert.equal(bn003Rejected.response.status,201,JSON.stringify(bn003Rejected.body));
     assert.equal(bn003Rejected.body.status,"rejected");
+    assert.equal((await expenseRequest("GET",fourthUrl,undefined,jar))
+      .body.status,"rejected");
     assert.equal((await expenseRequest("POST",fourthUrl,
       decisionBody("approve",4,fourth.sourceFingerprint),jar))
       .response.status,409);
