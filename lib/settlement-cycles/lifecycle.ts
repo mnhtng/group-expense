@@ -399,10 +399,12 @@ export async function processCycleMetadataCron(maxGroups=30,maxEach=24) {
          WHERE r.group_id=g.id AND r.superseded_at IS NULL
            AND r.effective_at <= clock_timestamp())
      ORDER BY cp.last_checked_at ASC NULLS FIRST,g.id
-     LIMIT $1`,[maxGroups]);
-  const totals={groups:candidates.rows.length,created:0,reviewed:0,
-    skipped:0,errors:0,metadataOnly:true};
-  for(const row of candidates.rows){
+     LIMIT $1`,[maxGroups+1]);
+  const selected=candidates.rows.slice(0,maxGroups);
+  const totals={groups:selected.length,created:0,reviewed:0,
+    skipped:0,errors:0,metadataOnly:true,
+    hasMoreGroups:candidates.rows.length>maxGroups,atCapacityGroups:0};
+  for(const row of selected){
     let failure=false;
     try{
       const result=await transaction(async client=>{
@@ -415,6 +417,11 @@ export async function processCycleMetadataCron(maxGroups=30,maxEach=24) {
       totals.created+=result.created;
       totals.reviewed+=result.reviewed;
       if(result.disabled)totals.skipped++;
+      // A per-group cap may defer older periods to the next replay.
+      // No GROUP is considered fully caught up solely because its first
+      // maxEach periods were processed.
+      if(!result.disabled&&result.created+result.reviewed>=maxEach)
+        totals.atCapacityGroups++;
     }catch(cause){
       failure=true;totals.errors++;
       // Avoid disclosing user IDs, invoices or database details in logs.
