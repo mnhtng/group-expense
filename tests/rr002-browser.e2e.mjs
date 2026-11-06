@@ -64,14 +64,35 @@ async function send(user,method,url,data){
   try{body=await response.json();}catch{}
   return {response,body};
 }
-// Observe the real browser's POST, not a separate APIRequestContext request.
+// Observe a real browser POST without hiding Playwright click/actionability
+// errors behind a shorter response timeout. The listener is armed BEFORE
+// the actual user click and catches even responses that finish during click().
 async function observeBrowserPost(page,path,activate,timeout=20000){
-  const [response]=await Promise.all([
-    page.waitForResponse(r=>r.request().method()==="POST"&&
-      new URL(r.url()).pathname===path,{timeout}),
-    activate(),
-  ]);
-  return response;
+  let observed=null;
+  let notify=null;
+  const recordResponse=response=>{
+    if(response.request().method()==="POST"&&
+       new URL(response.url()).pathname===path){
+      observed=response;
+      if(notify)notify(response);
+    }
+  };
+  page.on("response",recordResponse);
+  try{
+    // This must settle (or fail with Playwright's actionable click call log)
+    // BEFORE the HTTP wait starts. Promise.all would hide a pending click.
+    await activate();
+    if(observed)return observed;
+    let timer;
+    try{
+      return await new Promise((resolve,reject)=>{
+        notify=resolve;
+        timer=setTimeout(()=>reject(new Error(
+          "RR-002 timed out awaiting browser POST response after a completed click: "+
+          path)),timeout);
+      });
+    }finally{clearTimeout(timer);}
+  }finally{page.off("response",recordResponse);}
 }
 async function must(user,method,path,body,expected=200){
   const {response,body:payload}=await send(user,method,path,body);
@@ -308,7 +329,7 @@ async function scenario(engine,project,options,actors){
       assert.equal(await lock.isEnabled(),true,
         "consented snapshot lock button must become enabled");
       staleResponse=await observeBrowserPost(
-        owner.page,snapshotPath,()=>lock.click(),10000);
+        owner.page,snapshotPath,()=>lock.click({timeout:8000}),10000);
     }catch(error){
       // All values are browser capabilities, control state or synthetic-only
       // frontend errors. Do NOT log request headers, tokens or finance data.
@@ -329,7 +350,7 @@ async function scenario(engine,project,options,actors){
       }).isChecked().catch(()=>false);
       const alerts=await owner.page.getByRole("alert").allInnerTexts()
         .catch(()=>[]);
-      throw new Error("RR-002 snapshot POST not observed: dispatched="+
+      throw new Error("RR-002 snapshot click/POST failed: dispatched="+
         dispatched+", nativeClicks="+diagnostic.nativeClicks+
         ", secureContext="+diagnostic.secureContext+
         ", crypto.randomUUID="+diagnostic.randomUUID+
