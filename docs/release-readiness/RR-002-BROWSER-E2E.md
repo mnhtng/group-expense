@@ -142,6 +142,24 @@ RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh
 ```
 If still RED, use the **new error details** to investigate, rather than bypassing the UI with a direct API client or adding arbitrary click retries. Do **not** run GitHub Actions while the quota is exhausted. Engine hard OFF, PR #16 Draft, all shared Neon and money writes unchanged.
 
+### Fourth local Chromium-only attempt — click actionability isolated (2026-11-06)
+
+The user reran `RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh`. Disposable PostgreSQL 17, migrations 001–023 twice, Next.js compilation and TypeScript all **PASS**. The focused browser test still failed **before a snapshot POST**, with `dispatched=0`, `nativeClicks=0`, `secureContext=true`, `crypto.randomUUID=function`, consent checkbox checked, lock button visible, no page JS exceptions. This makes a WebCrypto failure unlikely and shows the earlier hypothesis was insufficient.
+
+**Instrumentation flaw found:** `observeBrowserPost` used `Promise.all([page.waitForResponse(...,{timeout:10000}), lock.click()])`. `Promise.all` rejects at the shorter network timeout even while Playwright's actionability-based `lock.click()` is *still pending* under its longer default timeout. Consequently `nativeClicks=0` at that moment did **not** prove the browser dispatched a click, and the diagnostic masked Playwright's reason for waiting (overlay, movement, unstable control, etc.). Never use `force:true`, programmatic DOM click or a direct POST to bypass this gate.
+
+The harness now **arms a response listener before the click**, **awaits the real `lock.click({timeout:8000})` first**, and only *after click resolves* waits up to 10 seconds for an observed HTTP response. It always removes its listener. A failed click now surfaces Playwright's actionability/call-log evidence (up to 1400 characters) rather than an irrelevant 10-second network timeout. All signed actual-browser POSTs in RR-002 use this revised helper; the default four-profile matrix and PostgreSQL guard remain unchanged. Its safety test has been updated to assert the new observer contract.
+
+**Status: not yet rerun after this correction, E2E NOT PASS, release NO-GO.** For one focused diagnostic test without GitHub Actions:
+
+```bash
+git pull --ff-only origin feat/settlement-cycles-bilateral
+pnpm test:unit
+RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh
+```
+
+The next Chromium failure, if any, should report the true Playwright actionability error or a post-click request/HTTP failure. Do not loosen the 409 privacy/financial safeguards.
+
 ### Required to complete RR-002
 
 1. Inspect [RR-002 failed browser run](https://github.com/mnhtng/group-expense/actions/runs/42071610402) and its job annotations; restore GitHub-hosted runner allocation if needed.
