@@ -266,11 +266,26 @@ async function scenario(engine,project,options,actors){
     await owner.page.getByRole("checkbox",{
       name:/Tôi đã kiểm tra số liệu này/
     }).check();
-    await lock.click();
-    await owner.page.getByRole("alert").first().waitFor();
-    assert.equal(await owner.page.getByText(
-      "Bản xem trước — chưa khóa").count(),0,
-      "409 must invalidate stale review preview");
+    // Observe the actual POST response rather than guessing from an
+    // unrelated alert. Playwright's click() waits for input dispatch, NOT
+    // the async fetch() or React state commit after HTTP 409.
+    const [staleResponse]=await Promise.all([
+      owner.page.waitForResponse(response=>
+        response.url()===ORIGIN+apiFor(groupId,cycleId)+"/snapshot"&&
+        response.request().method()==="POST",{timeout:20000}),
+      lock.click(),
+    ]);
+    assert.equal(staleResponse.status(),409,
+      "stale original obligations MUST cause a snapshot-lock HTTP 409");
+    // A rejected fingerprint must make the entire preview/consent UI
+    // disappear and show the specific server error before permitting retry.
+    await owner.page.getByText(
+      "Bản xem trước — chưa khóa").waitFor({state:"hidden",timeout:10000});
+    await owner.page.getByRole("alert").getByText(
+      /Số liệu hóa đơn hoặc thanh toán đã thay đổi/).waitFor();
+    assert.equal(await owner.page.getByRole("checkbox",{
+      name:/Tôi đã kiểm tra số liệu này/
+    }).count(),0,"a stale preview must also revoke the consent checkbox");
     let state=(await must(owner,"GET",cyclesApi+"/"+cycleId+"/snapshot")).snapshot;
     assert.equal(state.state,"review","stale fingerprint must never lock");
     await owner.page.getByRole("button",{
