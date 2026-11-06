@@ -1,19 +1,13 @@
 name: RR-002 Browser and Mobile Emulation E2E
 
+# Expensive browser matrix: never schedule on every push or PR update.
+# Add the 'run-rr002-e2e' label to PR #16 for ONE explicitly requested run.
+# Remove and re-add the label for a fresh run after fixing failures.
+# workflow_dispatch only becomes usable when this file exists on the
+# repository's default branch; PR label dispatch works on this draft branch.
 on:
   pull_request:
-    paths:
-      - '.github/workflows/rr002-browser-e2e.yml'
-      - 'tests/rr002-browser.e2e.mjs'
-      - 'tests/rr002-safety.test.mjs'
-      - 'components/groups/**'
-      - 'app/(app)/groups/**'
-      - 'app/api/groups/**'
-      - 'lib/settlement-cycles/**'
-      - 'db/**'
-      - 'proxy.ts'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
+    types: [labeled]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +19,9 @@ concurrency:
 
 jobs:
   e2e:
+    # A workflow_skip does not acquire a runner or consume billed minutes.
+    # Never run unrequested or non-RR-002 label events on Draft PRs.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.label.name == 'run-rr002-e2e') }}
     name: chromium-webkit-mobile-emulation
     runs-on: ubuntu-24.04
     timeout-minutes: 30
