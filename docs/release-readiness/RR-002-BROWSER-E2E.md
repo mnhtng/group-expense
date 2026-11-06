@@ -118,6 +118,30 @@ bash scripts/rr002-local.sh
 
 **Current status:** implementation and test corrections made; second-run 0/4 browser profiles passed, subsequent corrected run **not yet executed**. Do not mark RR-002 PASS, turn on the engine, migrate shared Neon, merge or deploy.
 
+### Third local macOS Chromium-only run — 2026-11-06
+
+The user's focused command `RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh` successfully provisioned the disposable Docker PG17, verified migrations 001–023 twice, and completed Next.js production build plus TypeScript. The focused Chromium suite was **RED** with:
+
+```text
+RR-002 snapshot POST not observed: dispatched=0,
+buttonVisible=true, previewVisible=true, consent=true
+page.waitForResponse: Timeout 10000ms exceeded
+```
+
+This rules out an observed HTTP 409/500 as the immediate failure: **the browser sent no observable snapshot POST**. A checked consent element and visible button alone do not prove the React handler executed or that its synchronous code succeeded. The root cause is **not yet confirmed** from this log alone.
+
+The original lock UI called `crypto.randomUUID()` **before its `try/catch`**. This path could cause an unhandled synchronous exception, a silently stuck UI, and zero POSTs in a browser that lacks secure-context WebCrypto; the call now executes *inside* the error handling. The E2E now records: the native DOM click count (separating browser event delivery from handler effects), `window.isSecureContext`, whether `crypto.randomUUID` is a function, the lock button's current label, current alert(s), and page `pageerror` names/messages. No session cookies, request tokens or real financial data are recorded. **This is a test diagnostics and error-handling improvement, not a claim that Chromium now passes.**
+
+An earlier static RR-002 guard still searched for `waitForResponse(response=>`, even after the real observer was refactored to use `waitForResponse(r=>`—updated the assertion to accept both; otherwise the next `pnpm test:unit` would fail unrelated to browser behavior.
+
+Next local steps (after updating code):
+```bash
+git pull --ff-only origin feat/settlement-cycles-bilateral
+pnpm test:unit
+RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh
+```
+If still RED, use the **new error details** to investigate, rather than bypassing the UI with a direct API client or adding arbitrary click retries. Do **not** run GitHub Actions while the quota is exhausted. Engine hard OFF, PR #16 Draft, all shared Neon and money writes unchanged.
+
 ### Required to complete RR-002
 
 1. Inspect [RR-002 failed browser run](https://github.com/mnhtng/group-expense/actions/runs/42071610402) and its job annotations; restore GitHub-hosted runner allocation if needed.
