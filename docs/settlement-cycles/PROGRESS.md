@@ -1114,6 +1114,16 @@ CASH/NONCASH/obligation ledger writes were performed.
 
 [RR-002 browser E2E matrix and CI blocker](../release-readiness/RR-002-BROWSER-E2E.md) · [RR-001–RR-005 release backlog](../release-readiness/BACKLOG.md).
 
+## 2026-11-06 — RR-002 low-cost readiness: manual/label-run only
+
+The project owner's GitHub Actions usage quota is exhausted. We preserved the high-risk finance gates, but disabled **automatic PR-commit RR-002 browser matrix** execution; browser E2E can now run only when the PR receives label `run-rr002-e2e` (or, once available on the default branch, `workflow_dispatch`). This avoids repeated expensive attempts. CI and PostgreSQL financial integration workflows remain enabled and unweakened.
+
+Added `scripts/rr002-local.sh`, which uses a temporary loopback-bound Docker PostgreSQL 17 container and signed Chromium/WebKit browser tests. It refuses shared DB URLs, the direct PostgreSQL endpoint and financial-test override flags, and cleans up the container after a run. Added safety unit assertions and gitignored synthetic screenshot files. The shell script was syntax-checked, **not executed against a live local Docker environment**.
+
+The four-profile browser suite and physical-device PWA evaluation remain **unverified**; RR-003 real PITR restoration, RR-004 finance/security approval, and RR-005 separate staging/release decision have NOT happened. Deferring those checks while the financial engine remains OFF is acceptable for continued development **but never authorizes production financial activation**. PR #16 stays Draft and release verdict **NO-GO**.
+
+[Limited Actions usage decision and exit gates](../release-readiness/BACKLOG.md) · [RR-002 local runbook](../release-readiness/RR-002-BROWSER-E2E.md).
+
 ## NEXT WORK — separate approval required
 
 The child-only RR-001 **schema migration check is complete**.
