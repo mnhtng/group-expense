@@ -47,8 +47,11 @@ export function SettlementSnapshotPanel({groupId,cycleId,version,canManage,
   async function lock(){
     if(busy||!canManage||!accepted||!data||data.state!=="review")return;
     setBusy(true);setError("");setMessage("");
-    if(!requestKey.current)requestKey.current=crypto.randomUUID();
     try{
+      // Include synchronous WebCrypto errors in the normal error path.
+      // Previously randomUUID() ran outside try, so a browser-side error
+      // could leave the lock button busy without an alert or API request.
+      if(!requestKey.current)requestKey.current=crypto.randomUUID();
       const response=await fetch(url,{
         method:"POST",credentials:"same-origin",cache:"no-store",
         headers:{"Content-Type":"application/json"},
