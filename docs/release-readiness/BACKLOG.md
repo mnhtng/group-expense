@@ -58,3 +58,20 @@ SC-001–SC-010 and BN-001–BN-006 are implemented on the feature branch. Postg
 - Latest browser source includes a bounded retry respecting Better Auth HTTP 429 rate limiting, **without weakening production auth**.
 - [Evidence, execution attempts and outstanding physical-device gates](./RR-002-BROWSER-E2E.md). **Do not mark RR-002 DONE:** browser tests reached login setup in an earlier run but did not yet complete; later GitHub Actions jobs failed without a runner. Developer-managed CI/PG17 tests on the earlier commit passed, but are not browser validation.
 - The source of truth for financial release remains `SETTLEMENT_CYCLE_ENGINE_READY=false`. PR #16 Draft. No staging/prod migration, finance engine activation or shared-Neon mutation.
+
+## Limited GitHub Actions minutes — cost triage (2026-11-06)
+
+**Owner-confirmed constraint:** GitHub Actions usage quota exhausted. Until capacity returns, **do not repeatedly trigger or pay to retry runners**. This is a resource constraint, not proof that the current RR-002 Playwright suite has passed.
+
+| Verification | Now | Required before financial release |
+|---|---|---|
+| Every-commit, 4-profile Chromium/WebKit/mobile-emulated RR-002 matrix | **SKIP automation**: opt-in PR label `run-rr002-e2e` only; no billed runner on ordinary push | An independently observed passing interaction E2E for Chromium and WebKit; representative mobile browser |
+| Local browser interaction / signed auth / pair privacy / stale 409 / consent | **RUN locally** on disposable PG17 via `bash scripts/rr002-local.sh` | PASS with evidence for real signed flows, including original ledger unchanged |
+| Extra screenshots, repeated visual baselines and mobile emulation variants | Defer while feature engine remains OFF | Representative screenshot and user-visible accessibility/44px checks; broaden if product supports more devices |
+| Full physical iOS/Android installed PWA testing | Defer if no release planned | Real device acceptance, session/storage, keyboard/touch and offline/recovery as supported |
+| Basic typecheck, unit, DB/HTTP financial integrity, two-party authorization and concurrency | **NEVER WAIVE**: run locally as needed; green prior CI on earlier SHA does not certify current SHA | PASS at final reviewed code SHA |
+| Neon backup/PITR restore (RR-003), security/finance signoff (RR-004), staging/rollout (RR-005) | **DEFER** until release is actively being planned | **REQUIRED** in order, each independently approved and evidenced |
+
+The costly RR-002 PR workflow is now `pull_request: types: [labeled]`; only adding label `run-rr002-e2e` starts its 4-profile matrix. It also retains `workflow_dispatch`, which GitHub only makes available after the workflow exists on the default branch. The normal CI and PG17 integration workflows were **not weakened** because they are part of the financial safety gates. See [RR-002 runbook](./RR-002-BROWSER-E2E.md). Local E2E setup requires Docker, Node.js 22+, pnpm, npm, and a free port `127.0.0.1:5432`; it never connects to Neon or shared local PostgreSQL.
+
+**Readiness:** RR-001 schema rehearsal PASS, RR-002 implementation in place but full browser/device gate not PASS, RR-003/004/005 pending. Overall financial production release remains **NO-GO**, engine hard OFF, PR #16 Draft.
