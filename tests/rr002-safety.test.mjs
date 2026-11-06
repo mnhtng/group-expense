@@ -46,11 +46,15 @@ test("RR-002 reuses four real signed actors across browser profiles without disa
 });
 test("RR-002 stale fingerprint checks actual HTTP 409 and awaits UI invalidation",()=>{
   const s=read("tests/rr002-browser.e2e.mjs");
-  assert.match(s,/waitForResponse\(response=>/);
+  assert.match(s,/waitForResponse\((?:response|r)=>/);
   assert.match(s,/staleResponse\.status\(\),409/);
   assert.match(s,/waitFor\(\{state:"hidden",timeout:10000\}\)/);
   assert.match(s,/hasText:\/Số liệu hóa đơn hoặc thanh toán đã thay đổi\//);
   assert.match(s,/a stale preview must also revoke the consent checkbox/);
+  assert.match(s,/nativeClicks=/);
+  assert.match(s,/crypto\.randomUUID=/);
+  assert.match(s,/owner\.page\.on\("pageerror",recordPageError\)/);
+  assert.match(s,/owner\.page\.off\("pageerror",recordPageError\)/);
   assert.doesNotMatch(s,/getByRole\("alert"\)\.first\(\)\.waitFor\(\);\s*assert\.equal\(await owner\.page\.getByText/);
 });
 
