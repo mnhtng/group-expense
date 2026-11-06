@@ -97,6 +97,27 @@ The user executed `bash scripts/rr002-local.sh` on Apple Silicon against script-
 - **Retest required:** run `bash scripts/rr002-local.sh` again at the updated SHA, inspect any first actual failed response/locator, and only then mark browser profiles PASS. The original test reported `tests 5, pass 0, fail 5` (four profile subtests plus their parent); no false green result is claimed.
 - Safety unchanged: Docker PG17 ephemeral/loopback only, no shared Neon mutation, no financial ledger recording, engine hard OFF; PR #16 stays Draft.
 
+### Second local macOS browser run — 2026-11-06
+
+User report after the previous stale-preview synchronization adjustment:
+
+- Docker PostgreSQL 17, all 23 migrations, second idempotent migration check, Next.js production build and TypeScript all **PASS** again.
+- Chromium desktop: `page.waitForResponse` timed out (20 s) waiting for the snapshot lock POST response. It is **not proven** that the API responded incorrectly: the test recorded neither an outbound request nor the app handler state. The harness now waits on path + POST method and reports whether the browser actually dispatched a snapshot POST plus enabled/visible/consent UI state on timeout.
+- WebKit desktop and iPhone 13 WebKit emulation: the native `<select id="cycle-pair-member">` yielded a **25px** hit target against the **≥44px** requirement despite its Tailwind `min-h-12` class. The application now explicitly sets **48px height and min-height**, with `h-12 min-h-12` utilities; this is a genuine observed UI/accessibility fix that still requires a confirming browser run.
+- Android Chromium phone emulation: the test read `GET /disputes` and found no matching dispute after clicking Submit. The old `getByText(reason)` could observe text already present in the form rather than an asynchronously committed dispute; actual POST outcome was not recorded. The test now waits for the signed **POST /disputes** and requires **HTTP 201**, a returned dispute UUID/reason, rendered dispute article and confirmed GET visibility, with POST/201 barriers for both counterparty reply and reporter resolution. If it returns a different status, the next report will expose the real product-side failure instead of an ambiguous missing ID.
+- The suite supports a **focused local replay** by setting `RR002_PROFILE` to exactly one of `chromium-desktop`, `webkit-desktop`, `iphone-simulator`, `android-phone-simulator`. Unset means the full four-profile suite. A focused PASS **does not certify** the RR-002 matrix.
+
+Recommended efficient re-test (still disposable PostgreSQL, no Actions minutes):
+
+```bash
+git pull --ff-only origin feat/settlement-cycles-bilateral
+RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh
+# If Chromium is fixed, run the complete matrix without RR002_PROFILE:
+bash scripts/rr002-local.sh
+```
+
+**Current status:** implementation and test corrections made; second-run 0/4 browser profiles passed, subsequent corrected run **not yet executed**. Do not mark RR-002 PASS, turn on the engine, migrate shared Neon, merge or deploy.
+
 ### Required to complete RR-002
 
 1. Inspect [RR-002 failed browser run](https://github.com/mnhtng/group-expense/actions/runs/42071610402) and its job annotations; restore GitHub-hosted runner allocation if needed.
