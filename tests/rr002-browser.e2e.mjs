@@ -285,6 +285,24 @@ async function scenario(engine,project,options,actors){
         new URL(request.url()).pathname===snapshotPath)dispatched++;
     };
     owner.page.on("request",recordSnapshotRequest);
+    const jsErrors=[];
+    const recordPageError=error=>{
+      jsErrors.push(String(error?.name??"Error")+": "+
+        String(error?.message??"unknown").slice(0,180));
+    };
+    owner.page.on("pageerror",recordPageError);
+    // Count REAL DOM click dispatches, without replacing or invoking React's
+    // handler. A browser that sees a native click but sends no HTTP POST
+    // has a different problem from Playwright never delivering the click.
+    await owner.page.evaluate(()=>{
+      globalThis.__rr002LockClickCount=0;
+      document.addEventListener("click",event=>{
+        const el=event.target;
+        if(el instanceof Element&&el.closest("button")?.textContent
+          ?.includes("Xác nhận khóa bản đối soát"))
+          globalThis.__rr002LockClickCount++;
+      },true);
+    });
     let staleResponse;
     try{
       assert.equal(await lock.isEnabled(),true,
@@ -292,19 +310,39 @@ async function scenario(engine,project,options,actors){
       staleResponse=await observeBrowserPost(
         owner.page,snapshotPath,()=>lock.click(),10000);
     }catch(error){
-      // Synthetic accounts only; diagnostics avoid leaking headers,
-      // tokens, invoice descriptions or payment figures.
+      // All values are browser capabilities, control state or synthetic-only
+      // frontend errors. Do NOT log request headers, tokens or finance data.
+      const diagnostic=await owner.page.evaluate(()=>({
+        nativeClicks:globalThis.__rr002LockClickCount??0,
+        secureContext:globalThis.isSecureContext,
+        randomUUID:typeof globalThis.crypto?.randomUUID,
+        buttonTexts:[...document.querySelectorAll("button")].map(el=>
+          el.textContent?.trim()).filter(text=>text?.includes("khóa bản đối soát")||
+            text?.includes("Đang khóa")).slice(0,2),
+      })).catch(()=>({nativeClicks:"unknown",secureContext:"unknown",
+        randomUUID:"unknown",buttonTexts:[]}));
       const previewVisible=await owner.page.getByText(
         "Bản xem trước — chưa khóa").isVisible().catch(()=>false);
       const buttonVisible=await lock.isVisible().catch(()=>false);
       const consent=await owner.page.getByRole("checkbox",{
         name:/Tôi đã kiểm tra số liệu này/
       }).isChecked().catch(()=>false);
+      const alerts=await owner.page.getByRole("alert").allInnerTexts()
+        .catch(()=>[]);
       throw new Error("RR-002 snapshot POST not observed: dispatched="+
-        dispatched+", buttonVisible="+buttonVisible+
-        ", previewVisible="+previewVisible+", consent="+consent+
-        "; underlying="+String(error?.message??error).slice(0,240));
-    }finally{owner.page.off("request",recordSnapshotRequest);}
+        dispatched+", nativeClicks="+diagnostic.nativeClicks+
+        ", secureContext="+diagnostic.secureContext+
+        ", crypto.randomUUID="+diagnostic.randomUUID+
+        ", buttonLabels="+JSON.stringify(diagnostic.buttonTexts)+
+        ", buttonVisible="+buttonVisible+", previewVisible="+
+        previewVisible+", consent="+consent+
+        ", alerts="+JSON.stringify(alerts.map(x=>x.slice(0,180)).slice(0,2))+
+        ", pageErrors="+JSON.stringify(jsErrors.slice(0,3))+
+        "; underlying="+String(error?.message??error).slice(0,200));
+    }finally{
+      owner.page.off("request",recordSnapshotRequest);
+      owner.page.off("pageerror",recordPageError);
+    }
     assert.equal(staleResponse.status(),409,
       "stale original obligations MUST cause a snapshot-lock HTTP 409");
     // A rejected fingerprint must make the entire preview/consent UI
