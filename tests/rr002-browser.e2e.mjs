@@ -536,7 +536,14 @@ test("RR-002 signed Chromium/WebKit browser interactions on disposable PG17",{
         }
       }
     }finally{await bootstrap.close();}
+    // Optional focused local replay while fixing a failing browser.
+    // By default every profile still runs; a focused replay is NOT proof
+    // that the full RR-002 matrix passes.
+    const selected=process.env.RR002_PROFILE?.trim()??"";
+    assert.ok(!selected||scenarios.some(([name])=>name===selected),
+      "RR002_PROFILE must name one supported browser profile");
     for(const [project,engine,options] of scenarios){
+      if(selected&&project!==selected)continue;
       await t.test(project,{timeout:1000*60*6},async()=>{
         await scenario(engine,project,options,actors);
         console.log("RR002 browser PASS: "+project);
