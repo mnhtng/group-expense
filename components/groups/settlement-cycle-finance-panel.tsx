@@ -435,6 +435,9 @@ export function SettlementCycleFinancePanel({groupId,cycleId,
         Xem công nợ của tôi với
       </label>
       <select id="cycle-pair-member" value={other} onChange={e=>setOther(e.target.value)}
+        // WebKit/iOS measured the native select at 25px in actual RR-002.
+        // Preserve a 48px tap target even if a utility stylesheet loads late.
+        style={{minHeight:"48px"}}
         className="min-h-12 w-full rounded-xl border bg-background p-3 text-base">
         {counterparts.map(member=><option key={member.id} value={member.id}>
           {member.name}
