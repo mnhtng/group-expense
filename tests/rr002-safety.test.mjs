@@ -44,6 +44,16 @@ test("RR-002 reuses four real signed actors across browser profiles without disa
   assert.match(s,/await capture\(user\.page,project,"failure-actor-"/);
   assert.doesNotMatch(s,/rateLimit:\s*\{\s*enabled:\s*false/);
 });
+test("RR-002 stale fingerprint checks actual HTTP 409 and awaits UI invalidation",()=>{
+  const s=read("tests/rr002-browser.e2e.mjs");
+  assert.match(s,/waitForResponse\(response=>/);
+  assert.match(s,/staleResponse\.status\(\),409/);
+  assert.match(s,/waitFor\(\{state:"hidden",timeout:10000\}\)/);
+  assert.match(s,/hasText:\/Số liệu hóa đơn hoặc thanh toán đã thay đổi\//);
+  assert.match(s,/a stale preview must also revoke the consent checkbox/);
+  assert.doesNotMatch(s,/getByRole\("alert"\)\.first\(\)\.waitFor\(\);\s*assert\.equal\(await owner\.page\.getByText/);
+});
+
 test("RR-002 CI never points to Neon or enables financial engine",()=>{
   const y=read(".github/workflows/rr002-browser-e2e.yml");
   assert.match(y,/postgres:17/);
