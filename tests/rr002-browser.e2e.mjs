@@ -281,8 +281,9 @@ async function scenario(engine,project,options,actors){
     // disappear and show the specific server error before permitting retry.
     await owner.page.getByText(
       "Bản xem trước — chưa khóa").waitFor({state:"hidden",timeout:10000});
-    await owner.page.getByRole("alert").getByText(
-      /Số liệu hóa đơn hoặc thanh toán đã thay đổi/).waitFor();
+    await owner.page.getByRole("alert").filter({
+      hasText:/Số liệu hóa đơn hoặc thanh toán đã thay đổi/
+    }).waitFor();
     assert.equal(await owner.page.getByRole("checkbox",{
       name:/Tôi đã kiểm tra số liệu này/
     }).count(),0,"a stale preview must also revoke the consent checkbox");
