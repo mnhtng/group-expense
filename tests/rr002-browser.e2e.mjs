@@ -359,7 +359,7 @@ async function scenario(engine,project,options,actors){
         previewVisible+", consent="+consent+
         ", alerts="+JSON.stringify(alerts.map(x=>x.slice(0,180)).slice(0,2))+
         ", pageErrors="+JSON.stringify(jsErrors.slice(0,3))+
-        "; underlying="+String(error?.message??error).slice(0,200));
+        "; underlying="+String(error?.message??error).slice(0,1400));
     }finally{
       owner.page.off("request",recordSnapshotRequest);
       owner.page.off("pageerror",recordPageError);
