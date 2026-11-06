@@ -64,6 +64,15 @@ async function send(user,method,url,data){
   try{body=await response.json();}catch{}
   return {response,body};
 }
+// Observe the real browser's POST, not a separate APIRequestContext request.
+async function observeBrowserPost(page,path,activate,timeout=20000){
+  const [response]=await Promise.all([
+    page.waitForResponse(r=>r.request().method()==="POST"&&
+      new URL(r.url()).pathname===path,{timeout}),
+    activate(),
+  ]);
+  return response;
+}
 async function must(user,method,path,body,expected=200){
   const {response,body:payload}=await send(user,method,path,body);
   assert.equal(response.status(),expected,method+" "+path+" => "+response.status()+
@@ -269,12 +278,33 @@ async function scenario(engine,project,options,actors){
     // Observe the actual POST response rather than guessing from an
     // unrelated alert. Playwright's click() waits for input dispatch, NOT
     // the async fetch() or React state commit after HTTP 409.
-    const [staleResponse]=await Promise.all([
-      owner.page.waitForResponse(response=>
-        response.url()===ORIGIN+apiFor(groupId,cycleId)+"/snapshot"&&
-        response.request().method()==="POST",{timeout:20000}),
-      lock.click(),
-    ]);
+    const snapshotPath=apiFor(groupId,cycleId)+"/snapshot";
+    let dispatched=0;
+    const recordSnapshotRequest=request=>{
+      if(request.method()==="POST"&&
+        new URL(request.url()).pathname===snapshotPath)dispatched++;
+    };
+    owner.page.on("request",recordSnapshotRequest);
+    let staleResponse;
+    try{
+      assert.equal(await lock.isEnabled(),true,
+        "consented snapshot lock button must become enabled");
+      staleResponse=await observeBrowserPost(
+        owner.page,snapshotPath,()=>lock.click(),10000);
+    }catch(error){
+      // Synthetic accounts only; diagnostics avoid leaking headers,
+      // tokens, invoice descriptions or payment figures.
+      const previewVisible=await owner.page.getByText(
+        "Bản xem trước — chưa khóa").isVisible().catch(()=>false);
+      const buttonVisible=await lock.isVisible().catch(()=>false);
+      const consent=await owner.page.getByRole("checkbox",{
+        name:/Tôi đã kiểm tra số liệu này/
+      }).isChecked().catch(()=>false);
+      throw new Error("RR-002 snapshot POST not observed: dispatched="+
+        dispatched+", buttonVisible="+buttonVisible+
+        ", previewVisible="+previewVisible+", consent="+consent+
+        "; underlying="+String(error?.message??error).slice(0,240));
+    }finally{owner.page.off("request",recordSnapshotRequest);}
     assert.equal(staleResponse.status(),409,
       "stale original obligations MUST cause a snapshot-lock HTTP 409");
     // A rejected fingerprint must make the entire preview/consent UI
@@ -368,11 +398,20 @@ async function scenario(engine,project,options,actors){
       "Dispute submission must require a separate acknowledgement");
     await owner.page.getByRole("checkbox",{name:/Tôi hiểu tranh chấp không tự hủy nợ/})
       .check();
-    await createDisputeButton.click();
-    await owner.page.getByText(reason).first().waitFor();
-    const disputeResponse=await must(owner,"GET",apiFor(groupId,cycleId)+"/disputes");
-    const disputeId=disputeResponse.disputes.find(x=>x.reason===reason)?.id;
-    assert.ok(disputeId,"dispute must be visible to real counterpart only");
+    const disputesPath=apiFor(groupId,cycleId)+"/disputes";
+    const opened=await observeBrowserPost(owner.page,disputesPath,
+      ()=>createDisputeButton.click());
+    const opening=await opened.json().catch(()=>null);
+    assert.equal(opened.status(),201,"opening dispute must commit via signed POST: "+
+      JSON.stringify(opening)?.slice(0,180));
+    const disputeId=opening?.dispute?.id;
+    assert.match(disputeId??"",/^[0-9a-f-]{36}$/i,
+      "open dispute response must provide a durable id");
+    assert.equal(opening.dispute.reason,reason);
+    await owner.page.locator("article").filter({hasText:reason}).first().waitFor();
+    const disputeResponse=await must(owner,"GET",disputesPath);
+    assert.ok(disputeResponse.disputes.some(x=>x.id===disputeId&&x.reason===reason),
+      "committed dispute must be visible to its real reporter");
     const adminDisputes=await must(admin,"GET",apiFor(groupId,cycleId)+"/disputes");
     assert.ok(!adminDisputes.disputes.some(x=>x.id===disputeId),
       "unrelated admin cannot enumerate pair dispute");
@@ -383,8 +422,12 @@ async function scenario(engine,project,options,actors){
     const responseGroup=other.page.getByRole("group",{name:"Phản hồi tranh chấp"});
     await responseGroup.getByLabel("Giải thích/biên bản (5–500 ký tự)")
       .fill("RR002 synthetic counterparty accepts this review");
-    await responseGroup.getByRole("button",{
-      name:"Ghi nhận vào lịch sử"}).click();
+    const eventsPath=disputesPath+"/"+disputeId+"/events";
+    const answered=await observeBrowserPost(other.page,eventsPath,
+      ()=>responseGroup.getByRole("button",{
+        name:"Ghi nhận vào lịch sử"}).click());
+    assert.equal(answered.status(),201,
+      "counterparty response must persist before reading the event timeline");
     await other.page.getByText("RR002 synthetic counterparty accepts this review")
       .first().waitFor();
     await owner.page.reload();
@@ -394,9 +437,13 @@ async function scenario(engine,project,options,actors){
     const resolveGroup=owner.page.getByRole("group",{name:"Phản hồi tranh chấp"});
     await resolveGroup.getByLabel("Giải thích/biên bản (5–500 ký tự)")
       .fill("RR002 mutually reviewed original source");
-    await resolveGroup.getByRole("button",{
-      name:"Ghi nhận vào lịch sử"}).click();
-    await owner.page.getByText("RR002 mutually reviewed original source").first().waitFor();
+    const resolved=await observeBrowserPost(owner.page,eventsPath,
+      ()=>resolveGroup.getByRole("button",{
+        name:"Ghi nhận vào lịch sử"}).click());
+    assert.equal(resolved.status(),201,
+      "reporter resolution must persist before the browser reads the timeline");
+    await owner.page.getByText("RR002 mutually reviewed original source")
+      .first().waitFor();
     await admin.page.goto(ORIGIN+detail);
     assert.equal(await admin.page.getByText(reason).count(),0,
       "pair-private dispute text must not leak through unrelated member UI");
