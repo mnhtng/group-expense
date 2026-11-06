@@ -64,6 +64,27 @@ The browser runner refuses execution unless `CI=true`, `RR002_TEST_ONLY=isolated
 - A trial run of the RR-002 browser job was already retried once without runner allocation; repeated code commits do not resolve an account-level runner block.
 - **No claim of CI green at current commit.** Last genuine baseline CI and PG17 PASS are the earlier runs documented above. The E2E green/physical-device release gate remains unfulfilled.
 
+### Low-cost execution policy (2026-11-06)
+
+The project owner's GitHub Actions usage limit has been reached; **do not repeatedly retry GitHub-hosted runners**. RR-002 browser runs are now opt-in, with `pull_request: types: [labeled]` plus a job guard that permits only the **`run-rr002-e2e`** label. Pushing commits to this Draft PR no longer launches the heavyweight RR-002 browser matrix. Remove and re-add that label to request another run when minutes are available. The `workflow_dispatch` event is also retained but requires the workflow to be present on the repository default branch to be available.
+
+For an offline-from-GitHub-Actions runner on **macOS or Linux**, use the reviewable script `scripts/rr002-local.sh`, which fails closed if it sees production-looking connection settings or financial test-write flags. Requires local Docker, Node.js 22+, pnpm and npm:
+
+```bash
+git switch feat/settlement-cycles-bilateral
+bash scripts/rr002-local.sh
+```
+
+- Launches **its own** disposable PostgreSQL 17 container, bound only to `127.0.0.1:5432`; refuses to hijack a port already in use.
+- Forces signed Better Auth Next.js app to target only `postgresql://test:test@localhost:5432/group_expense`; never passes database credentials to GitHub.
+- Reapplies the SQL migrator twice to verify idempotency, builds Next.js, installs Playwright separately in a throwaway directory and executes all four Chromium/WebKit/mobile-emulated browser profiles.
+- Cleans up the temporary database container and Playwright tooling on normal exit **and failure**; leaves only synthetic failure screenshot artifacts in `rr002-artifacts/`. **Never point this script at Neon or a shared local PostgreSQL instance.**
+- The script was syntax-checked as Bash; no claim that the full browser suite has passed on a developer's Mac/Linux machine.
+
+**Defer without blocking ongoing development:** four-browser repeated runs per commit, expanded visual screenshot baselines, additional emulator permutations, real hardware PWA/screen-reader exploratory testing **until a release decision is actively being prepared**. Those controls are **not waived** for production acceptance. Before financial features are enabled, require signed cross-browser interaction on at least Chromium and WebKit, high-risk pair/privacy/consent/cash invariants, device acceptance representative of supported platforms, independently verified restore and staged release gates.
+
+**Do not disable** the foundational unit, TypeScript, and PostgreSQL financial integration/audit suites in `.github/workflows/ci.yml` and `.github/workflows/sprint1-integration.yml`. These workflows continue to protect code and must be run locally or when Actions quota returns; they have not been green on the final RR-002 commit. Avoid marking the Draft PR ready for merge while any required check is missing.
+
 ### Required to complete RR-002
 
 1. Inspect [RR-002 failed browser run](https://github.com/mnhtng/group-expense/actions/runs/42071610402) and its job annotations; restore GitHub-hosted runner allocation if needed.
