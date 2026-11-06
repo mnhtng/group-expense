@@ -85,6 +85,18 @@ bash scripts/rr002-local.sh
 
 **Do not disable** the foundational unit, TypeScript, and PostgreSQL financial integration/audit suites in `.github/workflows/ci.yml` and `.github/workflows/sprint1-integration.yml`. These workflows continue to protect code and must be run locally or when Actions quota returns; they have not been green on the final RR-002 commit. Avoid marking the Draft PR ready for merge while any required check is missing.
 
+### First local macOS run — observed real browser results (2026-11-06)
+
+The user executed `bash scripts/rr002-local.sh` on Apple Silicon against script-created temporary Docker PostgreSQL 17:
+
+- `pnpm install --frozen-lockfile` **PASS**; SQL migrations `001..023` **PASS**; second migration run reported **SQL migrations verified**, without reapplying migrations.
+- Next.js `16.4.3` production build compiled and completed TypeScript/page generation **PASS**.
+- Playwright `1.64.1` provisioned; actual Chromium desktop, WebKit desktop, iPhone WebKit emulation and Android Chromium emulation all **started and executed test interactions**.
+- All four stopped at the **same initial assertion**: `409 must invalidate stale review preview`, test file line 271 in the earlier SHA; immediate DOM count was 1 rather than 0. This observation by itself **does not show** whether the snapshot POST returned 409 or whether the React state had finished committing; the original test waited for **any** alert and then counted immediately.
+- Fix committed to the browser harness: await the **actual snapshot POST response**, assert `status() === 409`, await stale preview disappearance with a bounded auto-retrying Playwright `waitFor({state:"hidden"})`, require the **specific** stale-data error alert and cleared consent checkbox. The existing backend and UI 409 invalidation logic were **not changed** without evidence of a product defect.
+- **Retest required:** run `bash scripts/rr002-local.sh` again at the updated SHA, inspect any first actual failed response/locator, and only then mark browser profiles PASS. The original test reported `tests 5, pass 0, fail 5` (four profile subtests plus their parent); no false green result is claimed.
+- Safety unchanged: Docker PG17 ephemeral/loopback only, no shared Neon mutation, no financial ledger recording, engine hard OFF; PR #16 stays Draft.
+
 ### Required to complete RR-002
 
 1. Inspect [RR-002 failed browser run](https://github.com/mnhtng/group-expense/actions/runs/42071610402) and its job annotations; restore GitHub-hosted runner allocation if needed.
