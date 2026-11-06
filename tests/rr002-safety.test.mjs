@@ -60,3 +60,23 @@ test("RR-002 invoice source touch target is at least 44px",()=>{
   const s=read("components/groups/settlement-cycle-source-list.tsx");
   assert.match(s,/inline-flex min-h-11 items-center break-words/);
 });
+
+test("RR-002 expensive browser CI is opt-in on PR label, never every commit",()=>{
+  const y=read(".github/workflows/rr002-browser-e2e.yml");
+  assert.match(y,/pull_request:\s*\n\s+types: \[labeled\]/);
+  assert.match(y,/github\.event\.label\.name == 'run-rr002-e2e'/);
+  assert.doesNotMatch(y,/pull_request:\s*\n\s+paths:/);
+});
+
+test("RR-002 local runner uses a disposable loopback-only Docker database",()=>{
+  const s=read("scripts/rr002-local.sh");
+  assert.match(s,/set -euo pipefail/);
+  assert.match(s,/postgres:17/);
+  assert.match(s,/-p 127\.0\.0\.1:5432:5432/);
+  assert.match(s,/docker rm -f/);
+  assert.match(s,/trap cleanup EXIT/);
+  assert.match(s,/pnpm db:migrate/);
+  assert.match(s,/RR002_TEST_ONLY='isolated-pg17'/);
+  assert.match(s,/node --test --test-reporter=spec tests\/rr002-browser\.e2e\.mjs/);
+  assert.doesNotMatch(s,/SETTLEMENT_CYCLE_ENGINE_READY=true|neon\.tech|vercel deploy/);
+});
