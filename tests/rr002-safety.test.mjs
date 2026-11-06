@@ -54,6 +54,33 @@ test("RR-002 stale fingerprint checks actual HTTP 409 and awaits UI invalidation
   assert.doesNotMatch(s,/getByRole\("alert"\)\.first\(\)\.waitFor\(\);\s*assert\.equal\(await owner\.page\.getByText/);
 });
 
+test("RR-002 awaits real browser dispute writes before checking privacy",()=>{
+  const s=read("tests/rr002-browser.e2e.mjs");
+  assert.match(s,/async function observeBrowserPost\(/);
+  assert.match(s,/await observeBrowserPost\(owner\.page,disputesPath/);
+  assert.match(s,/opened\.status\(\),201/);
+  assert.match(s,/opening\?\.dispute\?\.id/);
+  assert.match(s,/await observeBrowserPost\(other\.page,eventsPath/);
+  assert.match(s,/await observeBrowserPost\(owner\.page,eventsPath/);
+  assert.match(s,/dispatched="\+/);
+  assert.doesNotMatch(s,/await createDisputeButton\.click\(\);\s*await owner\.page\.getByText\(reason\)/);
+});
+
+test("RR-002 WebKit counterparty picker has a non-CSS-dependent 48px target",()=>{
+  const s=read("components/groups/settlement-cycle-finance-panel.tsx");
+  assert.match(s,/id="cycle-pair-member"/);
+  assert.match(s,/style=\{\{height:"48px",minHeight:"48px"\}\}/);
+  assert.match(s,/className="h-12 min-h-12 w-full/);
+});
+
+test("RR-002 focused profile never weakens the default four-browser matrix",()=>{
+  const s=read("tests/rr002-browser.e2e.mjs");
+  for(const name of ["chromium-desktop","webkit-desktop","iphone-simulator",
+      "android-phone-simulator"])assert.ok(s.includes(name));
+  assert.match(s,/const selected=process\.env\.RR002_PROFILE\?\.trim\(\)\?\?""/);
+  assert.match(s,/if\(selected&&project!==selected\)continue/);
+});
+
 test("RR-002 CI never points to Neon or enables financial engine",()=>{
   const y=read(".github/workflows/rr002-browser-e2e.yml");
   assert.match(y,/postgres:17/);
