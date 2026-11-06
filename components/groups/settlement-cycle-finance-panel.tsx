@@ -437,8 +437,8 @@ export function SettlementCycleFinancePanel({groupId,cycleId,
       {/* WebKit/iOS was 25px in RR-002; enforce a 48px touch target
           even if utility styles load late or a native select style wins. */}
       <select id="cycle-pair-member" value={other} onChange={e=>setOther(e.target.value)}
-        style={{minHeight:"48px"}}
-        className="min-h-12 w-full rounded-xl border bg-background p-3 text-base">
+        style={{height:"48px",minHeight:"48px"}}
+        className="h-12 min-h-12 w-full rounded-xl border bg-background px-3 text-base">
         {counterparts.map(member=><option key={member.id} value={member.id}>
           {member.name}
         </option>)}
