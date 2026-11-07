@@ -65,6 +65,12 @@ Owner-provided local log evidence: focused WebKit desktop `tests 2, pass 2, fail
 
 **Distinguish levels:** `RR-002 local automated E2E = PASS` is not `RR-002 physical-device/release gate = PASS`. Real iPhone/Android and installed PWA testing, accessibility/keyboard signoff, exact Mac commit SHA capture and final CI/HTTP/integration evidence remain outstanding. The supplied terminal log did not contain `git rev-parse HEAD`; don't claim exact source SHA was authenticated. Hosted Actions are still constrained by quota. Keep RR-003/004/005 pending and release NO-GO. Detailed [RR-002 evidence](./RR-002-BROWSER-E2E.md).
 
+## RR-002 device-gate preparation — 2026-11-07
+
+Following the verified previous 4/4 local browser PASS, the feature branch adds a keyboard-only Space/Tab/Enter snapshot-confirmation regression for desktop Chromium/WebKit, a real browser response assertion for phone pointer confirmation, and a local runner report containing Git SHA, tracked-tree cleanliness and exact test profile scope (`rr002-artifacts/rr002-local-result.json`, only after successful tests). These additions have **not yet been rerun** on Mac, so the prior 4/4 evidence must not be attributed to the new SHA.
+
+The [physical iOS/Android + installed-PWA protocol](./RR-002-PHYSICAL-DEVICE-ACCEPTANCE.md) defines 18 hardware acceptance cases and requires a separately approved isolated HTTPS deployment with synthetic-only data. **No device test or deployment has been performed; physical RR-002 remains PENDING.** A direct Mac LAN URL using HTTP is not a substitute for a secure-context installable PWA. Do not enable finance engine or write to shared Neon.
+
 ## Limited GitHub Actions minutes — cost triage (2026-11-06)
 
 **Owner-confirmed constraint:** GitHub Actions usage quota exhausted. Until capacity returns, **do not repeatedly trigger or pay to retry runners**. This is a resource constraint, not proof that the current RR-002 Playwright suite has passed.
