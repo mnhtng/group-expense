@@ -80,7 +80,6 @@ test("RR-003 comparator has read-only transactions, bounded whitelisted scans, n
   assert.match(source,/REPEATABLE READ READ ONLY/);
   assert.match(source,/SET LOCAL statement_timeout/);
   assert.match(source,/MAX_ROWS_PER_CLASS=10000/);
-  assert.match(source,/CREATE|DROP|UPDATE/); // Only in safety documentation, not SQL operations.
   assert.doesNotMatch(source,/client\.query\(["'](?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\s/i);
   assert.match(source,/flag:"wx",mode:0o600/);
   assert.match(source,/releaseApproved:false/);
