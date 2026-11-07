@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-06  
 **Branch:** `feat/settlement-cycles-bilateral` / PR #16 remains Draft  
-**Status:** Root-cause mechanism independently reproduced in Chromium; application-specific pointer hit-test confirmation and full E2E signoff still pending. **Release NO-GO**, financial engine hard OFF.
+**Status:** Root cause verified in the actual GroupExpense Chromium browser. Central CSS fix and live-browser assertions committed; full browser matrix, mobile keyboard usability and physical-device signoff still pending. **Release NO-GO**, financial engine hard OFF.
 
 ## 1. Observed facts — do not confuse build success with browser success
 
@@ -86,28 +86,36 @@ In one focused synthetic local browser run, record only non-sensitive DOM diagno
 
 The existing `RR002_PROFILE=chromium-desktop` and local disposable PG17 runner are enough; GitHub Actions is not needed.
 
-### Stage B: fix the root UI interaction, not the assertion
+### Stage A — CLOSED: actual-app proof (2026-11-07)
 
-Apply a focused change to **both** keyboard-conditional layout rules in `app/globals.css`:
+The user ran the real signed browser harness, including the non-mutating DOM pointer probe, on the actual built Next.js app and disposable PostgreSQL 17. The trace **exactly matches** the independent synthetic experiment:
 
-1. Do **not** hide the tab bar on `checkbox`, `radio` or other controls that do not open a keyboard. Do **not** apply a mobile keyboard rule on desktop pointer devices.
-2. Initial scoped CSS proposal:
-   ```css
-   @media (max-width: 639px) and (pointer: coarse) {
-     .app-shell:has(
-       input:not([type]):focus,
-       input:is([type="text"], [type="email"], [type="password"],
-         [type="search"], [type="tel"], [type="url"], [type="number"]):focus,
-       textarea:focus
-     ) .app-bottom-nav {
-       display: none;
-     }
-   }
-   ```
-   The precise supported input types/select-picker treatment should be aligned with the existing app forms. Keep the `@supports selector(:has(*))` boundary or compatible fallback. **This is a proposed patch, not yet applied.**
-3. Address the related `.expense-save-footer` `:has(input:focus,...)` rule, which can also jump during checkbox/submit focus handoff.
-4. For mobile text-entry → submit interactions, verify that the tab bar does **not** reappear during a finger/pointer gesture. If the focus-only approach still shifts the overlay while the keyboard closes, replace that **one shared behavior** with keyboard-state-aware visibility (for example via `VisualViewport` and an explicit state transition); do not add per-page timeout hacks.
-5. Ensure scroll/viewport padding keeps controls out of the tab bar's hit region when it is visible. No `force: true`, `dispatchEvent("click")`, direct API POST, global `pointer-events:none` on nav or removal of the actual consent gate.
+```text
+viewport: 1440 x 900
+lock button: top 790, bottom 834
+fixed nav: top 811, bottom 900, height 89, z-index 40
+
+pointerdown -> lock-button  (x 550, y 812, nav display none)
+mousedown   -> lock-button  (nav display none)
+focusout    -> checkbox     (nav display block)
+focusin     -> lock-button  (nav display block)
+pointerup   -> bottom-nav   (x 550, y 812, nav display block)
+mouseup     -> bottom-nav
+click       -> div          (not lock-button)
+nativeClicks=0; dispatched=0
+```
+
+**Conclusive product-specific cause:** the CSS rule `:has(input:focus, textarea:focus, select:focus)` hides a fixed `z-40` navigation bar on checkbox focus and shows it again synchronously when the user focuses the adjacent confirm button. The bar covers the pointer before `pointerup` and steals the click. No API error, JavaScript exception, WebCrypto fault or arbitrary wait is needed to explain the observed failure.
+
+### Stage B — IMPLEMENTED: stable focus-independent bottom overlays
+
+- In `app/globals.css`, **remove both** `:has(...:focus)` rules that abruptly toggle `.app-bottom-nav` visibility and `.expense-save-footer` positioning on *any* focus transition. The app already reserves bottom space with `.app-shell` padding and applies safe-area spacing to the nav.
+- Intentionally **do not substitute another focus selector restricted to text input**: text-input-to-submit gestures can suffer the exact same pointerdown/focusout/pointerup race on phones. Keyboard-driven UI must derive from actual viewport/keyboard state, not immediate DOM focus changes. Defer any new VirtualViewport-based keyboard hiding until it has separate iOS/Android device evidence; always-visible fallback is safer than intercepting financial consent.
+- In `tests/rr002-browser.e2e.mjs`, assert the nav is visible on consent focus, and that the real lock gesture delivers **pointerdown, pointerup and click** to the actual lock button, not nav. Preserve response 409, re-preview, lock and no-finance-ledger mutation checks.
+- In `tests/rr002-safety.test.mjs`, add a static guard against either regressing to the focus-driven bottom-nav/expense-footer rules.
+- Replayed the exact browser geometry (viewport 1440x900, checkbox y770, button y790–834, nav starts y811) on independent Chromium/Playwright A/B fixture after patch: **original CSS: click resolved, 0 native button clicks; corrected CSS: click resolved, 1 native button click, pointerdown/up/click all BUTTON**, with normal Playwright actionability and no force click.
+
+**Important:** the synthetic A/B validates the *mechanism and patch class*, while the actual Next.js browser test **has not yet been rerun after the CSS change**. It must still pass before RR-002 turns green. This patch intentionally avoids changing the finance backend or snapshot API.
 
 ### Stage C: permanent regression coverage
 
@@ -134,4 +142,6 @@ Apply a focused change to **both** keyboard-conditional layout rules in `app/glo
 
 ## Decision
 
-**Root cause category established through deterministic browser A/B:** focus-driven bottom navigation reappears between pointerdown and pointerup, intercepting the click, so the React handler and HTTP POST never fire. **Actual-app pointer-target confirmation is the sole outstanding causal check before the proposed CSS remediation.** The previous blanket focus selector is a cross-app UX hazard; address it centrally, not inside the snapshot API or individual Playwright assertions.
+**Root cause CONFIRMED by production-build GroupExpense pointer logs:** fixed navigation appears between lock-button pointerdown and pointerup, intercepts the release and prevents the React onClick/POST. The shared focus-dependent overlay behavior has been removed and browser pointer assertions have been added. This is a product-level UI fix, not a weakened Playwright test or financial shortcut.
+
+**Pending before PASS:** `pnpm test:unit`, typecheck/build, disposable PG17 browser matrix at the new commit, repeated formerly broken Chromium flow, and independent iOS/Android real-device/installed-PWA keyboard testing. PR #16 remains Open Draft; engine OFF; no changes to shared Neon or original CASH/NONCASH ledger.
