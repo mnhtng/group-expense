@@ -1134,6 +1134,12 @@ The confirmed `checkbox:focus` → fixed bottom-nav overlay → lost `pointerup`
 
 [Browser evidence](../release-readiness/RR-002-BROWSER-E2E.md) · [Release backlog](../release-readiness/BACKLOG.md).
 
+## 2026-11-07 — RR-002 follow-up: keyboard and device-ready evidence preparation
+
+After the owner's **4/4 browser PASS** on disposable PG17, added a real keyboard-only **Space → Tab → Enter** snapshot locking regression on desktop Chromium/WebKit and HTTP 200 assertion for phone pointer confirmation. Local runner now prints and stores the exact tested source SHA, whether tracked files were dirty, and whether the PASS covered all four profiles versus only one; machine-readable file is written only after successful browser tests and explicitly says physical devices were not tested.
+
+Created [physical iOS/Android installed-PWA acceptance protocol](../release-readiness/RR-002-PHYSICAL-DEVICE-ACCEPTANCE.md): 18 real-device scenarios, reviewed isolated HTTPS prerequisite, installation, session longevity, safe area, focus/keyboard/touch, offline data privacy, screen reader and immutable dispute/no-money mutation. **No remote deployment or hardware testing was performed.** Source changes to browser tests and runner after the earlier green run have **not yet passed on a developer Mac**; rerun on final code and capture `rr002-artifacts/rr002-local-result.json`. Overall RR-002 hardware/release gate is PENDING, RR-003/004/005 not started, PR Draft, engine OFF.
+
 ## NEXT WORK — separate approval required
 
 The child-only RR-001 **schema migration check is complete**.
