@@ -79,6 +79,12 @@ Playwright [#41808](https://github.com/microsoft/playwright/issues/41808) docume
 
 Physical-device/PWA signoff, exact final verified SHA, RR-003/004/005 and production release authorization remain pending; engine hard OFF, PR #16 Draft.
 
+## RR-002 latest verified source-bound E2E PASS — 2026-11-07
+
+**Complete and verified for local automated browser testing at clean-tracked SHA `5daf6e8e0ca5b0344d0d76896ca02266f06baf5e`** (as reported in the local runner and generated local JSON): focused macOS WebKit desktop `2/2` Node tests PASS; default full matrix `5/5` PASS (four profiles: desktop Chromium, desktop WebKit, emulated iPhone, emulated Android; plus parent), PostgreSQL 17 migrations 001–023 + idempotency and Next.js build/TypeScript PASS. The keyboard `Space → Tab / native macOS WebKit Option+Tab → Enter` test and actual HTTP 200 are included. Machine-readable metadata reports `fullBrowserMatrix=true`, `sourceState=clean-tracked`, `physicalDevicesTested=false`. This **supersedes older keyboard/WebKit failure evidence** for the tested SHA.
+
+**Gate split:** Local RR-002 automated browser scope **PASS**, but physical Safari/Android/installed PWA/real keyboard/VoiceOver/TalkBack signoff **PENDING**. No new physical device result, managed Neon PITR, full unit/HTTP/integration retest on this exact SHA, or independent financial signoff is claimed. GitHub Actions quota still limits hosted verification. Overall release **NO-GO**, engine OFF, Draft PR #16. [Exact SHA evidence details](./RR-002-BROWSER-E2E.md).
+
 ## Limited GitHub Actions minutes — cost triage (2026-11-06)
 
 **Owner-confirmed constraint:** GitHub Actions usage quota exhausted. Until capacity returns, **do not repeatedly trigger or pay to retry runners**. This is a resource constraint, not proof that the current RR-002 Playwright suite has passed.
