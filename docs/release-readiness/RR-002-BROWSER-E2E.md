@@ -23,6 +23,21 @@ The browser runner refuses execution unless `CI=true`, `RR002_TEST_ONLY=isolated
 | iPhone emulation | WebKit + Playwright iPhone 13 device descriptor | **PASS** — local emulation only; **not physical iOS Safari** |
 | Android emulation | Chromium + Playwright Pixel 7 device descriptor | **PASS** — local emulation only; **not physical Android Chrome** |
 
+## Latest verified, SHA-bound local 4-profile PASS — 2026-11-07
+
+**Evidence: operator-provided terminal output and generated `rr002-local-result.json`. The following results supersede the older browser failures and earlier un-attributed PASS entries below.**
+
+- **Exact source SHA:** `5daf6e8e0ca5b0344d0d76896ca02266f06baf5e` (branch `feat/settlement-cycles-bilateral`; tracked tree `clean-tracked`). SHA was printed before the build and in the final local result.
+- **Focused WebKit desktop:** `RR002_PROFILE=webkit-desktop bash scripts/rr002-local.sh` → `tests 2, pass 2, fail 0` (test parent + WebKit subtest). This covers native macOS WebKit `Tab` / `Option+Tab` focus selection followed by real `Enter` snapshot authorization.
+- **Full matrix, clean source:** `bash scripts/rr002-local.sh` → `tests 5, pass 5, fail 0`, with four actual passing browser subtests: `chromium-desktop` (6318ms), `webkit-desktop` (6072ms), `iphone-simulator` (5711ms), `android-phone-simulator` (7321ms). Parent test passed. Node test-runner duration ~38.4s. No skipped tests.
+- **Verified setup in that run:** fresh disposable loopback-only Docker PostgreSQL 17; 23 versioned SQL migrations applied, second execution idempotent; `pnpm install --frozen-lockfile`; Next.js 16.4.3 optimized production build and TypeScript/page generation PASS.
+- **Recorded evidence fields:** `format="rr002-local-browser-v1"`, `sourceSha="5daf6e8e0ca5b0344d0d76896ca02266f06baf5e"`, `sourceState="clean-tracked"`, `profile="all-four-profiles"`, `fullBrowserMatrix=true`, `database="disposable-loopback-postgresql-17"`, `completedAt="2026-11-07T13:34:35.587Z"`, `result="PASS"`, `physicalDevicesTested=false`. The JSON is ignored locally under `rr002-artifacts/`; metadata was reported in the owner's log, **not uploaded as a committed screenshot or CI attestation**.
+- **What was actually covered by this suite:** real Better Auth signed sessions, keyboard/gesture consent and stale 409, fresh snapshot 200 and locked state, original-source pagination, bilateral pair privacy, disputes with real HTTP 201 and two-party resolution, real intercepted network abort/retry, manifest response, and no original CASH/NONCASH/obligation-ledger mutation.
+- **Scope and signoff:** **RR-002 local automated browser E2E = PASS for that exact SHA.** Do not conflate browser device emulation with physical hardware or installed PWA. The log does not show a separate contemporaneous `pnpm test:unit`, `pnpm test:integration`, `pnpm test:http`, hosted Actions, or human review; no claim of these additional gates passing. **RR-002 physical-device gate PENDING. Overall release NO-GO, financial engine OFF, Draft PR #16.**
+- **Provenance caveat:** this documentation-only commit changes branch HEAD after the verified code SHA. No application/browser test code was modified by this evidence update; the SHA-bound local PASS remains attached to `5daf6e8`, not automatically to later commits.
+
+[Physical-device/installed-PWA protocol](./RR-002-PHYSICAL-DEVICE-ACCEPTANCE.md) · [Release backlog](./BACKLOG.md).
+
 ## Verified local automated browser matrix — 2026-11-07
 
 The owner provided the terminal output from two consecutive local runs on the feature branch after the Service Worker test-harness correction. **These are observed local execution results, not a GitHub-hosted CI run or a physical-device test.**
