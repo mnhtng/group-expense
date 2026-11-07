@@ -44,8 +44,10 @@ export function verifyCompareUrl(raw,requiredHost){
   try{u=new URL(raw);}catch{refuse("malformed database URL");}
   if(!["postgres:","postgresql:"].includes(u.protocol)||u.hostname!==requiredHost||
     u.pathname!=="/"+RR003_TARGET.database||
-    u.hash||u.port&&u.port!=="5432"||
+    u.hash||(u.port&&u.port!=="5432")||
     !u.username||!u.password||
+    requiredHost.includes("-pooler.")||
+    u.searchParams.size!==1||
     !["require","verify-full","verify-ca"].includes(u.searchParams.get("sslmode")))
     refuse("database URL fails source/target branch and TLS guards");
   return raw;
