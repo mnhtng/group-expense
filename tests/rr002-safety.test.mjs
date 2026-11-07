@@ -109,6 +109,34 @@ test("RR-002 network fault checks an intercepted GET in an isolated signed conte
   assert.doesNotMatch(s,/await owner\.page\.route\("\*\*\/settlement-cycle/);
 });
 
+test("RR-002 confirms fresh snapshot by keyboard without skipping HTTP authorization",()=>{
+  const browser=read("tests/rr002-browser.e2e.mjs");
+  assert.match(browser,/freshConsent\.focus\(\)/);
+  assert.match(browser,/keyboard\.press\("Space"\)/);
+  assert.match(browser,/keyboard\.press\("Tab"\)/);
+  assert.match(browser,/freshLock\.evaluate\(el=>el===document\.activeElement\)/);
+  assert.match(browser,/keyboard\.press\("Enter"\)/);
+  assert.match(browser,/lockedResponse\.status\(\),200/);
+  assert.match(browser,/mobile pointer confirmation must commit the real snapshot lock/);
+  assert.match(browser,/assert\.equal\(state\.obligationCount,55/);
+});
+
+test("RR-002 local runner records source SHA and cannot attest a focused run as full",()=>{
+  const script=read("scripts/rr002-local.sh");
+  assert.match(script,/git rev-parse --verify HEAD/);
+  assert.match(script,/git diff --quiet/);
+  assert.match(script,/git diff --cached --quiet/);
+  assert.match(script,/scope="\$\{RR002_PROFILE:-all-four-profiles\}"/);
+  assert.match(script,/fullBrowserMatrix:process\.env\.RR002_SCOPE==="all-four-profiles"/);
+  assert.match(script,/rr002-artifacts\/rr002-local-result\.json/);
+  assert.match(script,/sourceState:process\.env\.RR002_SOURCE_STATE/);
+  assert.match(script,/physicalDevicesTested:false/);
+  assert.ok(script.indexOf('node --test --test-reporter=spec tests/rr002-browser.e2e.mjs')<
+    script.indexOf('fs.writeFileSync(file,'),
+    "PASS evidence must only be written after successful real browser tests");
+  assert.doesNotMatch(script,/Neon|neon\.tech|SETTLEMENT_CYCLE_ENGINE_READY=true/);
+});
+
 test("RR-002 WebKit counterparty picker has a non-CSS-dependent 48px target",()=>{
   const s=read("components/groups/settlement-cycle-finance-panel.tsx");
   assert.match(s,/id="cycle-pair-member"/);
