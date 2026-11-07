@@ -145,3 +145,16 @@ nativeClicks=0; dispatched=0
 **Root cause CONFIRMED by production-build GroupExpense pointer logs:** fixed navigation appears between lock-button pointerdown and pointerup, intercepts the release and prevents the React onClick/POST. The shared focus-dependent overlay behavior has been removed and browser pointer assertions have been added. This is a product-level UI fix, not a weakened Playwright test or financial shortcut.
 
 **Pending before PASS:** `pnpm test:unit`, typecheck/build, disposable PG17 browser matrix at the new commit, repeated formerly broken Chromium flow, and independent iOS/Android real-device/installed-PWA keyboard testing. PR #16 remains Open Draft; engine OFF; no changes to shared Neon or original CASH/NONCASH ledger.
+
+## Post-remediation verification — 2026-11-07
+
+The owner-provided local test run closes the **automated cross-browser verification** item that was pending when this RCA was written:
+
+- The WebKit-only local run passed (`tests=2, pass=2, fail=0`).
+- The complete Playwright suite against a new disposable PostgreSQL 17 passed **all four browser profiles** (`tests=5, pass=5, fail=0`; Chromium desktop, WebKit desktop, iPhone WebKit emulation, Android Chromium emulation).
+- Next.js build/TypeScript and migration 001–023 plus idempotent second check also passed.
+- Finance mutation guard and pointerdown/pointerup/click regression are in the covered test path, not bypassed.
+- WebKit's controlled network-failure scenario passed after the fault-injection harness used a separate signed context with Service Workers blocked **only for that fault-injection test**.
+
+**Remaining outside browser-automation scope:** The local log did not print the Mac's exact Git SHA; capture it before reviewed-commit attestation. Three independent fresh-run Chromium repetitions, physical iPhone/Android installed PWA, keyboard/accessibility testing, independent CI/HTTP/integration on the final reviewed commit and RR-003/004/005 are still separate checks. **Overall financial release NO-GO; engine OFF and PR #16 Draft.**
+
