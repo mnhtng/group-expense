@@ -8,7 +8,7 @@ cd "$root"
 readonly expected_database_url='postgresql://test:test@localhost:5432/group_expense'
 readonly origin='http://localhost:3112'
 
-for executable in docker node npm pnpm; do
+for executable in docker node npm pnpm git; do
   if ! command -v "$executable" >/dev/null 2>&1; then
     printf 'RR-002 refused: missing %s\n' "$executable" >&2
     exit 1
@@ -34,6 +34,17 @@ if [[ "${BN004_TEST_ONLY:-}${BN006_TEST_ONLY:-}${SC005_TEST_ONLY:-}${SC007_TEST_
   echo 'RR-002 refused: financial test-write flags are set.' >&2
   exit 1
 fi
+# Bind a browser PASS to a verifiable local checkout, rather than
+# inferring the tested SHA from the GitHub branch's moving HEAD.
+source_sha="$(git rev-parse --verify HEAD)"
+source_state="clean-tracked"
+if ! git diff --quiet -- . || ! git diff --cached --quiet -- .; then
+  source_state="DIRTY-TRACKED"
+fi
+scope="${RR002_PROFILE:-all-four-profiles}"
+printf 'RR-002 source SHA: %s (tracked tree: %s; profile: %s)\n' \
+  "$source_sha" "$source_state" "$scope"
+
 if ! docker info >/dev/null 2>&1; then
   echo 'RR-002 refused: Docker daemon not available.' >&2
   exit 1
@@ -91,4 +102,30 @@ export RR002_PLAYWRIGHT_ENTRY="$workspace/node_modules/playwright/index.mjs"
 
 echo 'RR-002: running signed Chromium/WebKit E2E against disposable localhost PG17 ...'
 node --test --test-reporter=spec tests/rr002-browser.e2e.mjs
-printf '\nRR-002 local browser E2E PASS. Physical iOS/Android remain untested.\n'
+
+# Machine-readable, secret-free LOCAL evidence. It is only written after
+# the Node test runner exits 0. Focused runs must never claim all profiles.
+mkdir -p rr002-artifacts
+RR002_SOURCE_SHA="$source_sha" RR002_SOURCE_STATE="$source_state" \
+RR002_SCOPE="$scope" node - <<'NODE'
+const fs=require("node:fs");
+const result={
+  format:"rr002-local-browser-v1",
+  sourceSha:process.env.RR002_SOURCE_SHA,
+  sourceState:process.env.RR002_SOURCE_STATE,
+  profile:process.env.RR002_SCOPE,
+  fullBrowserMatrix:process.env.RR002_SCOPE==="all-four-profiles",
+  database:"disposable-loopback-postgresql-17",
+  completedAt:new Date().toISOString(),
+  result:"PASS",
+  physicalDevicesTested:false,
+};
+const file="rr002-artifacts/rr002-local-result.json";
+fs.writeFileSync(file,JSON.stringify(result,null,2)+"\n",{mode:0o600});
+console.log("RR-002 source-bound local evidence: "+file);
+NODE
+if [[ "$source_state" == 'DIRTY-TRACKED' ]]; then
+  echo 'RR-002 WARNING: tracked source files are modified; PASS is NOT attested to the commit SHA alone.' >&2
+fi
+printf '\nRR-002 local browser E2E PASS (profile: %s; source: %s). Physical iOS/Android remain untested.\n' \
+  "$scope" "$source_sha"
