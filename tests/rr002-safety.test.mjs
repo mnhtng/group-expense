@@ -114,7 +114,11 @@ test("RR-002 confirms fresh snapshot by keyboard without skipping HTTP authoriza
   assert.match(browser,/freshConsent\.focus\(\)/);
   assert.match(browser,/keyboard\.press\("Space"\)/);
   assert.match(browser,/keyboard\.press\("Tab"\)/);
-  assert.match(browser,/freshLock\.evaluate\(el=>el===document\.activeElement\)/);
+  assert.match(browser,/project==="webkit-desktop"&&process\.platform==="darwin"/);
+  assert.match(browser,/await freshConsent\.focus\(\);\s*await owner\.page\.keyboard\.press\("Alt\+Tab"\)/);
+  assert.match(browser,/freshLock\.evaluate\(\s*el=>el===document\.activeElement\)/);
+  assert.match(browser,/Keyboard focus must reach the snapshot lock button/);
+  assert.doesNotMatch(browser,/freshLock\.focus\(\)|freshLock\.click\(\{force:true\}\)/);
   assert.match(browser,/keyboard\.press\("Enter"\)/);
   assert.match(browser,/lockedResponse\.status\(\),200/);
   assert.match(browser,/mobile pointer confirmation must commit the real snapshot lock/);
