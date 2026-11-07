@@ -49,6 +49,10 @@ test("RR-003 reject restored target if source, dev, production or non-Neon hostn
     targetHost),/TLS guards/);
   assert.throws(()=>verifyCompareUrl(url(targetHost)+"#x",targetHost),/TLS guards/);
   assert.throws(()=>verifyCompareUrl(url(targetHost)+"&options=unsafe",targetHost),/TLS guards/);
+  assert.equal(verifyCompareUrl(url(targetHost)+"&channel_binding=require",targetHost),
+    url(targetHost)+"&channel_binding=require");
+  assert.throws(()=>verifyCompareUrl(url(targetHost)+"&channel_binding=disable",targetHost),
+    /TLS guards/);
   const pooled="ep-rr003-demo-pooler.c-4.ap-southeast-1.aws.neon.tech";
   assert.throws(()=>verifyCompareUrl(url(pooled),pooled),/TLS guards/);
 });
