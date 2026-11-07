@@ -1140,6 +1140,12 @@ After the owner's **4/4 browser PASS** on disposable PG17, added a real keyboard
 
 Created [physical iOS/Android installed-PWA acceptance protocol](../release-readiness/RR-002-PHYSICAL-DEVICE-ACCEPTANCE.md): 18 real-device scenarios, reviewed isolated HTTPS prerequisite, installation, session longevity, safe area, focus/keyboard/touch, offline data privacy, screen reader and immutable dispute/no-money mutation. **No remote deployment or hardware testing was performed.** Source changes to browser tests and runner after the earlier green run have **not yet passed on a developer Mac**; rerun on final code and capture `rr002-artifacts/rr002-local-result.json`. Overall RR-002 hardware/release gate is PENDING, RR-003/004/005 not started, PR Draft, engine OFF.
 
+## 2026-11-07 — RR-002 exact-SHA local automated E2E gate: PASS
+
+The owner ran focused macOS WebKit and then the default all-four browser matrix at **`5daf6e8e0ca5b0344d0d76896ca02266f06baf5e`** with **tracked tree clean**. Focused WebKit Node runner `tests 2 / pass 2 / fail 0`, full suite `tests 5 / pass 5 / fail 0`, all four Chromium/WebKit desktop and emulated iPhone/Android browser profiles PASS. The completed local result `rr002-artifacts/rr002-local-result.json` records this exact SHA, `fullBrowserMatrix:true`, `sourceState:clean-tracked`, `result:PASS`, `physicalDevicesTested:false` and completion `2026-11-07T13:34:35.587Z`. Disposable loopback-only PG17 migrations 001–023 and idempotent recheck plus Next.js 16.4.3 production build/TypeScript PASS. This includes the macOS WebKit native Option+Tab keyboard path and real authorized HTTP lock.
+
+**Automated local browser portion PASS** at this exact tested code SHA. **Physical iOS/Android installed-PWA and accessibility acceptance NOT DONE**, hosted CI on final SHA not attested, no fresh independent unit/HTTP/integration evidence from this log. RR-003 Neon managed PITR, RR-004 security/financial signoff and RR-005 release authorization remain separate and pending. Financial engine hard OFF, no shared Neon changes and PR #16 Open Draft. This evidence-only documentation update does not amend the tested application/test code. See [RR-002 SHA-bound evidence](../release-readiness/RR-002-BROWSER-E2E.md).
+
 ## NEXT WORK — separate approval required
 
 The child-only RR-001 **schema migration check is complete**.
