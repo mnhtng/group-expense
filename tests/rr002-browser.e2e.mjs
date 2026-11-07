@@ -174,6 +174,54 @@ async function capture(page,project,label){
   await page.screenshot({path:"rr002-artifacts/"+project+"-"+label+".png",
     fullPage:true,animations:"disabled",timeout:20000});
 }
+// Read-only hit-test probe for the focus/overlay hypothesis. It never
+// changes navigation, click dispatch, keyboard focus, browser auth or money.
+async function installSnapshotPointerProbe(page){
+  await page.evaluate(()=>{
+    const events=[];
+    const types=["pointerdown","mousedown","focusin","focusout",
+      "pointerup","mouseup","click"];
+    const label=node=>{
+      if(!(node instanceof Element))return "other";
+      if(node.closest(".app-bottom-nav"))return "bottom-nav";
+      if(node.closest("button")?.textContent
+        ?.includes("Xác nhận khóa bản đối soát"))return "lock-button";
+      if(node.closest('input[type="checkbox"]'))return "checkbox";
+      if(node.closest("button"))return "other-button";
+      if(node.closest("main"))return "main";
+      return node.tagName.toLowerCase();
+    };
+    const metrics=node=>{
+      if(!(node instanceof Element))return null;
+      const rect=node.getBoundingClientRect();
+      const style=getComputedStyle(node);
+      return {top:Math.round(rect.top),bottom:Math.round(rect.bottom),
+        height:Math.round(rect.height),display:style.display,
+        pointerEvents:style.pointerEvents,zIndex:style.zIndex};
+    };
+    const capture=event=>{
+      const nav=document.querySelector(".app-bottom-nav");
+      const lock=[...document.querySelectorAll("button")].find(button=>
+        button.textContent?.includes("Xác nhận khóa bản đối soát"));
+      const pointer=event instanceof MouseEvent;
+      const x=pointer?Math.round(event.clientX):null;
+      const y=pointer?Math.round(event.clientY):null;
+      events.push({type:event.type,target:label(event.target),
+        focused:label(document.activeElement),
+        x,y,hit:pointer?label(document.elementFromPoint(x,y)):null,
+        nav:metrics(nav),lock:metrics(lock)});
+      if(events.length>24)events.shift();
+    };
+    for(const type of types)document.addEventListener(type,capture,true);
+    globalThis.__rr002PointerProbe={
+      events,
+      snapshot:()=>({events:[...events],viewport:{
+        width:innerWidth,height:innerHeight,scrollY:Math.round(scrollY)}}),
+      stop:()=>{for(const type of types)
+        document.removeEventListener(type,capture,true);},
+    };
+  });
+}
 async function assertTapTarget(locator,name){
   const rect=await locator.boundingBox();
   assert.ok(rect && rect.height>=44-0.5,
@@ -293,6 +341,9 @@ async function scenario(engine,project,options,actors){
     await must(owner,"POST","/api/groups/"+groupId+"/expenses",
       draft("RR002 stale review new invoice",owner.id,other.id,20000),201);
     await seedSyntheticSources(groupId,owner.id,other.id,day(-9));
+    // Install before the checkbox receives focus so the probe sees the
+    // entire focus transition leading into the button's pointer gesture.
+    await installSnapshotPointerProbe(owner.page);
     await owner.page.getByRole("checkbox",{
       name:/Tôi đã kiểm tra số liệu này/
     }).check();
@@ -350,6 +401,8 @@ async function scenario(engine,project,options,actors){
       }).isChecked().catch(()=>false);
       const alerts=await owner.page.getByRole("alert").allInnerTexts()
         .catch(()=>[]);
+      const pointerProbe=await owner.page.evaluate(()=>
+        globalThis.__rr002PointerProbe?.snapshot()??null).catch(()=>null);
       throw new Error("RR-002 snapshot click/POST failed: dispatched="+
         dispatched+", nativeClicks="+diagnostic.nativeClicks+
         ", secureContext="+diagnostic.secureContext+
@@ -359,10 +412,13 @@ async function scenario(engine,project,options,actors){
         previewVisible+", consent="+consent+
         ", alerts="+JSON.stringify(alerts.map(x=>x.slice(0,180)).slice(0,2))+
         ", pageErrors="+JSON.stringify(jsErrors.slice(0,3))+
+        ", pointerProbe="+JSON.stringify(pointerProbe)+
         "; underlying="+String(error?.message??error).slice(0,1400));
     }finally{
       owner.page.off("request",recordSnapshotRequest);
       owner.page.off("pageerror",recordPageError);
+      await owner.page.evaluate(()=>
+        globalThis.__rr002PointerProbe?.stop()).catch(()=>{});
     }
     assert.equal(staleResponse.status(),409,
       "stale original obligations MUST cause a snapshot-lock HTTP 409");
