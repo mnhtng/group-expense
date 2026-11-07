@@ -57,6 +57,22 @@ click       MAIN   (common ancestor; button onClick NOT fired)
 
 This is a **real Chrome browser behavioral reproduction**, not speculation about API timing. It closely matches the user's log. It is not yet an instrumented hit-test on the *actual GroupExpense page*: before final signoff, verify actual pointer targets/geometry in the product viewport. This distinction matters.
 
+## A-stage executable diagnostic — 2026-11-07
+
+Stage A is now instrumented in `tests/rr002-browser.e2e.mjs` **without a production CSS change**. It records a bounded sequence of real browser `pointerdown`, `mousedown`, `focusin`, `focusout`, `pointerup`, `mouseup` and `click` events. For each event it records only a classified element role (`lock-button`, `checkbox`, `bottom-nav`, `main`, `other-button`), viewport pointer coordinates, `document.elementFromPoint`, and computed nav/button rectangle, display, pointer-events and z-index. It starts **before** checkbox focus and detaches listeners after the attempted click. On failure, the synthetic-only `pointerProbe` output appears in the test error. It contains no user names, text contents, cookies, request data or financial amounts.
+
+Run **once**, only locally on a disposable PostgreSQL 17:
+
+```bash
+git pull --ff-only origin feat/settlement-cycles-bilateral
+pnpm test:unit
+RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh 2>&1 | tee rr002-pointer-diagnosis.log
+```
+
+**Important:** the shell pipeline above requires `set -o pipefail` if the exit status is consumed by another program; otherwise the status returned is that of `tee` even if browser tests fail. The captured log stays local. The synthetic test creates no real financial ledger entries.
+
+**Proof required before applying Stage B:** `pointerdown.target="lock-button"`, followed by focus transition showing nav visibility change and `pointerup.target="bottom-nav"`, with subsequent click not delivered to `lock-button`. If the actual target sequence differs, inspect the recorded `hit` and geometry and **revise the RCA**, rather than patching the CSS by assumption. Do not treat an ordinary `locator.click()` resolve as proof of button activation.
+
 ## 3. One-pass fix plan — no more unrelated hotfixes
 
 ### Stage A: confirm against the real application before committing behavior changes
