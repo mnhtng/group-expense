@@ -25,7 +25,8 @@ test("RR-003 monitor refuses unapproved, insecure, redirected or credentialed UR
     assert.throws(()=>validateMonitorTarget({...valid(),...patch}),/RR-003 monitor refused/);
 });
 test("RR-003 separates healthy, 503, authentication and malformed responses",()=>{
-  assert.deepEqual(classifyOpsProbeResponse(200,{health:"ok",alertCodes:[]}),
+  assert.deepEqual(classifyOpsProbeResponse(200,{health:"ok",alertCodes:[],
+    financialEngineReady:false,releaseDecision:"NO-GO"}),
     {ok:true,signal:"OPS_HEALTHY",httpStatus:200,alertCodes:[]});
   const attention=classifyOpsProbeResponse(503,{
     health:"attention",alertCodes:["STUCK_CRON_RUN","FAILED_CHECKPOINT","sensitive name"]});
@@ -33,6 +34,10 @@ test("RR-003 separates healthy, 503, authentication and malformed responses",()=
   assert.deepEqual(attention.alertCodes,["STUCK_CRON_RUN","FAILED_CHECKPOINT"]);
   assert.equal(classifyOpsProbeResponse(200,{health:"attention"}).ok,false);
   assert.equal(classifyOpsProbeResponse(200,{}).signal,"HEALTH_BODY_MISMATCH");
+  assert.equal(classifyOpsProbeResponse(200,{health:"ok",alertCodes:[],
+    financialEngineReady:true,releaseDecision:"GO"}).ok,false);
+  assert.equal(classifyOpsProbeResponse(200,{health:"ok",alertCodes:[],
+    financialEngineReady:false,releaseDecision:"NO-GO"}).ok,true);
   assert.equal(classifyOpsProbeResponse(401,{error:"Unauthorized"}).signal,"AUTH_DENIED");
   assert.equal(classifyOpsProbeResponse(302,{}).signal,"UNEXPECTED_HTTP_STATUS");
 });
@@ -41,7 +46,8 @@ test("RR-003 probes signed GET only, no replay and no URL/secret in results",asy
   const result=await pollOpsMonitor(valid(),{
     fetchImpl:async (url,init)=>{
       calls.push({url,init});
-      return {status:200,json:async()=>({health:"ok",alertCodes:[]})};
+      return {status:200,json:async()=>({health:"ok",alertCodes:[],
+        financialEngineReady:false,releaseDecision:"NO-GO"})};
     },
   });
   assert.equal(result.ok,true);
