@@ -56,6 +56,12 @@ test("RR-002 stale fingerprint checks actual HTTP 409 and awaits UI invalidation
   assert.match(s,/hasText:\/Số liệu hóa đơn hoặc thanh toán đã thay đổi\//);
   assert.match(s,/a stale preview must also revoke the consent checkbox/);
   assert.match(s,/nativeClicks=/);
+  assert.match(s,/installSnapshotPointerProbe\(owner\.page\)/);
+  assert.match(s,/document\.elementFromPoint\(x,y\)/);
+  assert.match(s,/focused:label\(document\.activeElement\)/);
+  assert.match(s,/bottom-nav/);
+  assert.match(s,/pointerProbe=/);
+  assert.match(s,/__rr002PointerProbe\?\.stop\(\)/);
   assert.match(s,/crypto\.randomUUID=/);
   assert.match(s,/owner\.page\.on\("pageerror",recordPageError\)/);
   assert.match(s,/owner\.page\.off\("pageerror",recordPageError\)/);
