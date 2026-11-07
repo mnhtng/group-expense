@@ -71,6 +71,14 @@ Following the verified previous 4/4 local browser PASS, the feature branch adds 
 
 The [physical iOS/Android + installed-PWA protocol](./RR-002-PHYSICAL-DEVICE-ACCEPTANCE.md) defines 18 hardware acceptance cases and requires a separately approved isolated HTTPS deployment with synthetic-only data. **No device test or deployment has been performed; physical RR-002 remains PENDING.** A direct Mac LAN URL using HTTP is not a substitute for a secure-context installable PWA. Do not enable finance engine or write to shared Neon.
 
+## RR-002 keyboard extension — native macOS WebKit Tab policy (2026-11-07)
+
+Owner-provided local run on clean tracked SHA `a9330eda742bdc3993e2a34478301acb06666cd3`: migration 001–023 twice and Next.js/TypeScript **PASS**; Chromium desktop, iPhone WebKit emulation, Android Chromium emulation **PASS**; WebKit **desktop failed** at the newly added plain-Tab-focus assertion, before pressing Enter or writing snapshot (`tests 5 / pass 3 / fail 2`, counting failed parent). The former full 4/4 browser suite PASS was from an **earlier test implementation**, so it does not prove the added keyboard test.
+
+Playwright [#41808](https://github.com/microsoft/playwright/issues/41808) documents macOS WebKit skipping native buttons on plain Tab when the OS Keyboard Navigation preference is off; [WebKit #199671](https://bugs.webkit.org/show_bug.cgi?id=199671) identifies Option+Tab as the Safari-compatible navigation gesture. The test now requires real focus after Tab, or on **macOS WebKit desktop only** retries the native **Option+Tab** route from the same checkbox and requires focus, Enter, actual HTTP 200 and unchanged financial balances. No product UI/API or ledger changes, no synthetic click, no forced focus, no OS-preference mutation. **Not yet rerun on the updated commit.**
+
+Physical-device/PWA signoff, exact final verified SHA, RR-003/004/005 and production release authorization remain pending; engine hard OFF, PR #16 Draft.
+
 ## Limited GitHub Actions minutes — cost triage (2026-11-06)
 
 **Owner-confirmed constraint:** GitHub Actions usage quota exhausted. Until capacity returns, **do not repeatedly trigger or pay to retry runners**. This is a resource constraint, not proof that the current RR-002 Playwright suite has passed.
