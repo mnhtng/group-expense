@@ -459,11 +459,36 @@ async function scenario(engine,project,options,actors){
     await owner.page.getByRole("button",{
       name:"Xem trước số liệu để đối soát"}).click();
     await owner.page.getByText("Bản xem trước — chưa khóa").waitFor();
-    await owner.page.getByRole("checkbox",{
+    const freshConsent=owner.page.getByRole("checkbox",{
       name:/Tôi đã kiểm tra số liệu này/
-    }).check();
-    await owner.page.getByRole("button",{
-      name:"Xác nhận khóa bản đối soát"}).click();
+    });
+    const freshLock=owner.page.getByRole("button",{
+      name:"Xác nhận khóa bản đối soát"});
+    // The same money authorization must work without a mouse: focus the
+    // checkbox, press Space, Tab to the button and press Enter. Mobile
+    // emulations retain their ordinary user pointer/touch click flow;
+    // hardware keyboard acceptance is separately tested on real devices.
+    if(!project.includes("phone")){
+      await freshConsent.focus();
+      assert.equal(await freshConsent.isChecked(),false,
+        "fresh preview must revoke prior authorization");
+      await owner.page.keyboard.press("Space");
+      assert.equal(await freshConsent.isChecked(),true,
+        "Space must explicitly check snapshot consent");
+      await owner.page.keyboard.press("Tab");
+      assert.equal(await freshLock.evaluate(el=>el===document.activeElement),true,
+        "Tab must reach the actual snapshot lock button");
+      const lockedResponse=await observeBrowserPost(owner.page,snapshotPath,
+        ()=>owner.page.keyboard.press("Enter"));
+      assert.equal(lockedResponse.status(),200,
+        "keyboard Enter must commit a fresh authorized snapshot lock");
+    }else{
+      await freshConsent.check();
+      const lockedResponse=await observeBrowserPost(owner.page,snapshotPath,
+        ()=>freshLock.click());
+      assert.equal(lockedResponse.status(),200,
+        "mobile pointer confirmation must commit the real snapshot lock");
+    }
     await owner.page.getByText("Snapshot đã khóa",{exact:true}).first().waitFor();
     state=(await must(owner,"GET",cyclesApi+"/"+cycleId+"/snapshot")).snapshot;
     assert.equal(state.state,"locked");
