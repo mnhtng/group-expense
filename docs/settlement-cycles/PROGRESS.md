@@ -1124,6 +1124,16 @@ The four-profile browser suite and physical-device PWA evaluation remain **unver
 
 [Limited Actions usage decision and exit gates](../release-readiness/BACKLOG.md) · [RR-002 local runbook](../release-readiness/RR-002-BROWSER-E2E.md).
 
+## 2026-11-07 — RR-002 local automated browser matrix: PASS 4/4; device gate pending
+
+The owner executed `RR002_PROFILE=webkit-desktop bash scripts/rr002-local.sh` and then unfiltered `bash scripts/rr002-local.sh` against disposable Docker PostgreSQL 17. The focused WebKit run returned **2/2 tests PASS**, and the full real-browser interaction suite returned **5/5 tests PASS** (four profiles + parent): Chromium desktop, WebKit desktop, iPhone WebKit emulation, Android Chromium emulation. Migration 001–023 and idempotent second migration check, Next.js 16.4.3 production build and TypeScript were successful.
+
+The confirmed `checkbox:focus` → fixed bottom-nav overlay → lost `pointerup` root cause was addressed centrally in CSS and protected by real pointer-event assertions. The WebKit-only controlled network failure was retested using a dedicated signed browser context with Service Workers blocked for deterministic route interception; the primary app contexts retain Service Worker behavior. Browser E2E covers stale HTTP 409, explicit re-consent, locked snapshot, original-source paging, bilateral privacy, dispute lifecycle, abort/retry, long-lived session and no ledger/CASH/NONCASH mutation. No finance engine activation or shared database writes were introduced.
+
+**Scope:** This proves **local browser E2E PASS**, not installed PWA / physical iOS/Android correctness or overall financial release readiness. The supplied terminal log does not print a `git rev-parse HEAD`; exact-source-SHA attestation remains to be captured before final release review, along with physical-device/keyboard accessibility testing and independent CI/HTTP/integration checks. RR-003 managed Neon PITR, RR-004 independent finance/security signoff and RR-005 staged release remain PENDING. `SETTLEMENT_CYCLE_ENGINE_READY=false`, PR #16 Draft, release NO-GO.
+
+[Browser evidence](../release-readiness/RR-002-BROWSER-E2E.md) · [Release backlog](../release-readiness/BACKLOG.md).
+
 ## NEXT WORK — separate approval required
 
 The child-only RR-001 **schema migration check is complete**.
