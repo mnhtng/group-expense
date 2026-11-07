@@ -347,6 +347,11 @@ async function scenario(engine,project,options,actors){
     await owner.page.getByRole("checkbox",{
       name:/Tôi đã kiểm tra số liệu này/
     }).check();
+    // The fixed nav must stay stable during checkbox->button focus changes,
+    // including desktop and device-emulated pointer interactions.
+    assert.notEqual(await owner.page.locator(".app-bottom-nav")
+      .evaluate(el=>getComputedStyle(el).display),"none",
+      "Bottom navigation must not toggle off on consent checkbox focus");
     // Observe the actual POST response rather than guessing from an
     // unrelated alert. Playwright's click() waits for input dispatch, NOT
     // the async fetch() or React state commit after HTTP 409.
@@ -420,6 +425,23 @@ async function scenario(engine,project,options,actors){
       await owner.page.evaluate(()=>
         globalThis.__rr002PointerProbe?.stop()).catch(()=>{});
     }
+    // Regression for the exact observed bug: the browser's pointerdown
+    // reached the lock button, but focusout re-displayed fixed z-40 nav and
+    // pointerup hit that nav. Response alone must not hide a click regression.
+    const clickEvidence=await owner.page.evaluate(()=>
+      globalThis.__rr002PointerProbe?.snapshot()??null);
+    const lockPointerEvents=clickEvidence?.events.filter(event=>
+      ["pointerdown","pointerup","click"].includes(event.type)&&
+      event.target==="lock-button")??[];
+    for(const type of ["pointerdown","pointerup","click"]){
+      assert.ok(lockPointerEvents.some(event=>event.type===type),
+        "RR-002 lock gesture must deliver "+type+
+        " to the real button; "+JSON.stringify(clickEvidence));
+    }
+    assert.ok(!clickEvidence.events.some(event=>
+      ["pointerup","click"].includes(event.type)&&
+      event.target==="bottom-nav"),
+      "Fixed navigation must never steal lock gesture");
     assert.equal(staleResponse.status(),409,
       "stale original obligations MUST cause a snapshot-lock HTTP 409");
     // A rejected fingerprint must make the entire preview/consent UI
