@@ -42,12 +42,15 @@ export function verifyCompareUrl(raw,requiredHost){
     refuse("pinned Neon compute hostname required");
   let u;
   try{u=new URL(raw);}catch{refuse("malformed database URL");}
+  const allowedParams=new Set(["sslmode","channel_binding"]);
   if(!["postgres:","postgresql:"].includes(u.protocol)||u.hostname!==requiredHost||
     u.pathname!=="/"+RR003_TARGET.database||
     u.hash||(u.port&&u.port!=="5432")||
     !u.username||!u.password||
     requiredHost.includes("-pooler.")||
-    u.searchParams.size!==1||
+    [...u.searchParams.keys()].some(key=>!allowedParams.has(key))||
+    (u.searchParams.has("channel_binding")&&
+      u.searchParams.get("channel_binding")!=="require")||
     !["require","verify-full","verify-ca"].includes(u.searchParams.get("sslmode")))
     refuse("database URL fails source/target branch and TLS guards");
   return raw;
