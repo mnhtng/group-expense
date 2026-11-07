@@ -160,6 +160,34 @@ RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh
 
 The next Chromium failure, if any, should report the true Playwright actionability error or a post-click request/HTTP failure. Do not loosen the 409 privacy/financial safeguards.
 
+### Fifth local macOS run — root cause conclusively verified (2026-11-07)
+
+The user ran `RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh` with the new real-application `pointerProbe`. Docker PostgreSQL 17, migrations 001–023 twice, Next.js 16.4.3 production compilation and TypeScript succeeded; Chromium stopped because the lock click never reached React.
+
+**The exact recorded real DOM chain proves the UI bug:**
+
+- Native `pointerdown` on `lock-button` at **(550,812)**, with bottom nav `display:none`.
+- `focusout` from the consent checkbox immediately makes the nav `display:block`.
+- Nav is **z-index 40**, covers vertical region **811–900px**; lock button spans **790–834px**.
+- `pointerup` and `mouseup` hit `bottom-nav`; the resulting `click` targets a `div` instead of the lock button.
+- Therefore `nativeClicks=0`, `dispatched=0`, with no JavaScript page errors or WebCrypto problem. This is not an HTTP backend failure.
+
+**Definitive scoped remediation committed:** removed *both* global focus-driven overlay rules in `app/globals.css`: (1) conditional `.app-bottom-nav` display, and (2) `.expense-save-footer` position shifts. No replacement text-focus rule is introduced, because it would recreate the same mid-gesture failure on mobile. Existing app-shell bottom padding and nav safe area continue to reserve space.
+
+**Real browser regression now checks more than a resolved click:** the fixed nav stays stable when checkbox receives focus, and the lock gesture's DOM `pointerdown`, `pointerup`, `click` must all reach the actual lock button. The test retains the real stale HTTP 409, consent revocation, fresh lock and unchanged CASH/NONCASH records.
+
+Independent Chromium/Playwright A/B at the exact viewport/control geometry returned **original CSS: 0 button clicks** and **corrected CSS: 1 button click** (no force click or synthetic event injection). **The corrected full GroupExpense browser flow has not yet been run on the developer's Mac.** Do not mark RR-002 PASS until that run, all 4 profiles, and mobile/device checks are complete.
+
+```bash
+git pull --ff-only origin feat/settlement-cycles-bilateral
+pnpm test:unit
+RR002_PROFILE=chromium-desktop bash scripts/rr002-local.sh
+# Only after Chromium passes:
+bash scripts/rr002-local.sh
+```
+
+See [the detailed RCA and acceptance checklist](./RR-002-ROOT-CAUSE-PLAN.md).
+
 ### Required to complete RR-002
 
 1. Inspect [RR-002 failed browser run](https://github.com/mnhtng/group-expense/actions/runs/42071610402) and its job annotations; restore GitHub-hosted runner allocation if needed.
