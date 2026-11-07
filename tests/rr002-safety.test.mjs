@@ -94,6 +94,21 @@ test("RR-002 never flips bottom overlays during focus changes",()=>{
   assert.match(browser,/Fixed navigation must never steal lock gesture/);
 });
 
+test("RR-002 network fault checks an intercepted GET in an isolated signed context",()=>{
+  const s=read("tests/rr002-browser.e2e.mjs");
+  // Real signed browser profiles continue to allow Service Worker registration.
+  assert.match(s,/serviceWorkers:"allow",storageState:actor\.storageState/);
+  assert.match(s,/const offlineContext=await browser\.newContext/);
+  assert.match(s,/serviceWorkers:"block"/);
+  assert.match(s,/storageState:await owner\.context\.storageState\(\)/);
+  assert.match(s,/offlinePage\.route\(matchesReconciliation,async route=>/);
+  assert.match(s,/await route\.abort\("failed"\)/);
+  assert.match(s,/assert\.ok\(intercepted>0&&requested>0/);
+  assert.match(s,/await offlinePage\.unroute\(matchesReconciliation\)/);
+  assert.match(s,/await offlineContext\.close\(\)/);
+  assert.doesNotMatch(s,/await owner\.page\.route\("\*\*\/settlement-cycle/);
+});
+
 test("RR-002 WebKit counterparty picker has a non-CSS-dependent 48px target",()=>{
   const s=read("components/groups/settlement-cycle-finance-panel.tsx");
   assert.match(s,/id="cycle-pair-member"/);
