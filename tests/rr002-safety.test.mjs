@@ -134,7 +134,7 @@ test("RR-002 local runner records source SHA and cannot attest a focused run as 
   assert.ok(script.indexOf('node --test --test-reporter=spec tests/rr002-browser.e2e.mjs')<
     script.indexOf('fs.writeFileSync(file,'),
     "PASS evidence must only be written after successful real browser tests");
-  assert.doesNotMatch(script,/Neon|neon\.tech|SETTLEMENT_CYCLE_ENGINE_READY=true/);
+  assert.doesNotMatch(script,/neon\.tech|SETTLEMENT_CYCLE_ENGINE_READY=true|vercel deploy/);
 });
 
 test("RR-002 WebKit counterparty picker has a non-CSS-dependent 48px target",()=>{
