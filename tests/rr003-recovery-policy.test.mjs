@@ -29,6 +29,7 @@ test("RR-003 reports real six-hour provider retention without pretending PITR pa
   assert.equal(outcome.financialConservationVerifiedOnRestore,false);
   assert.equal(outcome.decision,"NO-GO");
   assert.ok(outcome.blockers.includes("RPO_RTO_NOT_DECLARED"));
+  assert.ok(outcome.blockers.includes("NO_SNAPSHOT_ID_FOR_AVAILABLE_RESTORE_API"));
 });
 test("RR-003 never converts an available snapshot or declared policy into restore PASS",()=>{
   const x=meta();
@@ -60,6 +61,9 @@ test("RR-003 rejects wrong source, branch replacement and changed project",()=>{
   assert.throws(()=>evaluateRecoveryMetadata({...base,
     project:{...project(),history_retention_seconds:0}}),
     /history retention/);
+  assert.throws(()=>evaluateRecoveryMetadata({...base,
+    snapshots:[{id:"missing-branch-attribution"}]}),
+    /snapshot branch attribution is unavailable/);
 });
 const attempt=()=>({
   projectId:RR003_TARGET.project,
