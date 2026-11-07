@@ -80,6 +80,20 @@ test("RR-002 awaits real browser dispute writes before checking privacy",()=>{
   assert.doesNotMatch(s,/await createDisputeButton\.click\(\);\s*await owner\.page\.getByText\(reason\)/);
 });
 
+test("RR-002 never flips bottom overlays during focus changes",()=>{
+  const css=read("app/globals.css");
+  assert.doesNotMatch(css,
+    /\.app-shell:has\(input:focus,\s*textarea:focus,\s*select:focus\)/,
+    "focus-driven tabbar/footer visibility reintroduces the pointerup interception");
+  assert.doesNotMatch(css,
+    /:has\([^)]*:focus[^)]*\)\s*\.(?:app-bottom-nav|expense-save-footer)/,
+    "fixed bottom controls must not jump synchronously on input focus");
+  const browser=read("tests/rr002-browser.e2e.mjs");
+  assert.match(browser,/Bottom navigation must not toggle off on consent checkbox focus/);
+  assert.match(browser,/lockPointerEvents\.some\(event=>event\.type===type\)/);
+  assert.match(browser,/Fixed navigation must never steal lock gesture/);
+});
+
 test("RR-002 WebKit counterparty picker has a non-CSS-dependent 48px target",()=>{
   const s=read("components/groups/settlement-cycle-finance-panel.tsx");
   assert.match(s,/id="cycle-pair-member"/);
