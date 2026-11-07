@@ -67,6 +67,8 @@ export function evaluateRecoveryMetadata({
     refuse("provider history retention is not a positive integer");
   if(!Array.isArray(sourceSnapshotSchedule.schedule))
     refuse("source schedule is not an array");
+  if(snapshots.some(x=>!isObject(x)||typeof x.branch_id!=="string"))
+    refuse("snapshot branch attribution is unavailable");
   const branchSnapshots=snapshots.filter(x=>x.branch_id===RR003_TARGET.sourceBranch);
   const validRpo=Number.isSafeInteger(declaredRpoSeconds)&&declaredRpoSeconds>0;
   const validRto=Number.isSafeInteger(declaredRtoSeconds)&&declaredRtoSeconds>0;
@@ -94,7 +96,8 @@ export function evaluateRecoveryMetadata({
       "PITR_RESTORE_NOT_PERFORMED",
       "INDEPENDENT_RESTORE_LEDGER_AUDIT_PENDING",
       "EXTERNAL_ALERT_DELIVERY_NOT_VERIFIED",
-      ...(branchSnapshots.length===0?["NO_MANUAL_PROVIDER_SNAPSHOT_EVIDENCE"]:[]),
+      ...(branchSnapshots.length===0?["NO_MANUAL_PROVIDER_SNAPSHOT_EVIDENCE",
+        "NO_SNAPSHOT_ID_FOR_AVAILABLE_RESTORE_API"]:[]),
       ...(sourceSnapshotSchedule.schedule.length===0?["NO_SCHEDULED_SNAPSHOT_ON_SOURCE"]:[]),
     ],
   };
