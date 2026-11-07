@@ -476,8 +476,30 @@ async function scenario(engine,project,options,actors){
       assert.equal(await freshConsent.isChecked(),true,
         "Space must explicitly check snapshot consent");
       await owner.page.keyboard.press("Tab");
-      assert.equal(await freshLock.evaluate(el=>el===document.activeElement),true,
-        "Tab must reach the actual snapshot lock button");
+      let lockHasFocus=await freshLock.evaluate(
+        el=>el===document.activeElement);
+      // On macOS Playwright WebKit intentionally follows Safari's system
+      // Keyboard Navigation preference. With the default policy plain Tab
+      // can skip native <button>s; Option+Tab includes all form controls.
+      // Use that REAL keyboard path only when standard Tab did not land
+      // on the button; do not add tabindex, force focus or click the button.
+      if(!lockHasFocus&&project==="webkit-desktop"&&process.platform==="darwin"){
+        await freshConsent.focus();
+        await owner.page.keyboard.press("Alt+Tab");
+        lockHasFocus=await freshLock.evaluate(
+          el=>el===document.activeElement);
+      }
+      if(!lockHasFocus){
+        const focused=await owner.page.evaluate(()=>{
+          const el=document.activeElement;
+          return {tag:el?.tagName?.toLowerCase()??"none",
+            type:el?.getAttribute?.("type")??null,
+            role:el?.getAttribute?.("role")??null};
+        });
+        assert.fail("Keyboard focus must reach the snapshot lock button "+
+          "via Tab or native macOS WebKit Option+Tab; project="+project+
+          ", host="+process.platform+", actual="+JSON.stringify(focused));
+      }
       const lockedResponse=await observeBrowserPost(owner.page,snapshotPath,
         ()=>owner.page.keyboard.press("Enter"));
       assert.equal(lockedResponse.status(),200,
