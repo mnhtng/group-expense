@@ -48,6 +48,9 @@ test("RR-003 reject restored target if source, dev, production or non-Neon hostn
   assert.throws(()=>verifyCompareUrl(url(targetHost).replace("sslmode=require","sslmode=disable"),
     targetHost),/TLS guards/);
   assert.throws(()=>verifyCompareUrl(url(targetHost)+"#x",targetHost),/TLS guards/);
+  assert.throws(()=>verifyCompareUrl(url(targetHost)+"&options=unsafe",targetHost),/TLS guards/);
+  const pooled="ep-rr003-demo-pooler.c-4.ap-southeast-1.aws.neon.tech";
+  assert.throws(()=>verifyCompareUrl(url(pooled),pooled),/TLS guards/);
 });
 const baseline=()=>({
   format:"rr003-financial-baseline-v1",
@@ -83,6 +86,7 @@ test("RR-003 comparator has read-only transactions, bounded whitelisted scans, n
   assert.doesNotMatch(source,/client\.query\(["'](?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\s/i);
   assert.match(source,/flag:"wx",mode:0o600/);
   assert.match(source,/releaseApproved:false/);
+  assert.match(readFileSync(".gitignore","utf8"),/\/rr003-artifacts\//);
   assert.match(readFileSync("lib/settlement-cycles/settings.ts","utf8"),
     /SETTLEMENT_CYCLE_ENGINE_READY = false/);
 });
