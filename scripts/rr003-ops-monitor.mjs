@@ -32,7 +32,11 @@ export function classifyOpsProbeResponse(httpStatus,body){
     return {ok:false,signal:"OPS_ATTENTION",httpStatus,alertCodes:codes};
   if(httpStatus!==200)
     return {ok:false,signal:"UNEXPECTED_HTTP_STATUS",httpStatus,alertCodes:[]};
-  if(body?.health!=="ok"||codes.length>0)
+  if(!Array.isArray(body?.alertCodes)||
+    body.alertCodes.length!==codes.length||
+    body?.health!=="ok"||codes.length>0||
+    body?.financialEngineReady!==false||
+    body?.releaseDecision!=="NO-GO")
     return {ok:false,signal:"HEALTH_BODY_MISMATCH",httpStatus,alertCodes:codes};
   return {ok:true,signal:"OPS_HEALTHY",httpStatus,alertCodes:[]};
 }
