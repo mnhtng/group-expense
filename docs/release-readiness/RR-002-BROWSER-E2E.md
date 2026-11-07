@@ -217,6 +217,16 @@ bash scripts/rr002-local.sh
 
 See [the detailed RCA and acceptance checklist](./RR-002-ROOT-CAUSE-PLAN.md).
 
+### RR-002 continuation — keyboard regression, source provenance and device protocol (2026-11-07)
+
+The **previous Mac four-browser E2E run passed 4/4**, but its shell log omitted `git rev-parse HEAD`. Follow-up implementation on the same Draft feature branch:
+
+- The successful fresh REVIEW lock now also exercises **keyboard-only Space on consent → Tab to lock button → Enter** on both desktop browser profiles, and requires an actual browser HTTP **200** response and a subsequently locked snapshot. Phone emulation retains a real pointer click and now independently requires the HTTP **200** result. Stale-fingerprint HTTP 409, two-person privacy and no-money-mutation assertions stay active.
+- The local runner prints the exact **source SHA**, `clean-tracked` / `DIRTY-TRACKED` indicator, and single-profile versus full-matrix scope before starting Docker. After the real browser tests pass it writes `rr002-artifacts/rr002-local-result.json` with those values, a completion timestamp, disposable DB classification and `physicalDevicesTested:false`. A focused test reports `fullBrowserMatrix:false`. This is locally generated evidence, **not** a signed/independent CI attestation.
+- Added [physical iOS / Android installed-PWA acceptance protocol](./RR-002-PHYSICAL-DEVICE-ACCEPTANCE.md), including approved isolated HTTPS requirement, hardware keyboard/touch, safe area, installability, persistent sessions, offline isolation, private pair permissions and real screen-reader testing. The local runner cannot be opened from a phone on `localhost`, and an ordinary LAN IP over HTTP does **not** prove secure-context/PWA functionality. Any reachable isolated test deployment requires **separate approval**; this ticket does not deploy one.
+
+**Verification status of these new follow-up changes:** not yet executed on a developer's Mac after they were committed. The earlier four-profile PASS is retained as historical evidence, not automatically attributed to the new SHA. Run `pnpm test:unit` and `bash scripts/rr002-local.sh` locally; inspect the source-bound JSON only after successful completion. Physical-device signoff remains PENDING; no production finance release approval.
+
 ### Required to complete RR-002
 
 1. Inspect [RR-002 failed browser run](https://github.com/mnhtng/group-expense/actions/runs/42071610402) and its job annotations; restore GitHub-hosted runner allocation if needed.
