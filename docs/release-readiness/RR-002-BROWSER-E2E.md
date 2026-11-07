@@ -227,6 +227,21 @@ The **previous Mac four-browser E2E run passed 4/4**, but its shell log omitted 
 
 **Verification status of these new follow-up changes:** not yet executed on a developer's Mac after they were committed. The earlier four-profile PASS is retained as historical evidence, not automatically attributed to the new SHA. Run `pnpm test:unit` and `bash scripts/rr002-local.sh` locally; inspect the source-bound JSON only after successful completion. Physical-device signoff remains PENDING; no production finance release approval.
 
+### Post-keyboard-extension Mac run — 2026-11-07: WebKit focus policy
+
+The owner ran the expanded `bash scripts/rr002-local.sh` against clean tracked source SHA `a9330eda742bdc3993e2a34478301acb06666cd3`. Temporary Docker PostgreSQL 17, all 23 migrations and idempotency recheck, Next.js 16.4.3 production build and TypeScript **PASS**. The browser profile results were:
+
+- Chromium desktop **PASS**.
+- iPhone WebKit emulation **PASS**.
+- Android Chromium phone emulation **PASS**.
+- **WebKit desktop FAILED** solely at new keyboard-only focus assertion immediately after `checkbox.focus() → Space → Tab`: `document.activeElement` was not the lock button. The test stopped *before Enter and before a successful lock request*; no evidence of a snapshot API or finance defect. Overall Node reporter: `tests 5, pass 3, fail 2` (parent fails with child).
+
+**Root cause corroboration:** macOS WebKit's native sequential focus policy may skip `<button>` on plain Tab when the host's **System Settings → Keyboard → Keyboard navigation** is disabled. Playwright's own [#41808](https://github.com/microsoft/playwright/issues/41808) documents this as intentional Safari-compatible behavior. WebKit/Safari includes controls using **Option+Tab** by default ([WebKit #199671](https://bugs.webkit.org/show_bug.cgi?id=199671)). This is **not** a need to modify app buttons or authorization semantics.
+
+**Corrected E2E:** Keep plain Tab and verify the button is actually focused. Only for **macOS + WebKit desktop**, if native Tab skipped the button, refocus the consent checkbox and issue actual **Alt+Tab**, then verify the lock button is focused and press **Enter** to send the genuine signed HTTP POST 200. Neither `button.focus()`, `force:true`, click-as-fallback nor `tabIndex` is used. A fail path reports the active element tag/type/role without exposing private user values; on Linux WebKit and Chromium unexpected focus behavior still fails.
+
+**Status:** These changes have been committed but **NOT rerun yet**. Historical 4/4 browser PASS on the earlier implementation remains valid evidence of its coverage, but not of this newer keyboard scenario. Next local run must prove both desktop keyboard paths and all four profiles at the exact source SHA. All physical-device/installed PWA, RR-003/004/005 and finance release gates remain pending.
+
 ### Required to complete RR-002
 
 1. Inspect [RR-002 failed browser run](https://github.com/mnhtng/group-expense/actions/runs/42071610402) and its job annotations; restore GitHub-hosted runner allocation if needed.
