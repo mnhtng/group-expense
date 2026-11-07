@@ -201,12 +201,11 @@
   }
 }
 
-/* Keep the keyboard focused: native tab bars get out of the way when editing. */
-@supports selector(:has(*)) {
-  .app-shell:has(input:focus, textarea:focus, select:focus) .app-bottom-nav {
-    display: none;
-  }
-}
+/* Do not hide the fixed bottom navigation when focus changes.
+   Focus can move from a consent checkbox to a button BETWEEN pointerdown
+   and pointerup. Showing a z-40 nav at that instant intercepts the release
+   event, so the button never receives click (RR-002 root cause). The shell
+   reserves sufficient space below content for the stable nav. */
 
 @layer components {
   .app-tabbar-inner {
@@ -222,9 +221,6 @@
   }
 }
 
-/* Keep expense submit controls above fixed mobile tabs without obscuring fields. */
-@supports selector(:has(*)) {
-  .app-shell:has(input:focus, textarea:focus, select:focus) .expense-save-footer {
-    bottom: 0 !important;
-  }
-}
+/* Do not reposition the fixed expense footer on :focus either: an
+   input-to-submit gesture must not shift overlay hit regions mid-click.
+   Footer placement is determined by its own layout and safe-area spacing. */

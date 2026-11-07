@@ -13,6 +13,8 @@
 # testing
 /coverage
 /test-results
+/rr002-artifacts/
+/rr003-artifacts/
 /backups
 /data
 *.dump

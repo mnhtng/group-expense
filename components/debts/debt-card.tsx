@@ -21,7 +21,7 @@ export function DebtCard({
   const confirmed = BigInt(debt.confirmedMinor);
   const state = outstanding === 0n ? "Đã tất toán"
     : pending > 0n ? "Chờ xác nhận"
-    : confirmed > 0n ? "Đã trả một phần"
+    : confirmed > 0n ? "Đã xử lý một phần"
     : "Chưa thanh toán";
   const relation = outgoing
     ? `Bạn cần trả ${debt.creditorName}`
@@ -59,9 +59,13 @@ export function DebtCard({
         <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.amountMinor)}</dd>
       </div>
       <div>
-        <dt className="text-muted-foreground">Đã xác nhận</dt>
+        <dt className="text-muted-foreground">Đã xử lý (tiền + bù trừ)</dt>
         <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.confirmedMinor)}</dd>
       </div>
+      {BigInt(debt.confirmedSetoffMinor)>0n && <div>
+        <dt className="text-muted-foreground">Bù trừ phi tiền mặt</dt>
+        <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.confirmedSetoffMinor)}</dd>
+      </div>}
       <div>
         <dt className="text-muted-foreground">Chờ xác nhận</dt>
         <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.pendingMinor)}</dd>

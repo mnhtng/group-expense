@@ -2,22 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails } from "@/lib/groups/service";
-import { listGroupDebts, sumDebtAmounts } from "@/lib/debts/service";
+import { listGroupDebts, getGroupDebtTotals } from "@/lib/debts/service";
 import { DebtCard } from "@/components/debts/debt-card";
 
 const vnd = (amount: string) => new Intl.NumberFormat("vi-VN").format(BigInt(amount)) + " ₫";
-const sumOutstanding = (debts: { outstandingMinor: string }[]) =>
-  sumDebtAmounts(debts.map(debt => ({ amountMinor: debt.outstandingMinor })));
-
 export default async function GroupDebtsPage({ params }: { params: Promise<{ groupId: string }> }) {
   const { groupId } = await params;
   const user = await requireUser();
-  const [group, debts] = await Promise.all([
+  const [group, debts, totals] = await Promise.all([
     getGroupDetails(groupId, user.id), listGroupDebts(groupId, user.id),
+    getGroupDebtTotals(groupId,user.id),
   ]);
-  if (!group || !debts) notFound();
-  const myPayable = debts.filter(debt => debt.debtorId === user.id);
-  const myReceivable = debts.filter(debt => debt.creditorId === user.id);
+  if (!group || !debts || !totals) notFound();
   const open = debts.filter(debt => BigInt(debt.outstandingMinor) > 0n);
   return <main className="app-page space-y-5">
     <Link href={`/groups/${groupId}`} className="text-sm text-muted-foreground">
@@ -31,19 +27,19 @@ export default async function GroupDebtsPage({ params }: { params: Promise<{ gro
       <div className="min-w-0 rounded-2xl border bg-card p-4">
         <p className="text-xs text-muted-foreground">Tôi cần trả</p>
         <p className="mt-2 break-words text-lg font-bold tabular-nums text-money-out">
-          −{vnd(sumOutstanding(myPayable))}
+          −{vnd(totals.myPayableMinor)}
         </p>
       </div>
       <div className="min-w-0 rounded-2xl border bg-card p-4">
         <p className="text-xs text-muted-foreground">Tôi cần nhận</p>
         <p className="mt-2 break-words text-lg font-bold tabular-nums text-money-in">
-          +{vnd(sumOutstanding(myReceivable))}
+          +{vnd(totals.myReceivableMinor)}
         </p>
       </div>
     </div>
     <div className="rounded-2xl border bg-secondary/50 p-4">
       <p className="text-xs text-muted-foreground">Tổng công nợ còn lại trong nhóm (mọi thành viên)</p>
-      <p className="mt-1 text-lg font-bold tabular-nums">{vnd(sumOutstanding(debts))}</p>
+      <p className="mt-1 text-lg font-bold tabular-nums">{vnd(totals.outstandingMinor)}</p>
     </div>
     <div className="grid grid-cols-2 gap-3">
       <Link href={`/groups/${groupId}/settlements/new`}

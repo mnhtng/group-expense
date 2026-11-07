@@ -33,7 +33,7 @@ test("every personal obligation links to its own debt breakdown", () => {
   assert.match(card, /expenseTotalMinor/);
   assert.match(group, /<DebtCard key=\{debt\.id\}/);
   assert.match(service, /AND EXISTS \(SELECT 1 FROM group_members m/);
-  assert.match(service, /o\.amount_minor > COALESCE/);
+  assert.match(service, /bal\.outstanding_minor > 0/);
 });
 
 test("debt detail shows exact item sources and repayment allocations", () => {

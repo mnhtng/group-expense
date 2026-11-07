@@ -20,8 +20,9 @@ export type ExpenseSummary = {
   createdBy: string; creatorName: string;
   recurringRuleId: string | null; recurringPeriod: string | null;
   completedAt: string | null; completedBy: string | null;
-  debtorCount: number;
-  dueMinor: string; confirmedMinor: string; pendingMinor: string; remainingMinor: string;
+  debtorCount: number; invalidCount: number;
+  dueMinor: string; confirmedMinor: string; confirmedCashMinor: string;
+  confirmedSetoffMinor: string; pendingMinor: string; remainingMinor: string;
 };
 export type ExpenseListFilter = "active" | "completed" | "all";
 type ExpenseItem = {
@@ -41,24 +42,22 @@ export type ExpenseDetail = ExpenseSummary & {
 const expensePaymentProgress = `
  LEFT JOIN LATERAL (
    SELECT count(*)::int AS "debtorCount",
+     count(*) FILTER(WHERE b.outstanding_minor<0 OR b.available_minor<0)::int AS "invalidCount",
      COALESCE(sum(o.amount_minor),0)::text AS "dueMinor",
-     COALESCE(sum(COALESCE(p.confirmed,0)),0)::text AS "confirmedMinor",
-     COALESCE(sum(COALESCE(p.pending,0)),0)::text AS "pendingMinor",
-     COALESCE(sum(o.amount_minor-COALESCE(p.confirmed,0)),0)::text AS "remainingMinor"
+     COALESCE(sum(b.confirmed_cash_minor+b.confirmed_setoff_minor),0)::text AS "confirmedMinor",
+     COALESCE(sum(b.confirmed_cash_minor),0)::text AS "confirmedCashMinor",
+     COALESCE(sum(b.confirmed_setoff_minor),0)::text AS "confirmedSetoffMinor",
+     COALESCE(sum(b.pending_cash_minor),0)::text AS "pendingMinor",
+     COALESCE(sum(b.outstanding_minor),0)::text AS "remainingMinor"
    FROM obligations o
-   LEFT JOIN LATERAL (
-     SELECT COALESCE(sum(a.amount_minor) FILTER (WHERE st.status='confirmed'),0) AS confirmed,
-            COALESCE(sum(a.amount_minor) FILTER (WHERE st.status='pending'),0) AS pending
-     FROM settlement_allocations a
-     JOIN settlements st ON st.id=a.settlement_id
-     WHERE a.obligation_id=o.id
-   ) p ON true
+   JOIN bn005_obligation_balances b ON b.obligation_id=o.id
    WHERE o.expense_id=e.id AND o.voided_at IS NULL
  ) progress ON true
 `;
 
-function completionReady(summary: { remainingMinor: string; pendingMinor: string }): boolean {
-  return BigInt(summary.remainingMinor) === 0n && BigInt(summary.pendingMinor) === 0n;
+function completionReady(summary: { remainingMinor: string; pendingMinor: string; invalidCount:number }): boolean {
+  return summary.invalidCount===0 && BigInt(summary.remainingMinor) === 0n &&
+    BigInt(summary.pendingMinor) === 0n;
 }
 
 async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -102,6 +101,23 @@ async function assertNoActiveSettlements(client: PoolClient, expenseId: string) 
   );
   if(current.rowCount) throw new ExpenseAccessError(409,
     "Hóa đơn có thanh toán đang chờ hoặc đã xác nhận; cần điều chỉnh bằng nghiệp vụ riêng.");
+}
+
+/** An invoice sourced by a LOCKED snapshot cannot have its historical
+ * costs/date/shares edited. Completion remains creator-only after confirmed cash.
+ * Database triggers in migration 014 enforce the same rule for SQL bypasses.
+ */
+async function assertExpenseNotFrozen(client: PoolClient, expenseId: string) {
+  const frozen=await client.query(
+    `SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+     JOIN group_settlement_cycles c ON c.id=se.cycle_id
+     WHERE se.expense_id=$1 AND c.state='locked'
+     UNION ALL SELECT 1 FROM group_settlement_cycle_adjustments adj
+     WHERE adj.expense_id=$1
+     LIMIT 1`,[expenseId],
+  );
+  if(frozen.rowCount)throw new ExpenseAccessError(409,
+    "Hóa đơn thuộc kỳ đã khóa. Không thể sửa hoặc xóa; cần ghi điều chỉnh ở kỳ sau.");
 }
 
 async function writeItems(client: PoolClient, groupId: string, expenseId: string, prepared: PreparedExpense) {
@@ -184,6 +200,7 @@ export async function updateExpense(groupId: string, expenseId: string, actorId:
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
       throw new ExpenseAccessError(409, "Hóa đơn đã được cập nhật; tải lại trước khi sửa.");
     }
+    await assertExpenseNotFrozen(client, expenseId);
     await assertNoActiveSettlements(client, expenseId);
     const prepared = prepareExpense(data, members);
     const version = expense.version + 1;
@@ -222,6 +239,7 @@ export async function deleteExpense(groupId: string, expenseId: string, actorId:
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion !== expense.version) {
       throw new ExpenseAccessError(409, "Hóa đơn đã thay đổi; tải lại trước khi xóa.");
     }
+    await assertExpenseNotFrozen(client, expenseId);
     await assertNoActiveSettlements(client, expenseId);
     const version = expense.version + 1;
     await client.query(
@@ -285,10 +303,10 @@ export async function listExpenses(groupId: string, actorId: string,
        CASE
          WHEN e.completed_at IS NULL AND
               (progress."remainingMinor")::numeric = 0 AND
-              (progress."pendingMinor")::numeric = 0 AND e.created_by=$2 THEN 0
+              (progress."pendingMinor")::numeric = 0 AND progress."invalidCount"=0 AND e.created_by=$2 THEN 0
          WHEN e.completed_at IS NULL AND
               (progress."remainingMinor")::numeric = 0 AND
-              (progress."pendingMinor")::numeric = 0 THEN 1
+              (progress."pendingMinor")::numeric = 0 AND progress."invalidCount"=0 THEN 1
          ELSE 2
        END,
        CASE WHEN e.completed_at IS NOT NULL THEN e.completed_at ELSE NULL END DESC NULLS LAST,
@@ -312,10 +330,10 @@ export async function completeExpense(groupId: string, expenseId: string, actorI
     await lockGroupMembers(client,groupId,actorId);
     const result=await client.query<{
       id:string; version:number; createdBy:string; completedAt:string|null;
-      remainingMinor:string; pendingMinor:string; debtorCount:number;
+      remainingMinor:string; pendingMinor:string; debtorCount:number;invalidCount:number;
     }>(
       `SELECT e.id,e.version,e.created_by AS "createdBy",e.completed_at::text AS "completedAt",
-              progress."remainingMinor",progress."pendingMinor",progress."debtorCount"
+              progress."remainingMinor",progress."pendingMinor",progress."debtorCount",progress."invalidCount"
        FROM expenses e ${expensePaymentProgress}
        WHERE e.id=$1 AND e.group_id=$2 AND e.deleted_at IS NULL FOR UPDATE OF e`,
       [expenseId,groupId],
