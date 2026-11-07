@@ -23,6 +23,23 @@ The browser runner refuses execution unless `CI=true`, `RR002_TEST_ONLY=isolated
 | iPhone emulation | WebKit + Playwright iPhone 13 device descriptor | Not yet passed full browser flow; **not physical iOS Safari** |
 | Android emulation | Chromium + Playwright Pixel 7 device descriptor | Not yet passed full browser flow; **not physical Android Chrome** |
 
+## Local four-profile run after click root-cause remediation — 2026-11-07
+
+The user's `bash scripts/rr002-local.sh` command ran against a **disposable PostgreSQL 17** instance, migrations 001–023 (second verification idempotent), and an optimized Next.js 16.4.3 build. All completed successfully.
+
+**Browser results: 2 / 4 profile subtests passed**:
+
+- `chromium-desktop`: **PASS** end-to-end, including stale snapshot 409, final lock, original 55-source pagination, pair privacy, dispute lifecycle, injected network failure/retry and no financial mutation.
+- `android-phone-simulator`: **PASS** equivalent emulated-browser flow.
+- `webkit-desktop`: failed only at the final controlled network-failure case: 30-second timeout waiting for a `region["Đối soát và trao đổi"]` error alert after `page.route("**/settlement-cycle/cycles/*/reconciliation", route => route.abort("failed"))` and page reload.
+- `iphone-simulator`: identical WebKit-family failure at the exact same network-failure assertion. Upstream WebKit UI interactions and dispute cycle reached this final step, but a passing full profile cannot yet be claimed.
+
+**Investigation:** The RR-002 signed scenario was created with `serviceWorkers:"allow"`. Group Expense explicitly registers `/sw.js` on authenticated pages. Playwright's official `page.route` documentation warns that page-level routes do **not** intercept requests handled by Service Workers and recommends `serviceWorkers:"block"` when reliably mocking network requests. This is a plausible cross-WebKit explanation for the injected request not failing; the earlier log did not count route invocations, so the actual intercept failure is **not yet proven**.
+
+**Targeted harness correction (no product API or money-logic change):** The network-failure case now runs in a separate fresh `browser.newContext({..., serviceWorkers:"block", storageState:await owner.context.storageState()})`. It still uses a legitimate server-issued Better Auth session and actual Playwright `route.abort("failed")`. It verifies `requested>0` and `intercepted>0` before treating the inline alert as success, then unregisters interception, clicks the real retry button and waits for the reconciliation report. It closes the fault context, while the primary signed browser context continues running with Service Workers **allowed** and still verifies session persistence, source balances and zero finance side-effects. If the alert still does not appear, a scoped diagnostic includes request/intercept counters and region/retry presence, rather than masking the fault.
+
+**Next verification required:** first run `RR002_PROFILE=webkit-desktop bash scripts/rr002-local.sh`, then the default full four-profile matrix once WebKit passes. Do **not** mark RR-002 PASS solely from the code change or synthetic desktop Safari tests; physical-device/PWA, PITR, finance signoff and rollout gates remain outstanding.
+
 ## RR-002 interaction and security matrix (implemented assertions)
 
 | ID | Test intent | Intended expected result |
