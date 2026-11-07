@@ -585,18 +585,56 @@ async function scenario(engine,project,options,actors){
     assert.equal(await admin.page.getByText(reason).count(),0,
       "pair-private dispute text must not leak through unrelated member UI");
 
-    // Controlled network failure must show a retry and never infer logout.
-    await owner.page.route("**/settlement-cycle/cycles/*/reconciliation",route=>
-      route.abort("failed"));
-    await owner.page.reload();
-    const panel=owner.page.getByRole("region",{name:"Đối soát và trao đổi"});
-    await panel.getByRole("alert").first().waitFor();
-    assert.ok(!owner.page.url().includes("/sign-in"),
-      "temporary fetch failure must not force a fresh login");
-    await owner.page.unroute("**/settlement-cycle/cycles/*/reconciliation");
-    await panel.getByRole("button",{name:"Tải lại"}).click();
-    await owner.page.getByRole("heading",{name:"Báo cáo đối soát trực tiếp"}).waitFor();
-    await noHorizontalOverflow(owner.page,project+" retry");
+    // Controlled network failure is a separate signed browser interaction.
+    // This context deliberately disables ONLY Service Worker interception:
+    // Playwright documents that page.route cannot reliably see requests
+    // handled by an active worker. The main signed browser above still
+    // uses real Service Workers for all finance/manifest interactions.
+    const offlineContext=await browser.newContext({...options,
+      baseURL:ORIGIN,serviceWorkers:"block",
+      storageState:await owner.context.storageState()});
+    try{
+      const offlinePage=await offlineContext.newPage();
+      const reconciliationPath=apiFor(groupId,cycleId)+"/reconciliation";
+      const matchesReconciliation=url=>
+        new URL(url).pathname===reconciliationPath;
+      let intercepted=0;
+      let requested=0;
+      offlinePage.on("request",request=>{
+        if(matchesReconciliation(request.url()))requested++;
+      });
+      await offlinePage.route(matchesReconciliation,async route=>{
+        intercepted++;
+        await route.abort("failed");
+      });
+      await offlinePage.goto(ORIGIN+detail);
+      const panel=offlinePage.getByRole("region",{
+        name:"Đối soát và trao đổi"});
+      try{
+        await panel.getByRole("alert").first().waitFor({timeout:15000});
+      }catch(cause){
+        const regionPresent=await panel.count();
+        const retryCount=await panel.getByRole("button",{name:"Tải lại"})
+          .count().catch(()=>0);
+        throw new Error("RR-002 controlled offline WebKit failure: "+
+          "intercepted="+intercepted+", requested="+requested+
+          ", regionPresent="+regionPresent+", retryCount="+retryCount+
+          ", signedIn="+!offlinePage.url().includes("/sign-in")+
+          ", original="+String(cause?.message??cause).slice(0,600));
+      }
+      assert.ok(intercepted>0&&requested>0,
+        "Error must be caused by real intercepted browser GET, not a "+
+        "preexisting alert or unrelated exception");
+      assert.ok(!offlinePage.url().includes("/sign-in"),
+        "temporary fetch failure must not force a fresh login");
+      await offlinePage.unroute(matchesReconciliation);
+      await panel.getByRole("button",{name:"Tải lại"}).click();
+      await offlinePage.getByRole("heading",{
+        name:"Báo cáo đối soát trực tiếp"}).waitFor();
+      await noHorizontalOverflow(offlinePage,project+" retry");
+    }finally{
+      await offlineContext.close();
+    }
     await owner.page.reload();
     await owner.page.getByRole("heading",{
       name:"Chi tiết kỳ quyết toán"}).waitFor();
