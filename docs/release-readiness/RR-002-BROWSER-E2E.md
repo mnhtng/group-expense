@@ -2,7 +2,7 @@
 
 **Feature branch:** `feat/settlement-cycles-bilateral` · **Draft PR #16** → `develop`  
 **Date:** 2026-11-05  
-**Current status:** **TEST INFRASTRUCTURE IMPLEMENTED — E2E GATE NOT GREEN / NO-GO.**  
+**Current status:** **LOCAL AUTOMATED BROWSER E2E PASS (4/4 profiles on 2026-11-07)**; physical-device/installed-PWA acceptance and other release gates are **not complete — overall release NO-GO**.  
 **Financial engine:** `SETTLEMENT_CYCLE_ENGINE_READY=false`. No changes to financial release flags, shared Neon schemas or original cash/noncash ledgers.
 
 ## Implementation
@@ -14,14 +14,26 @@
 
 The browser runner refuses execution unless `CI=true`, `RR002_TEST_ONLY=isolated-pg17`, `DATABASE_URL=postgresql://test:test@localhost:5432/group_expense` and `BETTER_AUTH_URL=http://localhost:3112`. It rejects BN004/BN006/SC005/SC009/SC007 financial test-write flags. All synthetic original invoices used to exercise pagination are inserted only in that disposable CI database. User identity is derived from genuine Better Auth browser cookies, not a fake authorization header.
 
-## Automated browser profiles (code complete, execution pending)
+## Automated browser profiles (local four-profile matrix PASS; hardware pending)
 
 | Profile | Engine / viewport | Evidence status |
 |---|---|---|
-| Desktop Chromium | Chromium, 1440 × 900 | Not yet passed full browser flow |
-| Desktop WebKit | WebKit, 1440 × 900 | Not yet passed full browser flow |
-| iPhone emulation | WebKit + Playwright iPhone 13 device descriptor | Not yet passed full browser flow; **not physical iOS Safari** |
-| Android emulation | Chromium + Playwright Pixel 7 device descriptor | Not yet passed full browser flow; **not physical Android Chrome** |
+| Desktop Chromium | Chromium, 1440 × 900 | **PASS** — full local signed-browser flow, 2026-11-07 |
+| Desktop WebKit | WebKit, 1440 × 900 | **PASS** — full local signed-browser flow, 2026-11-07 |
+| iPhone emulation | WebKit + Playwright iPhone 13 device descriptor | **PASS** — local emulation only; **not physical iOS Safari** |
+| Android emulation | Chromium + Playwright Pixel 7 device descriptor | **PASS** — local emulation only; **not physical Android Chrome** |
+
+## Verified local automated browser matrix — 2026-11-07
+
+The owner provided the terminal output from two consecutive local runs on the feature branch after the Service Worker test-harness correction. **These are observed local execution results, not a GitHub-hosted CI run or a physical-device test.**
+
+1. `RR002_PROFILE=webkit-desktop bash scripts/rr002-local.sh`: WebKit desktop subtest **PASS**; test runner reported `tests 2 / pass 2 / fail 0` (parent + browser).
+2. `bash scripts/rr002-local.sh` (no profile filter): **all 4 browser subtests PASS**: `chromium-desktop` (6433 ms), `webkit-desktop` (7143 ms), `iphone-simulator` (7385 ms) and `android-phone-simulator` (9147 ms). Runner reported **`tests 5 / pass 5 / fail 0`**, duration ~42.6s, with `RR-002 local browser E2E PASS`.
+3. On the full run the script provisioned temporary loopback-only Docker PostgreSQL 17; applied migrations 001–023 and verified no changes on a second migration invocation; built Next.js 16.4.3 with successful compilation, TypeScript, and generated pages. All browser profiles executed the genuine signed-in consent, stale fingerprint HTTP 409, lock, 55 original-obligation pagination, privacy, pair dispute, offline-alert/retry and no-financial-write invariants present in the browser scenario.
+4. **Root-cause chain validated:** `pointerdown BUTTON → focusout checkbox → nav reappears → pointerup NAV → click not on button` was captured on the original app; common CSS fixed; Chromium/Android then passed, and the remaining WebKit offline test passed after an isolated signed context with `serviceWorkers:"block"` and explicit interception counts.
+5. **Exact commit attribution:** The shared terminal log does **not include** `git rev-parse HEAD`. The GitHub feature head immediately before this evidence-only documentation update was `aa1eba35f6b4bf700e31cee07be39b07f45b319b`; do **not** claim the Mac HEAD was independently verified as that SHA. Before final release signoff, collect `git rev-parse HEAD` for an identical tested source revision and rerun anything changed in app/test logic.
+
+**What this closes:** the **local automated cross-browser E2E portion** of RR-002 is green. **What this does not close:** physical iOS Safari/installed PWA, real Android Chrome/installed PWA, representative keyboard/real-touch and offline behavior, independent accessibility review, hosted CI on the reviewed commit, and RR-003/004/005. The broader RR-002 device/release gate remains **PENDING**, and the finance feature remains hard OFF. The `139/139` unit result was from an earlier local SHA; don't claim the full unit/HTTP/integration matrix has been rerun on the evidence-only documentation commit.
 
 ## Local four-profile run after click root-cause remediation — 2026-11-07
 
