@@ -17,6 +17,7 @@ import {RR003_TARGET,assertRestoreBranchPlan}
 import {RR001_TARGET} from "./rr001-neon-preflight.mjs";
 
 const MAX_ROWS_PER_CLASS=10000;
+export const BASELINE_FORMAT="rr003-financial-baseline-v2";
 export const FINANCIAL_CLASSES=Object.freeze([
   ["schema_versions","schema_migrations","filename"],
   ["original_expenses","expenses","id"],
@@ -33,6 +34,70 @@ export const FINANCIAL_CLASSES=Object.freeze([
   ["cron_runs","settlement_cycle_operational_runs","id"],
   ["recurring_scan","recurring_cron_checkpoints","rule_id"],
   ["live_balances","bn005_obligation_balances","obligation_id"],
+  ["users","user","id"],
+  ["sessions","session","id"],
+  ["accounts","account","id"],
+  ["verifications","verification","id"],
+  ["groups","groups","id"],
+  ["memberships","group_members","group_id,user_id"],
+  ["invites","group_invites","id"],
+  ["membership_history","group_membership_events","id"],
+  ["group_notes","group_note_events","id"],
+  ["expense_items","expense_items","id"],
+  ["expense_shares","expense_item_shares","item_id,user_id"],
+  ["expense_history","expense_events","id"],
+  ["expense_completion_history","expense_completion_events","id"],
+  ["original_source_items","obligation_sources","id"],
+  ["cash_history","settlement_events","id"],
+  ["push_subscriptions","push_subscriptions","id"],
+  ["notification_preferences","notification_preferences","user_id"],
+  ["push_jobs","notification_push_jobs","notification_id,subscription_id"],
+  ["recurring_rules","recurring_expense_rules","id"],
+  ["recurring_occurrences","recurring_expense_occurrences","id"],
+  ["cycle_settings","group_settlement_settings","group_id"],
+  ["cycle_managers","group_settlement_manager_grants","id"],
+  ["config_history","group_settlement_config_events","id"],
+  ["schedule_heads","group_settlement_schedule_heads","group_id"],
+  ["schedule_revisions","group_settlement_schedule_revisions","id"],
+  ["schedule_history","group_settlement_schedule_events","id"],
+  ["cycles","group_settlement_cycles","id"],
+  ["cycle_history","group_settlement_cycle_events","id"],
+  ["cycle_checkpoints","group_settlement_cycle_cron_checkpoints","group_id"],
+  ["snapshot_expenses","group_settlement_cycle_snapshot_expenses","cycle_id,expense_id"],
+  ["snapshot_manifests","group_settlement_cycle_snapshots","cycle_id"],
+  ["cycle_repayments","group_settlement_cycle_repayments","settlement_id"],
+  ["bilateral_heads","group_settlement_bilateral_heads","group_id,cycle_id,party_low,party_high"],
+  ["bilateral_proposals","group_settlement_bilateral_proposals","id"],
+  ["bilateral_sources","group_settlement_bilateral_sources","proposal_id,obligation_id"],
+  ["bilateral_decisions","group_settlement_bilateral_decision_events","id"],
+  ["residual_repayments","group_settlement_bilateral_residual_repayments","settlement_id"],
+]);
+// Migration-file checksums do not detect a disabled trigger or altered SQL
+// function. Compare restored database definitions independently of that log.
+const SCHEMA_QUERIES=Object.freeze([
+  ["schema_columns",`SELECT table_name,column_name,ordinal_position,data_type,
+    udt_schema,udt_name,is_nullable,column_default
+    FROM information_schema.columns WHERE table_schema='public'
+    ORDER BY table_name,ordinal_position`],
+  ["schema_constraints",`SELECT c.relname,k.conname,k.convalidated,
+    pg_get_constraintdef(k.oid,true) AS definition FROM pg_constraint k
+    JOIN pg_class c ON c.oid=k.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' ORDER BY c.relname,k.conname`],
+  ["schema_triggers",`SELECT c.relname,t.tgname,t.tgenabled,
+    pg_get_triggerdef(t.oid,true) AS definition FROM pg_trigger t
+    JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND NOT t.tgisinternal ORDER BY c.relname,t.tgname`],
+  ["schema_functions",`SELECT p.proname,pg_get_function_identity_arguments(p.oid) AS args,
+    pg_get_functiondef(p.oid) AS definition FROM pg_proc p
+    JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public' AND p.prokind IN('f','p') ORDER BY p.proname,args`],
+  ["schema_views",`SELECT viewname,definition FROM pg_views
+    WHERE schemaname='public' ORDER BY viewname`],
+  ["schema_indexes",`SELECT tablename,indexname,indexdef FROM pg_indexes
+    WHERE schemaname='public' ORDER BY tablename,indexname`],
+]);
+export const CHECK_NAMES=Object.freeze([
+  ...FINANCIAL_CLASSES.map(x=>x[0]),...SCHEMA_QUERIES.map(x=>x[0]),
 ]);
 const refuse=message=>{throw Error("RR-003 comparison refused: "+message);};
 
@@ -82,14 +147,18 @@ export function verifyCompareEnvironment(env=process.env,mode="capture"){
   return {source,restored,targetBranchId:target};
 }
 export function compareDigests(baseline,candidate){
-  if(baseline?.format!=="rr003-financial-baseline-v1"||
-    candidate?.format!=="rr003-financial-baseline-v1")
+  if(baseline?.format!==BASELINE_FORMAT||
+    candidate?.format!==BASELINE_FORMAT)
     refuse("unsupported financial baseline format");
   if(baseline.projectId!==RR003_TARGET.project||
     baseline.branchId!==RR003_TARGET.sourceBranch||
     candidate.projectId!==RR003_TARGET.project)
     refuse("manifest project/source branch mismatch");
-  const expectedNames=FINANCIAL_CLASSES.map(x=>x[0]);
+  if(typeof candidate.branchId!=="string"||!/^br-[a-z0-9-]+$/.test(candidate.branchId)||
+    candidate.branchId===baseline.branchId||
+    RR003_TARGET.excludedBranches.includes(candidate.branchId))
+    refuse("manifest destination must be an independent isolated branch");
+  const expectedNames=CHECK_NAMES;
   const classes=Object.keys(baseline.checks??{});
   if(classes.length!==expectedNames.length||
     classes.some(n=>!expectedNames.includes(n))||
@@ -105,26 +174,41 @@ export function compareDigests(baseline,candidate){
   }
   return {checks:expectedNames.length,matched:true,releaseApproved:false};
 }
-async function collect(pool,branchId){
+export async function collectFinancialDigests(pool,branchId,database=RR003_TARGET.database){
   const client=await pool.connect();
   try{
     await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
     await client.query("SET LOCAL statement_timeout='10s'");
+    await client.query("SET LOCAL TIME ZONE 'UTC'");
+    await client.query("SET LOCAL DateStyle='ISO, YMD'");
+    await client.query("SET LOCAL search_path=public,pg_catalog");
     const id=await client.query("SELECT current_database() AS name");
-    assert.equal(id.rows[0]?.name,RR003_TARGET.database);
+    assert.equal(id.rows[0]?.name,database);
+    const inventory=await client.query(`SELECT tablename FROM pg_tables
+      WHERE schemaname='public' ORDER BY tablename`);
+    const expectedTables=FINANCIAL_CLASSES.map(x=>x[1])
+      .filter(name=>name!=="bn005_obligation_balances").sort();
+    if(JSON.stringify(inventory.rows.map(x=>x.tablename))!==JSON.stringify(expectedTables))
+      refuse("public table inventory differs from approved recovery coverage");
     const checks={};
-    for(const [label,table,order] of FINANCIAL_CLASSES){
+    const queries=[...FINANCIAL_CLASSES.map(([label,table,order])=>[label,
       // All identifiers come only from the hard-coded allowlist above.
-      const rows=await client.query("SELECT * FROM "+table+
-        " ORDER BY "+order+" LIMIT "+(MAX_ROWS_PER_CLASS+1));
+      'SELECT to_jsonb(t)::text AS canonical FROM public."'+table+
+        '" t ORDER BY '+order+" LIMIT "+(MAX_ROWS_PER_CLASS+1)]),
+      ...SCHEMA_QUERIES.map(([label,sql])=>[label,
+        "SELECT to_jsonb(t)::text AS canonical FROM ("+sql+") t LIMIT "+(MAX_ROWS_PER_CLASS+1)]),
+    ];
+    for(const [label,sql] of queries){
+      // JS Date/JSON parsing would lose timestamp/numeric precision here.
+      const rows=await client.query(sql);
       if(rows.rows.length>MAX_ROWS_PER_CLASS)
         refuse("bounded read exceeded for "+label);
       const hash=createHash("sha256");
-      for(const row of rows.rows)hash.update(JSON.stringify(row)+"\n");
+      for(const row of rows.rows)hash.update(row.canonical+"\n");
       checks[label]={rows:rows.rows.length,sha256:hash.digest("hex")};
     }
     await client.query("COMMIT");
-    return {format:"rr003-financial-baseline-v1",
+    return {format:BASELINE_FORMAT,
       projectId:RR003_TARGET.project,branchId,
       capturedAt:new Date().toISOString(),checks};
   }catch(error){
@@ -136,7 +220,7 @@ export async function captureFinancialBaseline(env=process.env){
   const urls=verifyCompareEnvironment(env,"capture");
   const pool=new pg.Pool({connectionString:urls.source,max:1,
     connectionTimeoutMillis:10000});
-  try{return await collect(pool,RR003_TARGET.sourceBranch);}
+  try{return await collectFinancialDigests(pool,RR003_TARGET.sourceBranch);}
   finally{await pool.end();}
 }
 export async function verifyRestoredFinancialBaseline(baseline,env=process.env){
@@ -144,7 +228,7 @@ export async function verifyRestoredFinancialBaseline(baseline,env=process.env){
   const pool=new pg.Pool({connectionString:urls.restored,max:1,
     connectionTimeoutMillis:10000});
   try{
-    const actual=await collect(pool,urls.targetBranchId);
+    const actual=await collectFinancialDigests(pool,urls.targetBranchId);
     return {sourceBranchId:RR003_TARGET.sourceBranch,
       restoredBranchId:urls.targetBranchId,
       ...compareDigests(baseline,actual),
@@ -165,7 +249,7 @@ if(invoked){
       mkdirSync(dirname(path),{recursive:true,mode:0o700});
       writeFileSync(path,JSON.stringify(manifest,null,2)+"\n",
         {flag:"wx",mode:0o600});
-      console.log(JSON.stringify({mode:"capture",checks:FINANCIAL_CLASSES.length,
+      console.log(JSON.stringify({mode:"capture",checks:CHECK_NAMES.length,
         localManifestCreated:true,restored:false,releaseApproved:false}));
     }else{
       const baseline=JSON.parse(readFileSync(path,"utf8"));

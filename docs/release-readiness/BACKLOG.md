@@ -3,7 +3,7 @@
 **Feature branch:** `feat/settlement-cycles-bilateral` → Draft PR #16 against `develop`.
 **Scope:** verification and operational assurance **after** SC-010, not new settlement features.
 **Release status:** **NO-GO**. `SETTLEMENT_CYCLE_ENGINE_READY=false` is immutable for this track.
-**Protocol:** one RR ticket per conversation; collect evidence against the exact commit SHA before changing the next gate.
+**Protocol (owner request, 2026-11-09):** continue safely across RR-003–005 in one task; preserve separate approval boundaries for provider mutations, shared migrations, deployment, activation and independent signoff. Bind evidence to a clean commit or explicitly identified working-tree code digest.
 
 ## Existing implementation
 
@@ -14,10 +14,10 @@ SC-001–SC-010 and BN-001–BN-006 are implemented on the feature branch. Postg
 | Ticket | Priority | Goal | Exit criterion | Status |
 |---|---|---|---|---|
 | **RR-001** | P0 | Isolated Neon migration 011–023 rehearsal | Confirm exact isolated child and credential endpoints; record pre-migration source hashes; separately authorize 011–023 *on that child alone*; verify migration idempotency and checksums; reconcile original balances/provenance and parent immutability; independent permission/HTTP and restore gates follow separately | **SCHEMA PASS — all 011–023 applied on isolated child, 23/23 checksums and 8/8 read-only financial audits; release remains NO-GO** |
-| **RR-002** | P0 | Browser and mobile real-interaction E2E | Chromium + WebKit, iOS installed PWA and Android; consent, focus, stale proposal, error, offline, deep links, bilateral privacy and 44px touch; artifacts and regression list | **LOCAL AUTOMATED BROWSER PASS 4/4 (2026-11-07)** — full signed Chromium, WebKit, emulated iPhone and Android Playwright flow passed on disposable PG17; physical iOS/Android installed PWA, representative real-device accessibility/keyboard, and final reviewed-SHA signoff still pending; **overall NO-GO** |
-| **RR-003** | P0 | Recoverability and operations alerting | Authorized provider backup/PITR restore into new independent Neon branch; independent immutable-source reconciliation, declared RPO/RTO, verified authenticated 503/alert response path, operator acknowledgement | **READ-ONLY PREFLIGHT + SAFETY TOOLING IMPLEMENTED / NO-GO** — Neon Free currently reports 6h history, no snapshots or configured snapshot schedules; managed restore, actual data comparison, RPO/RTO and external alert delivery **not yet executed** |
-| **RR-004** | P0 | Independent security and finance signoff | Full original + confirmed CASH + NONCASH + pending conservation, source-link accuracy, disputed-source denials, roles, concurrency, secrets, threats and documented review by accountable humans | NOT STARTED |
-| **RR-005** | P1 | Staging and staged-release decision | Only after RR-001..004 pass, separate explicit approval for staging migrations/deployment and production release; test rollback without ledger reversal; reviewed commit SHA; controlled opted-in 1→5→25 cohort | BLOCKED / NOT AUTHORIZED |
+| **RR-002** | P0 | Browser and mobile real-interaction E2E | Chromium + WebKit, iOS installed PWA and Android; consent, focus, stale proposal, error, offline, deep links, bilateral privacy and 44px touch; artifacts and regression list | **LOCAL AUTOMATED BROWSER PASS 4/4 (rerun 2026-11-09)** — full signed Chromium, WebKit, emulated iPhone and Android Playwright flow passed on final dirty-source digest using Node 22 / disposable PG17; physical iOS/Android installed PWA, representative real-device accessibility/keyboard, and final reviewed-SHA signoff still pending; **overall NO-GO** |
+| **RR-003** | P0 | Recoverability and operations alerting | Authorized provider backup/PITR restore into new independent Neon branch; independent immutable-source reconciliation, declared RPO/RTO, verified authenticated 503/alert response path, operator acknowledgement | **LOCAL PG17 RECOVERY / OPS PASS; MANAGED GATE PENDING / NO-GO** — 58-check full data/schema logical restore and real HTTP fault/backlog/recovery verified locally; Neon historical restore, RPO/RTO, external alert delivery and acknowledgement pending |
+| **RR-004** | P0 | Independent security and finance signoff | Full original + confirmed CASH + NONCASH + pending conservation, source-link accuracy, disputed-source denials, roles, concurrency, secrets, threats and documented review by accountable humans | **AGENT REVIEW + LOCAL REGRESSION COMPLETE; independent signoff / runtime-role proof PENDING** |
+| **RR-005** | P1 | Staging and staged-release decision | Only after RR-001..004 pass, separate explicit approval for staging migrations/deployment and production release; test rollback without ledger reversal; reviewed commit SHA; controlled opted-in 1→5→25 cohort | **Decision package and rollback/cohort plan prepared; BLOCKED / NOT AUTHORIZED** |
 
 ## Non-negotiable constraints
 
@@ -109,3 +109,15 @@ Owner requested to proceed to RR-003 without waiting for physical-device tests. 
 The costly RR-002 PR workflow is now `pull_request: types: [labeled]`; only adding label `run-rr002-e2e` starts its 4-profile matrix. It also retains `workflow_dispatch`, which GitHub only makes available after the workflow exists on the default branch. The normal CI and PG17 integration workflows were **not weakened** because they are part of the financial safety gates. See [RR-002 runbook](./RR-002-BROWSER-E2E.md). Local E2E setup requires Docker, Node.js 22+, pnpm, npm, and a free port `127.0.0.1:5432`; it never connects to Neon or shared local PostgreSQL.
 
 **Readiness:** RR-001 schema rehearsal PASS, RR-002 **local automated browser E2E PASS 4/4** but physical-device/release gate PENDING, RR-003/004/005 pending. Overall financial production release remains **NO-GO**, engine hard OFF, PR #16 Draft.
+
+## Current takeover — 2026-11-09
+
+[Local source-bound evidence](RR-2026-11-09-LOCAL-EVIDENCE.md) · [RR-004 findings and acceptance](RR-004-SECURITY-FINANCIAL-AUDIT.md) · [RR-005 decision/approval package](RR-005-RELEASE-DECISION.md).
+
+The current candidate adds forward-only **024_legacy_audit_immutability.sql**, tested on disposable PG17 only. **No Neon migration was performed**; live read-only isolated child inspection still reports 23 versions. RR-001's historical 011–023 SCHEMA PASS is preserved but does not certify 024 or current source/schema parity. Its preflight now reports source migrations pending rather than expanding authorization.
+
+Agent fixes cover PgBouncer-safe Cron transaction locking, six legacy audit tables, complete precision-preserving restore data/schema checks, bounded/allowlisted monitor output, overdue push detection and missing integration workflow paths. Historical audit fixture UPDATEs were replaced with initial INSERTs on fresh synthetic groups. No ledger/CASH/NONCASH state or engine activation rule was changed to make tests pass.
+
+Read-only provider recheck: PostgreSQL 17, Free `free_v3`, history 21600s, zero snapshots, empty source schedule; production/default and development branch topology unchanged. Connector role owns 51 public tables and can CREATE in public; deployed runtime authority remains unverified. Available `create_snapshot` accepts a historical timestamp/LSN, so a separately approved historical-snapshot → new-branch restore is a concrete next route; tool availability is not evidence the Free plan supports execution. No provider resource was created, deleted or restored.
+
+Physical RR-002 remains owner-deferred, not PASS. RR-003 managed recovery/external monitoring, RR-004 accountable human signoff/runtime-role boundaries, and RR-005 exact-source staging/production approval remain release blockers. PR #16 Draft, engine literal OFF, **NO-GO**. Production dependency scan is non-clean (one moderate and one low tooling advisory); see RR-004 for evidence and unresolved disposition.

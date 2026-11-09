@@ -1,4 +1,4 @@
-# Delivery ledger — one ticket per conversation
+# Delivery ledger — implementation and readiness evidence
 
 ## Baseline
 - Source `develop`: `bc8aa84bb3ff7be6bc3719237fc55d9f80aa2bb5`.
@@ -1169,3 +1169,11 @@ Neon deployment have NOT been established by this read-only audit.
 No feature merge, production/staging deployment, shared Neon migration,
 real-money activation or expansion into BN-007 is authorized.
 Any real rollout requires an explicit reviewed-SHA production decision.
+
+## 2026-11-09 — Continuous release-readiness takeover; local verification PASS, release NO-GO
+
+The owner's current request supersedes the former one-ticket-per-conversation workflow. RR-003 local recovery/operational verification and RR-004 agent review now accompany an RR-005 release decision package. [Evidence and source identity](../release-readiness/RR-2026-11-09-LOCAL-EVIDENCE.md), [audit findings](../release-readiness/RR-004-SECURITY-FINANCIAL-AUDIT.md), [GO/NO-GO and next approvals](../release-readiness/RR-005-RELEASE-DECISION.md).
+
+Fixed transaction-pooling Cron lock semantics; added forward-only local migration 024 for six legacy audit tables; expanded recovery to all public data plus actual schema definitions with precise PostgreSQL text hashes; bounded/allowlisted monitor responses; exposed overdue push backlog; completed missing financial integration path filters. Historical test opt-ins are now inserted on fresh synthetic groups rather than rewriting immutable audit times.
+
+Actual disposable PG17.11 migration/idempotency, unit/integration/signed HTTP, four-profile browser E2E, independent finance SQL and logical restore were executed locally (see source-bound evidence for exact results). No hosted CI was started. No Neon write/resource mutation, shared migration, deployment, merge, push or engine activation. PR #16 remains Draft. Managed provider restore/external alert delivery, independent finance/security review and runtime-role verification, real-device/PWA acceptance and staging/production authorization remain pending. The Neon child has **23** migrations while source adds **024**; old RR-001 evidence does not certify the new migration.

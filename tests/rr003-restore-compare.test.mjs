@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {RR001_TARGET} from "../db/rr001-neon-preflight.mjs";
 import {RR003_TARGET} from "../db/rr003-recovery-policy.mjs";
-import {FINANCIAL_CLASSES,compareDigests,
+import {BASELINE_FORMAT,CHECK_NAMES,FINANCIAL_CLASSES,compareDigests,
   verifyCompareEnvironment,verifyCompareUrl}
   from "../db/rr003-restore-compare.mjs";
 const targetHost="ep-rr003-demo.c-4.ap-southeast-1.aws.neon.tech";
@@ -57,23 +57,24 @@ test("RR-003 reject restored target if source, dev, production or non-Neon hostn
   assert.throws(()=>verifyCompareUrl(url(pooled),pooled),/TLS guards/);
 });
 const baseline=()=>({
-  format:"rr003-financial-baseline-v1",
+  format:BASELINE_FORMAT,
   projectId:RR003_TARGET.project,branchId:RR003_TARGET.sourceBranch,
-  checks:Object.fromEntries(FINANCIAL_CLASSES.map(([name],i)=>[
+  checks:Object.fromEntries(CHECK_NAMES.map((name,i)=>[
     name,{rows:i,sha256:String(i%10).repeat(64)}])),
 });
-test("RR-003 15-class immutable financial comparison passes only exact matches",()=>{
+test("RR-003 complete immutable financial comparison passes only exact matches",()=>{
   const a=baseline(),b=structuredClone(a);
   b.branchId="br-rr003-demo-recovery";
-  assert.equal(FINANCIAL_CLASSES.length,15);
+  assert.equal(FINANCIAL_CLASSES.length,52);
   assert.deepEqual(compareDigests(a,b),
-    {checks:15,matched:true,releaseApproved:false});
+    {checks:58,matched:true,releaseApproved:false});
   b.checks.noncash_allocations.sha256="a".repeat(64);
   assert.throws(()=>compareDigests(a,b),
     /immutable conservation mismatch: noncash_allocations/);
 });
 test("RR-003 refuses missing classes, changed project and leaked source ids",()=>{
   const a=baseline(),b=structuredClone(a);
+  b.branchId="br-rr003-demo-recovery";
   delete b.checks.cash_settlements;
   assert.throws(()=>compareDigests(a,b),/incomplete conservation check classes/);
   b.checks.cash_settlements=a.checks.cash_settlements;
@@ -93,4 +94,15 @@ test("RR-003 comparator has read-only transactions, bounded whitelisted scans, n
   assert.match(readFileSync(".gitignore","utf8"),/\/rr003-artifacts\//);
   assert.match(readFileSync("lib/settlement-cycles/settings.ts","utf8"),
     /SETTLEMENT_CYCLE_ENGINE_READY = false/);
+});
+
+test("RR-003 refuses comparing source to itself, shared branches or obsolete partial manifests",()=>{
+  const a=baseline(),b=structuredClone(a);
+  for(const branchId of [a.branchId,...RR003_TARGET.excludedBranches,"invalid"]){
+    b.branchId=branchId;
+    assert.throws(()=>compareDigests(a,b),/independent isolated branch/);
+  }
+  b.branchId="br-rr003-demo-recovery";
+  a.format="rr003-financial-baseline-v1";
+  assert.throws(()=>compareDigests(a,b),/unsupported financial baseline format/);
 });

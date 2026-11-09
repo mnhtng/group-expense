@@ -1,8 +1,8 @@
 # RR-003 — Managed Neon recovery, preservation and operations monitoring
 
-**Date:** 2026-11-07  
+**Updated:** 2026-11-09 (original provider baseline: 2026-11-07)
 **Branch:** `feat/settlement-cycles-bilateral` → Draft PR #16 against `develop`  
-**Current gate:** **PRECHECK / TOOLING PREPARED — PROVIDER RESTORE NOT PERFORMED; NO-GO**.  
+**Current gate:** **LOCAL PG17 DATA/SCHEMA RESTORE AND OPS REGRESSION PASS — MANAGED RESTORE / EXTERNAL ALERTING PENDING; NO-GO**.
 **Absolute boundaries:** Do not enable `SETTLEMENT_CYCLE_ENGINE_READY`, write to production/development/shared Neon, replay financial transactions, merge PR, run `scripts/sc010-restore-drill.sh` on Neon, change snapshot schedules or promote any restored branch.
 
 ## 1. Read-only live provider inspection, 2026-11-07
@@ -33,11 +33,11 @@ Performed via the connected Neon provider API, not inferred from a local Postgre
 
 1. `db/rr003-recovery-policy.mjs`: pure metadata evaluation; rejects changed project identity, missing/incorrect child, protected/default source, changed branch ancestry or invalid history retention. Returns aggregate/metadata-only summary; **always** `decision:"NO-GO"`, `pitrAvailabilityVerifiedByRestore:false`. `assertRestoreBranchPlan` rejects production/development/source as destinations and an out-of-retention timestamp. No network or SQL.
 2. `tests/rr003-recovery-policy.test.mjs`: Free-tier 6h/no-snapshot fixture and negative authorization/identity/retention cases. Does not create or restore a branch.
-3. `db/rr003-restore-compare.mjs`: **future read-only restore verifier**; two separate steps `capture` (source → local manifest of SHA-256 digests/counts only), `verify` (new restored child → compare). Requires explicit project/source, source's **exact pinned direct Neon endpoint**, new target branch ID and **provider-attested exact target host**; refuses prod/dev/source destination, wrong DB, insecure endpoints and non-TLS connections. All SQL executes in `REPEATABLE READ READ ONLY` with 10s statement timeout; 15 whitelisted financial categories including migrations, obligations, invoices, CASH/NONCASH allocations, snapshots, adjustments, disputes, notification history, Cron runs and BN-005 balances. Reads are capped at **10000 rows per category** and fail closed above the bound. Never logs a ledger row or database URL; local manifest writes use exclusive create and mode 0600.
+3. `db/rr003-restore-compare.mjs`: **future read-only restore verifier**; two separate steps `capture` (source → local manifest of SHA-256 digests/counts only), `verify` (new restored child → compare). Requires explicit project/source, source's **exact pinned direct Neon endpoint**, new target branch ID and **provider-attested exact target host**; refuses prod/dev/source destination, wrong DB, insecure endpoints and non-TLS connections. All SQL executes in `REPEATABLE READ READ ONLY` with 10s statement timeout; 58 whitelisted checks: all 51 public tables, the BN-005 live balance projection and six schema-definition categories (columns, constraints, triggers including enabled state, functions, views and indexes). Canonical PostgreSQL text preserves timestamp microseconds and JSON numeric precision. Old partial v1 manifests are rejected. Reads are capped at **10000 rows per category** and fail closed above the bound. Never logs a ledger row or database URL; local manifest writes use exclusive create and mode 0600.
 4. `tests/rr003-restore-compare.test.mjs`: compares synthetic complete digests and refuses mismatched categories, parent/source targets, wrong host/TLS and mutated financial fingerprints. **A matching test fixture is not provider restore evidence**.
 5. `scripts/rr003-ops-monitor.mjs`: opt-in **read-only** authenticated GET of `/api/internal/settlement-ops/status`. Requires exact HTTPS host approved in `RR003_APPROVED_HOST`, no credentials in URL, `CRON_SECRET` only in Authorization header, no redirect, 8s timeout, no sensitive response printing. Distinguishes 200 healthy, 503 attention, 401/403 auth issue, malformed body and transport/TLS failures. A healthy 200 also requires `financialEngineReady=false` and `releaseDecision="NO-GO"`; no ledger or Cron replay. Does **not** create a monitor provider, recurring scheduler or external notification.
 6. `tests/rr003-ops-monitor.test.mjs`: synthetic HTTP/authorization/response guards.
-7. Existing, unchanged SC-010 `GET /api/internal/settlement-ops/status` is bearer-only and reports 200/503 with redacted metrics; SC-010 already has 25-minute stale-run and 36-hour missing-run alerts. A monitor that does not actually run and deliver an alert is **not** an RR-003 alerting PASS.
+7. SC-010 `GET /api/internal/settlement-ops/status` is bearer-only and reports 200/503 with redacted metrics; SC-010 already has 25-minute stale-run and 36-hour missing-run alerts. A monitor that does not actually run and deliver an alert is **not** an RR-003 alerting PASS.
 
 ## 3. Future provider restore — pre-authorized *plan only*, NOT an execution
 
@@ -54,15 +54,15 @@ After authorization, an operator may follow these **future** steps:
    node db/rr003-restore-compare.mjs capture rr003-artifacts/pre-restore.json
    ```
    Do not commit or upload the file; it stores only per-table row counts and hashes, not raw rows.
-3. **BLOCKED until an eligible recovery object/API exists.** After a specific approval and verification of the chosen restore mechanism, restore an approved historical snapshot (or an independently verified timestamp-capable provider operation) into a **new independent child**, never an existing `target_branch_id` and never finalize/swap/reassign production compute. `restore_snapshot` currently needs `snapshot_id` and none is listed; `create_branch` only clones current HEAD. Neither action was invoked here. Preserve provider operation receipt, source branch, exact restorable point and observed start/finish times. If the only available action is HEAD clone, **stop and report PITR NOT VERIFIED**, not PASS.
+3. **PENDING explicit resource/cost approval and provider support.** Capability recheck on 2026-11-09 confirms `create_snapshot` accepts a historical timestamp/LSN. After approval, capture a quiescent baseline, record a point immediately after capture, wait at least 60s, create a snapshot at that historical point within retention, and restore an approved historical snapshot (or an independently verified timestamp-capable provider operation) into a **new independent child**, never an existing `target_branch_id` and never finalize/swap/reassign production compute. `restore_snapshot` currently needs `snapshot_id` and none is listed; `create_branch` only clones current HEAD. Neither action was invoked here. Preserve provider operation receipt, source branch, exact restorable point and observed start/finish times. If the only available action is HEAD clone, **stop and report PITR NOT VERIFIED**, not PASS.
 4. Read provider's new branch `id`, `parent_id` and compute `host` using `get_branch` and `list_branch_computes`. Only after confirming they match the approved IDs/host, privately inject `RR003_TARGET_BRANCH_ID`, `RR003_TARGET_PARENT_BRANCH_ID`, `RR003_TARGET_HOST`, `RR003_RESTORE_DATABASE_URL`, `RR003_RESTORE_POINT_UTC`, `RR003_REVIEWED_AT_UTC` and `RR003_HISTORY_RETENTION_SECONDS`. `verify` is a read-only statement-only comparison:
    ```bash
    node db/rr003-restore-compare.mjs verify rr003-artifacts/pre-restore.json
    ```
-   Fail closed on any different financial row, migration checksum, missing category, stale PITR point or connection mismatch. **Even 15/15 matched does not establish whether the requested point was correctly restored** without the actual provider operation receipt, time-of-restore mapping and quiescence evidence.
+   Fail closed on any different financial row, migration checksum, missing category, stale PITR point or connection mismatch. **Even 58/58 matched does not establish whether the requested point was correctly restored** without the actual provider operation receipt, time-of-restore mapping and quiescence evidence.
 5. Verify original/immutable row count and SHA-256 conservation, positive CASH and NONCASH scenarios if independently present, exact source lineage, and no drift in the source branch after restore. No replay/rollback of applied settlement, approval or immutable audit.
 6. RPO = verified elapsed age between the latest reliably recoverable source state and recovery point; RTO = observed time from declared incident start (UTC) until recovered service is verified healthy by an independent tester. Record timings in ISO 8601, with declared policy thresholds and actual measured values. Do not hardcode 'zero loss' or promise a fixed RTO.
-7. Store redacted provider receipt, 15-class audit summary and reviewer signoff in a scoped evidence record; keep restore branch for review and **do not delete it** without explicit approval. `SETTLEMENT_CYCLE_ENGINE_READY` stays false. Overall RR-003 can only PASS after provider restore + independent DB verification + alert delivery.
+7. Store redacted provider receipt, 58-check audit summary and reviewer signoff in a scoped evidence record; keep restore branch for review and **do not delete it** without explicit approval. `SETTLEMENT_CYCLE_ENGINE_READY` stays false. Overall RR-003 can only PASS after provider restore + independent DB verification + alert delivery.
 
 **Important:** The standard `scripts/sc010-restore-drill.sh` explicitly refuses non-disposable local PG17 and must **never** be redirected at a Neon endpoint.
 
@@ -94,11 +94,23 @@ RR003_MONITOR_RUN=approved-read-only node scripts/rr003-ops-monitor.mjs
 | Snapshot backup strategy | **BLOCKED** | Snapshot availability/plan, retention adequacy, separate approval for changes |
 | RPO/RTO operational targets | **UNDECLARED** | Human owner sets required RPO/RTO based on business impact |
 | Provider PITR restore | **NOT EXECUTED** | Specifically approved new child, provider receipt and proof of historical point |
-| Financial restore conservation | **NOT EXECUTED** | 15-class exact comparison on actual restored branch + independent finance audit |
+| Financial restore conservation | **NOT EXECUTED** | 58-check exact comparison on actual restored branch + independent finance audit |
 | Live 200/503 + external alert/acknowledgement | **NOT EXECUTED** | Approved HTTPS target, protected monitor, controlled fault and delivery evidence |
 | RR-003 final gate | **NO-GO** | All above PASS; no guesswork |
-| RR-004/005 | **NOT STARTED** | Separate tickets; staging/production release not authorized |
+| RR-004/005 | **AGENT REVIEW / RELEASE PACKAGE PREPARED** | Independent signoff, runtime-role proof and release authorization pending |
 
 **Relevant reference:** [SC-010 operational safety](../settlement-cycles/SC-010-OPERATIONS-ROLLOUT.md), [RR-001 isolated Neon migration evidence](./RR-001-NEON-MIGRATION-EVIDENCE.md), [release backlog](./BACKLOG.md).
 
 **Never put a real bearer, Neon connection string, user IDs, group IDs, invoice descriptions or financial amounts into public evidence, CI artifact or PR discussion.**
+
+## 2026-11-09 local implementation and evidence update
+
+[Full local evidence](RR-2026-11-09-LOCAL-EVIDENCE.md) records actual Node/PG17/HTTP/browser/logical-restore execution. The logical backup includes positive applied NONCASH, frozen sources, late adjustments and dispute history; both the old 15 source checks and the new 58 full-row/schema checks match. **This is local pg_dump/pg_restore, not managed Neon PITR.** No service-level RPO/RTO or external alert acknowledgement is inferred from it.
+
+Cron now holds a transaction advisory lock across the pipeline, compatible with transaction pooling, while run audit INSERT/finalization commits separately. Local HTTP blocks a stage and verifies pinned lock + visible audit, overlap 202, no leaked lock, real SQL-stage failure 503, >200 future-template scan backlog 503, authorized replay recovery 200, stuck-run status 503 and monitor-parser 401/503. A process kill/provider connection failure was not exercised; production timeout/failover validation remains pending. [Neon documents that session advisory locks are unsupported on its transaction pooler](https://neon.com/docs/connect/connection-pooling).
+
+The monitor now emits only known alert codes and reads at most 64 KiB. Health detects push work overdue by 30 minutes and invalid completion clocks in addition to prior alerts. Queue metrics/classifiers are implemented/tested; actual external push backlog delivery and alert acknowledgement have not been certified. Historical stuck runs and dead deliveries remain evidence; a successful replay does not erase an unresolved old incident.
+
+Live provider read-only recheck on 2026-11-09 still reports 6h history, no snapshots, empty source schedule and 23 source migrations. The connector role owns the 51 public tables; actual application runtime role is not attested. New local migration 024 is **not** installed on Neon. Managed-source and restored manifests must use the same actual schema; do not compare the 24-migration local fixture as if it were that 23-migration provider branch.
+
+The [concrete next approval package](RR-005-RELEASE-DECISION.md#concrete-next-provider-approval-package--not-executed) names the source/excluded branches, new branch naming, historical-point procedure, snapshot expiry, cost/plan boundary, baseline and RPO/RTO decision. Additional synthetic managed finance fixtures need separate explicit authorization; do not seed money into the RR-001 source. All external and human acceptance gates stay pending.

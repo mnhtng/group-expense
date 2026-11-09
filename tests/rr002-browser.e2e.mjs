@@ -13,6 +13,7 @@ import {mkdir} from "node:fs/promises";
 import {resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {test} from "node:test";
+import {seedHistoricalCycleSettings} from "./helpers/settlement-history.mjs";
 
 const ONLY_DB="postgresql://test:test@localhost:5432/group_expense";
 const ORIGIN="http://localhost:3112";
@@ -274,10 +275,12 @@ async function scenario(engine,project,options,actors){
         "INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,$3)",
         [groupId,id,role]);
     }
-    // The real session authorizes group opt-in; money engine remains hard OFF.
+    await seedHistoricalCycleSettings(pool,groupId,owner.id,day(-20)+"T00:00:00Z");
+    // The real session enables bilateral metadata on a historical opt-in;
+    // this appends a fresh audit event without changing the activation epoch.
     await must(owner,"PATCH","/api/groups/"+groupId+
       "/settlement-cycle/settings",{
-        expectedVersion:0,requestedEnabled:true,
+        expectedVersion:1,requestedEnabled:true,
         requestedBilateralNetting:true});
     await owner.page.goto(ORIGIN+"/groups/"+groupId+"/manage");
     await owner.page.getByRole("heading",{name:"Chuẩn bị quyết toán theo kỳ"}).waitFor();
@@ -305,10 +308,6 @@ async function scenario(engine,project,options,actors){
       "(id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by) "+
       "VALUES($1,$2,1,'manual','UTC',$3,$4,$5)",
       [revision,groupId,day(-14),day(-14)+"T00:00:00Z",owner.id]);
-    await pool.query(
-      "UPDATE group_settlement_config_events SET recorded_at=$2::timestamptz "+
-      "WHERE group_id=$1 AND event_type='settings_changed'",
-      [groupId,day(-20)+"T00:00:00Z"]);
 
     const cyclesApi=apiFor(groupId);
     const created=await must(owner,"POST",cyclesApi,{

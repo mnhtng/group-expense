@@ -6,6 +6,8 @@
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import pg from "pg";
+import {collectFinancialDigests,compareDigests} from "./rr003-restore-compare.mjs";
+import {RR003_TARGET} from "./rr003-recovery-policy.mjs";
 
 const original="postgresql://test:test@localhost:5432/group_expense";
 const restored="postgresql://test:test@localhost:5432/group_expense_sc010_restore";
@@ -80,6 +82,7 @@ async function snapshot(client,query){
 }
 const c1=await from.connect();
 const c2=await to.connect();
+let released=false;
 try{
   await Promise.all([
     c1.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"),
@@ -96,16 +99,24 @@ try{
     FROM schema_migrations WHERE filename='023_settlement_cycle_operational_runs.sql'`);
   assert.equal(migrated.rows[0].n,1);
   await Promise.all([c1.query("COMMIT"),c2.query("COMMIT")]);
+  c1.release();c2.release();released=true;
+  const [baseline,candidate]=await Promise.all([
+    collectFinancialDigests(from,RR003_TARGET.sourceBranch,"group_expense"),
+    collectFinancialDigests(to,"br-rr003-local-logical-restore","group_expense_sc010_restore"),
+  ]);
+  const full=compareDigests(baseline,candidate);
   console.log("SC-010 complete",{
     independentSourceComparisons:verified,
+    fullRowAndSchemaComparisons:full.checks,
+    managedNeonRestore:false,
     financialEngineActivated:false,
   });
 }catch(e){
-  await Promise.allSettled([c1.query("ROLLBACK"),c2.query("ROLLBACK")]);
+  if(!released)await Promise.allSettled([c1.query("ROLLBACK"),c2.query("ROLLBACK")]);
   console.error("SC-010 restore verification failed",
     e instanceof Error?e.name:"Unknown");
   process.exitCode=1;
 }finally{
-  c1.release();c2.release();
+  if(!released){c1.release();c2.release();}
   await Promise.all([from.end(),to.end()]);
 }

@@ -10,9 +10,10 @@ import {
   type OpsCounters,type OpsStageStatus,type OpsOutcome,
 } from "@/lib/settlement-cycles/ops-policy";
 
-/** Dedicated session-level advisory lock: all invocations (scheduled and
- * manual replay) share one key, preventing overlapping loops.
- * Leave the lock connection alive until ALL work and audit is finalized.
+/** Hold a transaction-level advisory lock for the entire run. Runtime URLs
+ * use PgBouncer transaction pooling: a checked-out pg client alone does not
+ * pin a PostgreSQL session. Audit writes use separate committed transactions
+ * so a killed worker leaves a visible running record.
  */
 const LOCK_MAJOR=230010,LOCK_MINOR=2026;
 const errName=(error:unknown)=>error instanceof Error?error.name:"Unknown";
@@ -26,15 +27,15 @@ export async function runDailySettlementOperations(
   if(mode==="manual-replay"&&!replayReason)
     throw Error("Manual operational replay requires a reason code.");
   const connection=await pool.connect();
-  let locked=false,runId:string|null=null;
+  let runId:string|null=null;
   try{
+    await connection.query("BEGIN");
     const claim=await connection.query<{acquired:boolean}>(`
-      SELECT pg_try_advisory_lock($1::integer,$2::integer) AS acquired`,
+      SELECT pg_try_advisory_xact_lock($1::integer,$2::integer) AS acquired`,
       [LOCK_MAJOR,LOCK_MINOR]);
-    locked=claim.rows[0]?.acquired===true;
-    if(!locked)return {busy:true,runId:null,outcome:null};
+    if(claim.rows[0]?.acquired!==true)return {busy:true,runId:null,outcome:null};
     runId=randomUUID();
-    await connection.query(`INSERT INTO settlement_cycle_operational_runs
+    await pool.query(`INSERT INTO settlement_cycle_operational_runs
       (id,mode,status) VALUES($1,$2,'running')`,[runId,mode]);
 
     const [recurring,push]=await Promise.allSettled([
@@ -93,7 +94,7 @@ export async function runDailySettlementOperations(
       warningCodes:summary.warningCodes,
       ...(replayReason?{reasonCode:replayReason}:{}),
     };
-    await connection.query(`UPDATE settlement_cycle_operational_runs
+    await pool.query(`UPDATE settlement_cycle_operational_runs
       SET status=$2,completed_at=clock_timestamp(),
         stage_results=$3::jsonb
       WHERE id=$1 AND status='running'`,
@@ -103,7 +104,7 @@ export async function runDailySettlementOperations(
     console.error("Operational run interrupted",errName(error));
     if(runId){
       try{
-        await connection.query(`UPDATE settlement_cycle_operational_runs
+        await pool.query(`UPDATE settlement_cycle_operational_runs
           SET status='failed',completed_at=clock_timestamp(),
             stage_results=$2::jsonb
           WHERE id=$1 AND status='running'`,
@@ -112,13 +113,12 @@ export async function runDailySettlementOperations(
     }
     throw error;
   }finally{
-    if(locked){
-      try{await connection.query(`
-        SELECT pg_advisory_unlock($1::integer,$2::integer)`,
-        [LOCK_MAJOR,LOCK_MINOR]);}
-      catch(e){console.error("Operational advisory unlock failed",errName(e));}
-    }
-    connection.release();
+    // Ending the transaction releases the lock even through PgBouncer.
+    // Discard a failed connection rather than returning unknown state to pg.
+    let discard=false;
+    try{await connection.query("ROLLBACK");}
+    catch(e){discard=true;console.error("Operational lock release failed",errName(e));}
+    connection.release(discard);
   }
 }
 export async function readSettlementOpsHealth(){
@@ -136,6 +136,7 @@ export async function readSettlementOpsHealth(){
       staleRunning:number;failedCheckpoints:number;deadPushJobs:number;
       pendingPushJobs:number;overdueReviews:number;activeCycleGroups:number;
       recurringFailedCheckpoints:number;activeRecurringRules:number;
+      overduePushJobs:number;
     }>(`SELECT
       (SELECT count(*)::int FROM settlement_cycle_operational_runs
        WHERE status='running' AND started_at<now()-interval '25 minutes')
@@ -153,6 +154,10 @@ export async function readSettlementOpsHealth(){
       (SELECT count(*)::int FROM notification_push_jobs
        WHERE status='pending' AND next_attempt_at<=now())
        AS "pendingPushJobs",
+      (SELECT count(*)::int FROM notification_push_jobs
+       WHERE (status='pending' AND next_attempt_at<now()-interval '30 minutes')
+          OR (status='sending' AND lease_until<now()-interval '30 minutes'))
+       AS "overduePushJobs",
       (SELECT count(*)::int FROM group_settlement_cycles cy
        JOIN groups g ON g.id=cy.group_id
        WHERE cy.state='review' AND g.archived_at IS NULL
@@ -170,6 +175,7 @@ export async function readSettlementOpsHealth(){
       staleRunning:m.staleRunning,failedCheckpoints:m.failedCheckpoints,
       recurringFailedCheckpoints:m.recurringFailedCheckpoints,
       deadPushJobs:m.deadPushJobs,overdueReviews:m.overdueReviews,
+      overduePushJobs:m.overduePushJobs,
       nowMs:Date.now(),
     });
     await client.query("COMMIT");

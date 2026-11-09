@@ -31,7 +31,7 @@ test("RR-003 separates healthy, 503, authentication and malformed responses",()=
   const attention=classifyOpsProbeResponse(503,{
     health:"attention",alertCodes:["STUCK_CRON_RUN","FAILED_CHECKPOINT","sensitive name"]});
   assert.equal(attention.ok,false);
-  assert.deepEqual(attention.alertCodes,["STUCK_CRON_RUN","FAILED_CHECKPOINT"]);
+  assert.deepEqual(attention.alertCodes,["STUCK_CRON_RUN"]);
   assert.equal(classifyOpsProbeResponse(200,{health:"attention"}).ok,false);
   assert.equal(classifyOpsProbeResponse(200,{}).signal,"HEALTH_BODY_MISMATCH");
   assert.equal(classifyOpsProbeResponse(200,{health:"ok",alertCodes:[],
@@ -46,8 +46,8 @@ test("RR-003 probes signed GET only, no replay and no URL/secret in results",asy
   const result=await pollOpsMonitor(valid(),{
     fetchImpl:async (url,init)=>{
       calls.push({url,init});
-      return {status:200,json:async()=>({health:"ok",alertCodes:[],
-        financialEngineReady:false,releaseDecision:"NO-GO"})};
+      return Response.json({health:"ok",alertCodes:[],
+        financialEngineReady:false,releaseDecision:"NO-GO"});
     },
   });
   assert.equal(result.ok,true);
@@ -65,7 +65,7 @@ test("RR-003 transport failures and invalid JSON fail closed",async()=>{
   });
   assert.equal(failed.signal,"NETWORK_OR_TLS_FAILURE");
   const invalid=await pollOpsMonitor(valid(),{
-    fetchImpl:async()=>({status:200,json:async()=>{throw Error("bad");}}),
+    fetchImpl:async()=>new Response("bad"),
   });
   assert.equal(invalid.signal,"INVALID_JSON_RESPONSE");
 });
@@ -78,4 +78,16 @@ test("RR-003 read-only monitor cannot activate finance or trigger manual replay"
   assert.doesNotMatch(source,/\b(?:INSERT|UPDATE|DELETE|DROP|ALTER)\s+(?:INTO|FROM|TABLE)/i);
   assert.match(readFileSync("lib/settlement-cycles/settings.ts","utf8"),
     /SETTLEMENT_CYCLE_ENGINE_READY = false/);
+});
+
+test("RR-003 redacts uppercase unknown codes and bounds untrusted HTTP bodies",async()=>{
+  assert.deepEqual(classifyOpsProbeResponse(503,{alertCodes:[
+    "STUCK_CRON_RUN","SENSITIVE_UPPERCASE_TOKEN_123","ALICE_SMITH",
+  ]}).alertCodes,["STUCK_CRON_RUN"]);
+  assert.equal((await pollOpsMonitor(valid(),{
+    fetchImpl:async()=>new Response("x".repeat(65537)),
+  })).signal,"RESPONSE_TOO_LARGE");
+  assert.equal((await pollOpsMonitor(valid(),{
+    fetchImpl:async()=>new Response("<html>Forbidden</html>",{status:403}),
+  })).signal,"AUTH_DENIED");
 });

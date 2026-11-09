@@ -65,11 +65,15 @@ export function operationalAlerts(input:{
   latestCompletedAt:string|null;latestStatus:string|null;
   staleRunning:number;failedCheckpoints:number;
   recurringFailedCheckpoints:number;deadPushJobs:number;
+  overduePushJobs?:number;
   overdueReviews:number;nowMs:number;
 }):string[]{
   const alerts:string[]=[];
   if(!input.latestCompletedAt){
     alerts.push("NO_COMPLETED_CRON_RUN");
+  }else if(!Number.isFinite(Date.parse(input.latestCompletedAt))||
+    Date.parse(input.latestCompletedAt)>input.nowMs){
+    alerts.push("INVALID_CRON_COMPLETION_TIME");
   }else if(input.nowMs-Date.parse(input.latestCompletedAt)>36*60*60*1000){
     alerts.push("CRON_LAST_RUN_OLDER_THAN_36_HOURS");
   }
@@ -80,6 +84,7 @@ export function operationalAlerts(input:{
   if(input.recurringFailedCheckpoints>0)
     alerts.push("RECENT_RECURRING_CHECKPOINT_ERRORS");
   if(input.deadPushJobs>0)alerts.push("DEAD_PUSH_DELIVERIES");
+  if((input.overduePushJobs??0)>0)alerts.push("OVERDUE_PUSH_DELIVERIES");
   if(input.overdueReviews>0)alerts.push("CYCLES_AWAITING_HUMAN_REVIEW");
   return alerts;
 }

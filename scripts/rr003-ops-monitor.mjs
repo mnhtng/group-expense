@@ -7,6 +7,15 @@ import {pathToFileURL} from "node:url";
 import {resolve} from "node:path";
 
 const route="/api/internal/settlement-ops/status";
+// Only known product codes may leave this probe. A shape/uppercase regex
+// alone would still allow an upstream error to disclose a token or a name.
+const allowedCodes=new Set([
+  "NO_COMPLETED_CRON_RUN","CRON_LAST_RUN_OLDER_THAN_36_HOURS",
+  "INVALID_CRON_COMPLETION_TIME","LAST_RUN_NEEDS_OPERATOR_REVIEW",
+  "STUCK_CRON_RUN","RECENT_GROUP_CHECKPOINT_ERRORS",
+  "RECENT_RECURRING_CHECKPOINT_ERRORS","DEAD_PUSH_DELIVERIES",
+  "OVERDUE_PUSH_DELIVERIES","CYCLES_AWAITING_HUMAN_REVIEW",
+]);
 const refuse=message=>{throw Error("RR-003 monitor refused: "+message);};
 
 export function validateMonitorTarget({statusUrl,approvedHost,secret}){
@@ -25,7 +34,7 @@ export function validateMonitorTarget({statusUrl,approvedHost,secret}){
 }
 export function classifyOpsProbeResponse(httpStatus,body){
   const codes=Array.isArray(body?.alertCodes)&&body.alertCodes.length<=30?
-    body.alertCodes.filter(s=>typeof s==="string"&&/^[A-Z][A-Z0-9_]{0,79}$/.test(s)):[];
+    body.alertCodes.filter(s=>allowedCodes.has(s)):[];
   if(httpStatus===401||httpStatus===403)
     return {ok:false,signal:"AUTH_DENIED",httpStatus,alertCodes:[]};
   if(httpStatus===503)
@@ -53,8 +62,29 @@ export async function pollOpsMonitor(config,{fetchImpl=fetch}={}){
   }catch{
     return {ok:false,signal:"NETWORK_OR_TLS_FAILURE",httpStatus:null,alertCodes:[]};
   }
+  if(response.status===401||response.status===403)
+    return classifyOpsProbeResponse(response.status,null);
   let body=null;
-  try{body=await response.json();}catch{
+  try{
+    const reader=response.body?.getReader();
+    if(!reader)throw Error("Missing body");
+    const chunks=[];
+    let size=0;
+    try{
+      for(;;){
+        const {done,value}=await reader.read();
+        if(done)break;
+        size+=value.byteLength;
+        if(size>65536){
+          await reader.cancel();
+          return {ok:false,signal:"RESPONSE_TOO_LARGE",
+            httpStatus:response.status,alertCodes:[]};
+        }
+        chunks.push(value);
+      }
+    }finally{reader.releaseLock();}
+    body=JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  }catch{
     return {ok:false,signal:"INVALID_JSON_RESPONSE",
       httpStatus:response.status,alertCodes:[]};
   }

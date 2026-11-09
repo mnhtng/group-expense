@@ -76,3 +76,19 @@ test("RR-001 read-only audit cannot enable finance or invoke a schema writer",()
   assert.doesNotMatch(source,/\b(?:INSERT INTO|UPDATE\s+obligations|DELETE FROM|ALTER TABLE|CREATE TABLE|DROP TABLE)\b/i);
   assert.match(settings,/SETTLEMENT_CYCLE_ENGINE_READY = false/);
 });
+
+test("RR-001 historical 23-migration evidence reports new source migrations as pending",async()=>{
+  const {verifyMigrationChecksums}=await import("../db/rr001-neon-preflight.mjs");
+  const {readdirSync}=await import("node:fs");
+  const {createHash}=await import("node:crypto");
+  const names=readdirSync("db/migrations").filter(x=>x.endsWith(".sql")).sort();
+  const rows=names.slice(0,23).map(filename=>({filename,
+    checksum_sha256:createHash("sha256").update(readFileSync("db/migrations/"+filename)).digest("hex")}));
+  const result=await verifyMigrationChecksums(rows);
+  assert.equal(result.installedCount,23);
+  assert.equal(result.sourceSchemaParity,false);
+  assert.deepEqual(result.pendingMigrationFiles,["024_legacy_audit_immutability.sql"]);
+  await assert.rejects(verifyMigrationChecksums([...rows,{filename:names[23]}]),/approved baseline/);
+  rows[0].checksum_sha256="a".repeat(64);
+  await assert.rejects(verifyMigrationChecksums(rows),/checksum drift/);
+});

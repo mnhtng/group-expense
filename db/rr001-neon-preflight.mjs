@@ -53,10 +53,13 @@ export function verifyRR001Environment(env=process.env){
   return {runtimeUrl:runtime.toString(),directUrl:direct.toString()};
 }
 
-async function verifyMigrationChecksums(rows){
+export async function verifyMigrationChecksums(rows){
   const names=(await readdir(new URL("./migrations/",import.meta.url)))
     .filter(name=>/^\d+_[\w-]+\.sql$/.test(name)).sort();
-  if(names.length!==23)refuse("expected 23 versioned migration files");
+  // RR-001's authorization remains pinned to 001–023. Later source-only
+  // migrations must be reported as pending, never silently authorized.
+  const rehearsed=names.filter(name=>Number(name.slice(0,3))<=23);
+  if(rehearsed.length!==23)refuse("expected original 23 rehearsal migration files");
   const installed=rows.map(r=>r.filename);
   if(installed.length!==10&&installed.length!==23)
     refuse("database is not at an approved baseline or complete schema state");
@@ -68,7 +71,9 @@ async function verifyMigrationChecksums(rows){
     if(row.checksum_sha256!==checksum)
       refuse("installed migration checksum drift");
   }
-  return {installedCount:installed.length,latest:installed.at(-1)};
+  return {installedCount:installed.length,latest:installed.at(-1),
+    sourceMigrationCount:names.length,sourceSchemaParity:installed.length===names.length,
+    pendingMigrationFiles:names.slice(installed.length)};
 }
 
 /** Read-only repeatable-read audit. Never claims finance release readiness. */

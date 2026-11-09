@@ -85,8 +85,11 @@ test("SC-010 bearer-only operations are auditable, non-overlapping and never ena
   const health=read("app/api/internal/settlement-ops/status/route.ts");
   const auth=read("lib/settlement-cycles/ops-auth.ts");
   const sql=read("db/migrations/023_settlement_cycle_operational_runs.sql");
-  assert.match(runner,/pg_try_advisory_lock/);
-  assert.match(runner,/pg_advisory_unlock/);
+  assert.match(runner,/pg_try_advisory_xact_lock/);
+  assert.ok(runner.indexOf('connection.query("BEGIN")')<runner.indexOf("pg_try_advisory_xact_lock"));
+  assert.match(runner,/connection\.query\("ROLLBACK"\)/);
+  assert.match(runner,/connection\.release\(discard\)/);
+  assert.match(runner,/pool\.query\(`INSERT INTO settlement_cycle_operational_runs/);
   assert.match(runner,/finally\s*\{/);
   assert.match(runner,/settlement_cycle_operational_runs/);
   assert.match(runner,/recurring\.value\.errors===0&&/);
@@ -152,4 +155,13 @@ test("SC-010 real restore command rejects every non-disposable URL and cannot ta
   assert.ok(workflow.lastIndexOf("test:finance:audit")<
     workflow.lastIndexOf("sc010-restore-drill.sh"));
   assert.doesNotMatch(workflow,/vercel deploy|neon\.tech|git push.*main/);
+});
+
+test("RR-003 healthy Cron cannot hide overdue push backlog or an invalid completion clock",()=>{
+  const normal={latestCompletedAt:"2026-11-09T00:00:00Z",latestStatus:"success",
+    staleRunning:0,failedCheckpoints:0,recurringFailedCheckpoints:0,
+    deadPushJobs:0,overdueReviews:0,nowMs:Date.parse("2026-11-09T01:00:00Z")};
+  assert.deepEqual(operationalAlerts({...normal,overduePushJobs:1}),["OVERDUE_PUSH_DELIVERIES"]);
+  for(const latestCompletedAt of ["invalid","2026-11-10T01:00:00Z"])
+    assert.deepEqual(operationalAlerts({...normal,latestCompletedAt}),["INVALID_CRON_COMPLETION_TIME"]);
 });

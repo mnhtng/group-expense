@@ -370,3 +370,11 @@ A separately requested and authorized **RR-001** rehearsal has now applied versi
 **This completes the isolated child schema-migration prerequisite only.** It does NOT establish provider-managed Neon backup/PITR restore, full role/privacy browser E2E, production monitoring, finance signoff, staging acceptance or production release authorization. The release decision stays **NO-GO**, engine compile-time OFF, and PR #16 stays Draft. No schema change was made on either shared Neon branch, and no original financial ledger entry was written.
 
 Evidence: [RR-001 execution and limitations](../release-readiness/RR-001-NEON-MIGRATION-EVIDENCE.md) · [RR-001–RR-005 backlog](../release-readiness/BACKLOG.md).
+
+## 8. Current readiness correction — 2026-11-09
+
+Cron implementation now uses a **transaction-level** advisory lock held within an open transaction, rather than the session lock described in the historical SC-010 delivery above. This pins the backend under Neon transaction pooling. Audit run writes commit on separate pool transactions so a blocked/killed worker remains observable. Local HTTP verifies transaction pinning, overlap 202, committed running audit, SQL-stage failure/backlog 503 and replay recovery; live provider pooler/failover and external acknowledgement remain pending.
+
+Local restore additionally verifies **58 complete data/schema digests**, beyond the historical 15 selected-source comparisons. All 51 public tables, canonical live balances, and six schema-definition categories are covered; timestamps/nested numeric values stay in PostgreSQL canonical text. New migration **024** enforces six legacy audit tables' UPDATE/DELETE/TRUNCATE protections, tested locally and not applied on Neon. No historical migration was edited.
+
+See [current evidence](../release-readiness/RR-2026-11-09-LOCAL-EVIDENCE.md), [security/finance review](../release-readiness/RR-004-SECURITY-FINANCIAL-AUDIT.md) and [release decision](../release-readiness/RR-005-RELEASE-DECISION.md). These supersede historical "not started" descriptions for local implementation only; managed recovery, runtime privilege review, external alert acknowledgement, physical-device acceptance and independent release signatures remain pending. Engine OFF, Draft PR, release NO-GO.

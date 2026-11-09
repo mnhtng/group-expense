@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import pg from "pg";
+import {seedHistoricalCycleSettings} from "./helpers/settlement-history.mjs";
+import {pollOpsMonitor} from "../scripts/rr003-ops-monitor.mjs";
 
 const port = 3101;
 const origin = `http://127.0.0.1:${port}`;
@@ -1398,17 +1400,26 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
         registered.user.id]);
     assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID()),jar))
       .response.status,409,"default OFF cannot create a manual cycle");
-    assert.equal((await expenseRequest("PATCH",sc003SettingUrl,
+    const currentOptInGroup=randomUUID(),currentOptInRevision=randomUUID();
+    await pool.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'Current opt-in')",
+      [currentOptInGroup,registered.user.id]);
+    await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
+      [currentOptInGroup,registered.user.id]);
+    await pool.query("INSERT INTO group_settlement_schedule_heads(group_id,updated_by) VALUES($1,$2)",
+      [currentOptInGroup,registered.user.id]);
+    await pool.query(`INSERT INTO group_settlement_schedule_revisions
+      (id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by)
+      VALUES($1,$2,1,'manual','UTC',$3,$4,$5)`,
+      [currentOptInRevision,currentOptInGroup,sc003Date(-6),
+        sc003Date(-6)+"T00:00:00Z",registered.user.id]);
+    const currentOptInBase=`${origin}/api/groups/${currentOptInGroup}/settlement-cycle`;
+    assert.equal((await expenseRequest("PATCH",currentOptInBase+"/settings",
       config(0,true,false),jar)).response.status,200);
-    assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID()),jar))
+    assert.equal((await expenseRequest("POST",currentOptInBase+"/cycles",sc003Init(randomUUID()),jar))
       .response.status,409,
       "manual periods before the opt-in instant cannot be imported retroactively");
-    // SQL-only fixture: simulate a group that explicitly opted in last week.
-    // Never backdate production settings, and never rewrite financial history.
-    await pool.query(`UPDATE group_settlement_config_events
-      SET recorded_at=$2::timestamptz
-      WHERE group_id=$1 AND event_type='settings_changed'`,
-      [sc003Group,sc003Date(-7)+"T00:00:00Z"]);
+    await seedHistoricalCycleSettings(pool,sc003Group,registered.user.id,
+      sc003Date(-7)+"T00:00:00Z");
     assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID()),thirdJar))
       .response.status,403,"group admin has no cycle-manager power");
     const sc003FirstKey=randomUUID();
@@ -1489,12 +1500,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       [sc003AutomaticGroup,registered.user.id]);
     const sc003AutoSettings=`${origin}/api/groups/${sc003AutomaticGroup}/settlement-cycle/settings`;
     const sc003AutoApi=`${origin}/api/groups/${sc003AutomaticGroup}/settlement-cycle/cycles`;
-    assert.equal((await expenseRequest("PATCH",sc003AutoSettings,
-      config(0,true,false),jar)).response.status,200);
-    await pool.query(`UPDATE group_settlement_config_events
-       SET recorded_at=$2::timestamptz
-       WHERE group_id=$1 AND event_type='settings_changed'`,
-      [sc003AutomaticGroup,sc003Date(-29)+"T00:00:00Z"]);
+    await seedHistoricalCycleSettings(pool,sc003AutomaticGroup,registered.user.id,
+      sc003Date(-29)+"T00:00:00Z");
     await pool.query(
       "INSERT INTO group_settlement_schedule_heads(group_id,updated_by) VALUES($1,$2)",
       [sc003AutomaticGroup,registered.user.id]);
@@ -1535,13 +1542,9 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       [sc003RevisionsGroup,registered.user.id]);
     await pool.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",
       [sc003RevisionsGroup,registered.user.id]);
-    const revSettings=`${origin}/api/groups/${sc003RevisionsGroup}/settlement-cycle/settings`;
     const revApi=`${origin}/api/groups/${sc003RevisionsGroup}/settlement-cycle/cycles`;
-    assert.equal((await expenseRequest("PATCH",revSettings,
-      config(0,true,false),jar)).response.status,200);
-    await pool.query(`UPDATE group_settlement_config_events SET recorded_at=$2::timestamptz
-      WHERE group_id=$1 AND event_type='settings_changed'`,
-      [sc003RevisionsGroup,sc003Date(-43)+"T00:00:00Z"]);
+    await seedHistoricalCycleSettings(pool,sc003RevisionsGroup,registered.user.id,
+      sc003Date(-43)+"T00:00:00Z");
     await pool.query(`INSERT INTO group_settlement_schedule_heads
       (group_id,version,updated_by) VALUES($1,2,$2)`,
       [sc003RevisionsGroup,registered.user.id]);
@@ -1683,6 +1686,88 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
         await held.query("SELECT pg_advisory_unlock(230010,2026)");
         held.release();
       }
+      // Hold the recurring scan mid-run, inspect from another DB session,
+      // and prove both the pinned lock transaction and committed run audit.
+      const blockedScan=await pool.connect();
+      let inFlight;
+      try{
+        await blockedScan.query("BEGIN");
+        await blockedScan.query("LOCK TABLE recurring_expense_rules IN ACCESS EXCLUSIVE MODE");
+        inFlight=fetch(`${origin}/api/internal/push-drain`,{
+          headers:{authorization:`Bearer ${sc003CronSecret}`},
+          signal:AbortSignal.timeout(20000),
+        });
+        let pinned=false;
+        for(let attempt=0;attempt<50;attempt++){
+          const check=await pool.query(`SELECT 1 FROM pg_locks l
+            JOIN pg_stat_activity a ON a.pid=l.pid
+            WHERE l.locktype='advisory' AND l.classid=230010 AND l.objid=2026
+              AND l.granted AND a.state='idle in transaction'
+              AND a.xact_start IS NOT NULL`);
+          if(check.rowCount){pinned=true;break;}
+          await new Promise(resolve=>setTimeout(resolve,50));
+        }
+        assert.equal(pinned,true,"Cron lock must be held inside a pinned transaction");
+        assert.equal((await pool.query(`SELECT count(*)::int AS n
+          FROM settlement_cycle_operational_runs`)).rows[0].n,beforeBusy+1,
+          "running audit must be committed while worker is blocked");
+        const busy=await fetch(`${origin}/api/internal/push-drain`,{
+          headers:{authorization:`Bearer ${sc003CronSecret}`},
+        });
+        assert.equal(busy.status,202);
+      }finally{
+        await blockedScan.query("ROLLBACK");blockedScan.release();
+        if(inFlight){
+          const finished=await inFlight;
+          assert.equal(finished.status,200);
+        }
+      }
+      assert.equal((await pool.query(`SELECT count(*)::int AS n FROM pg_locks
+        WHERE locktype='advisory' AND classid=230010 AND objid=2026 AND granted`))
+        .rows[0].n,0,"finished or rejected workers must release their locks");
+      // Real SQL-stage failure, then recovery, confined to this disposable DB.
+      // Rename preserves every source row and is always restored in finally.
+      await pool.query("ALTER TABLE recurring_expense_rules RENAME TO rr003_recurring_fault");
+      try{
+        const failed=await fetch(`${origin}/api/internal/push-drain`,{
+          headers:{authorization:`Bearer ${sc003CronSecret}`},
+        });
+        assert.equal(failed.status,503);
+        assert.equal(failed.headers.get("retry-after"),"300");
+        const failure=await failed.json();
+        assert.equal(failure.status,"failed");
+        assert.ok(failure.warningCodes.includes("RECURRING_FAILED"));
+        assert.equal((await pool.query(`SELECT status FROM settlement_cycle_operational_runs
+          WHERE id=$1`,[failure.runId])).rows[0].status,"failed");
+      }finally{
+        await pool.query("ALTER TABLE rr003_recurring_fault RENAME TO recurring_expense_rules");
+      }
+      const backlogIds=Array.from({length:201},()=>randomUUID());
+      await pool.query(`INSERT INTO recurring_expense_rules
+        (id,group_id,created_by,payer_id,title,day_of_month,starts_on,items,total_minor)
+        SELECT id,$2,$3,$3,'RR003 future-only scan fixture',1,$4::date,'[]',1
+        FROM unnest($1::uuid[]) AS id`,
+        [backlogIds,sc003AutomaticGroup,registered.user.id,sc003Date(90)]);
+      try{
+        const capped=await fetch(`${origin}/api/internal/push-drain`,{
+          headers:{authorization:`Bearer ${sc003CronSecret}`},
+        });
+        assert.equal(capped.status,503);
+        const partial=await capped.json();
+        assert.equal(partial.status,"partial");
+        assert.ok(partial.warningCodes.includes("RECURRING_SCAN_INCOMPLETE"));
+        assert.equal(partial.recurring.generated,0,
+          "future-only backlog must not create original invoices");
+        assert.equal(partial.recurring.checked,200);
+      }finally{
+        await pool.query("DELETE FROM recurring_expense_rules WHERE id=ANY($1::uuid[])",[backlogIds]);
+      }
+      const recovered=await fetch(`${origin}/api/internal/push-drain`,{
+        method:"POST",headers:{authorization:`Bearer ${sc003CronSecret}`,
+          "x-ops-replay-reason":"recovery-drill"},
+      });
+      assert.equal(recovered.status,200,"authorized replay recovers after fault/backlog removal");
+      assert.equal((await recovered.json()).status,"success");
       // A partial log entry left after a crashed process is observable
       // without modifying frozen cycle financial sources.
       const strandedRun=randomUUID();
@@ -1695,6 +1780,18 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       });
       assert.equal(attention.status,503);
       assert.ok((await attention.json()).alertCodes.includes("STUCK_CRON_RUN"));
+      // Local HTTP transport adapter: real protected endpoint + probe parser.
+      // This does not certify external HTTPS, delivery or human acknowledgement.
+      const probeConfig={statusUrl:"https://isolated.example.test/api/internal/settlement-ops/status",
+        approvedHost:"isolated.example.test",secret:sc003CronSecret};
+      const probe=await pollOpsMonitor(probeConfig,{
+        fetchImpl:(_url,init)=>fetch(opsUrl,init),
+      });
+      assert.equal(probe.signal,"OPS_ATTENTION");
+      assert.ok(probe.alertCodes.includes("STUCK_CRON_RUN"));
+      assert.equal((await pollOpsMonitor({...probeConfig,secret:"wrong-synthetic-secret"},{
+        fetchImpl:(_url,init)=>fetch(opsUrl,init),
+      })).signal,"AUTH_DENIED");
     }
     assert.equal((await expenseRequest("GET",sc003AutoApi,undefined,new Map()))
       .response.status,401);
@@ -2191,12 +2288,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const bnCycleApi=`${origin}/api/groups/${bnGroup}/settlement-cycle/cycles`;
     const bnExpenses=`${origin}/api/groups/${bnGroup}/expenses`;
     const bnCash=`${origin}/api/groups/${bnGroup}/settlements`;
-    assert.equal((await expenseRequest("PATCH",bnSetting,
-      config(0,true,false),jar)).response.status,200);
-    await pool.query(`UPDATE group_settlement_config_events
-      SET recorded_at=$2::timestamptz WHERE group_id=$1
-        AND event_type='settings_changed'`,
-      [bnGroup,sc003Date(-7)+"T00:00:00Z"]);
+    await seedHistoricalCycleSettings(pool,bnGroup,registered.user.id,
+      sc003Date(-7)+"T00:00:00Z");
     await pool.query(
       "INSERT INTO group_settlement_schedule_heads(group_id,updated_by) VALUES($1,$2)",
       [bnGroup,registered.user.id]);
@@ -3474,12 +3567,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const sc006Settings=`${origin}/api/groups/${sc006Group}/settlement-cycle/settings`;
     const sc006Api=`${origin}/api/groups/${sc006Group}/settlement-cycle/cycles`;
     const sc006Expenses=`${origin}/api/groups/${sc006Group}/expenses`;
-    assert.equal((await expenseRequest("PATCH",sc006Settings,
-      config(0,true,false),jar)).response.status,200);
-    await pool.query(`UPDATE group_settlement_config_events
-      SET recorded_at=$2::timestamptz
-      WHERE group_id=$1 AND event_type='settings_changed'`,
-      [sc006Group,sc003Date(-12)+"T00:00:00Z"]);
+    await seedHistoricalCycleSettings(pool,sc006Group,registered.user.id,
+      sc003Date(-12)+"T00:00:00Z");
     await pool.query(`INSERT INTO group_settlement_schedule_heads
       (group_id,updated_by) VALUES($1,$2)`,[sc006Group,registered.user.id]);
     await pool.query(`INSERT INTO group_settlement_schedule_revisions
@@ -3882,16 +3971,11 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     for(const [userId,role] of [[registered.user.id,"owner"],[otherUser.id,"member"]])
       await pool.query(`INSERT INTO group_members(group_id,user_id,role)
         VALUES($1,$2,$3)`,[sc006ExitGroup,userId,role]);
-    const exitSettings=`${origin}/api/groups/${sc006ExitGroup}/settlement-cycle/settings`;
     const exitCycles=`${origin}/api/groups/${sc006ExitGroup}/settlement-cycle/cycles`;
     const exitInvoices=`${origin}/api/groups/${sc006ExitGroup}/expenses`;
     const exitMembership=`${origin}/api/groups/${sc006ExitGroup}/membership/leave`;
-    assert.equal((await expenseRequest("PATCH",exitSettings,
-      config(0,true,false),jar)).response.status,200);
-    await pool.query(`UPDATE group_settlement_config_events
-      SET recorded_at=$2::timestamptz
-      WHERE group_id=$1 AND event_type='settings_changed'`,
-      [sc006ExitGroup,sc003Date(-8)+"T00:00:00Z"]);
+    await seedHistoricalCycleSettings(pool,sc006ExitGroup,registered.user.id,
+      sc003Date(-8)+"T00:00:00Z");
     await pool.query(`INSERT INTO group_settlement_schedule_heads
       (group_id,updated_by) VALUES($1,$2)`,
       [sc006ExitGroup,registered.user.id]);
