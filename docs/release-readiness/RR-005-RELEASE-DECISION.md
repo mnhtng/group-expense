@@ -9,7 +9,7 @@ The first verified takeover change set was committed locally as `16fba847df1bab7
 | Surface | Verified | Missing |
 |---|---|---|
 | Local PG17.11 | 001–024, migration idempotency, SQL/HTTP/browser finance regression, logical restore | Independent human acceptance |
-| Isolated Neon source `br-curly-rice-b3xenws6` and recovered child `br-noisy-river-b3ajidmw` | 23 migrations; real historical recovery, 58 matching digests, unchanged source, eight independent audits each | Separate 024 approval/rehearsal, positive managed finance fixtures, exact reviewed-source parity |
+| Isolated Neon source `br-curly-rice-b3xenws6` and recovered child `br-noisy-river-b3ajidmw` | Historical PITR 58/58 PASS; source stays 23/unchanged; separate approved 024 on child now 24/24 checksums, 12 guards, eight audits each, repeat idempotent | Positive managed finance fixtures and deployed role/environment parity; no shared migration approval |
 | Shared development / production | No mutation performed by this work | Fresh approved drift/credential/runtime-role review; previous migration counts are historical, not newly certified |
 | GitHub PR #16 | Open Draft against develop; remote head matches starting checkout | Final reviewed clean SHA, independent finance/security approval |
 | Financial activation | Literal OFF; test writes require CI + exact disposable localhost URL + individual flags | Separate reviewed implementation and explicit authorization for any real activation |
@@ -18,7 +18,7 @@ The first verified takeover change set was committed locally as `16fba847df1bab7
 
 | Gate | Current decision |
 |---|---|
-| RR-001 historical 011–023 rehearsal | Historical SCHEMA PASS only; 024 pending |
+| RR-001 migration rehearsals | Historical 011–023 PASS; separately approved 024 PASS on recovered child only, 24/24 checksums |
 | RR-002 local browser matrix | PASS on local revised source; physical devices/PWA deferred and unverified |
 | RR-003 recovery/ops regression | Local regression + managed sparse historical baseline PASS; full-service RPO/RTO and external alert path pending |
 | RR-004 agent technical review | Local real non-owner SQL/HTTP/four-browser profile PASS; deployed-role proof, dependency patch review and independent signoff pending |
@@ -29,7 +29,7 @@ Any missing mandatory gate keeps release NO-GO. A group opt-in preference, healt
 ## Preparation and acceptance sequence
 
 1. Freeze candidate source/migration hashes; reviewers inspect changes and existing financial invariants. Confirm branch, direct/pooled endpoint pairing and least-privilege runtime/migration roles without exporting secrets. Inventory schema definitions, not only `schema_migrations` rows.
-2. Obtain separate approval to rehearse **024 only on a specifically identified isolated child**, with baseline hashes and forward-only recovery. Existing RR-001 permission for 011–023 is not reusable permission for 024 or shared branches.
+2. Review the completed, separately approved [024 rehearsal on recovered child](RR-001-024-NEON-MIGRATION-EVIDENCE.md): exact checksum, expected schema delta, unchanged business data and no-op repeat. That permission does not extend to the original source or shared branches; any staging migration needs its own reviewed target/approval.
 3. Review the [executed managed recovery drill](RR-003-MANAGED-PITR-EVIDENCE.md): historical branch receipt, 58-check comparison, independent audits and timing limitations. Obtain separate approval for positive managed finance fixtures and full-service acceptance. Establish RPO/RTO before treating measured database intervals as acceptance. The 6-hour retention window is not RPO; delayed detection can exceed the available history.
 4. Independently review the minimatch update and deepmerge local patch; dispose of the remaining low upstream advisory without treating a non-clean registry audit as PASS. Configure one approved external HTTPS monitor with secret-manager Bearer injection. Verify healthy 200, auth denial, controlled 503/transport timeout, delivery, operator acknowledgement, escalation and recovered state. Local test adapters do not certify this path.
 5. Obtain independent finance/security signoff and a recorded device-risk decision. A deferral for development does not waive the hardware release gate.
@@ -46,7 +46,7 @@ Any missing mandatory gate keeps release NO-GO. A group opt-in preference, healt
 
 ## Original approved provider package — executed with documented provider fallback
 
-The owner approved this Free-only scope. Historical snapshot creation failed with HTTP 400 because the source is a non-root branch. The same approved source was instead recovered through Console historical branching to **`br-noisy-river-b3ajidmw`**, with actual point **`2026-11-09T13:00:31Z`**. Source/restored data and schema match 58/58; source is unchanged; both pass 8/8 audits. [Full receipt and limits](RR-003-MANAGED-PITR-EVIDENCE.md). No snapshot was created, so its proposed 24-hour expiry does not apply to the retained recovered branch. No plan upgrade, migration or activation was performed. The original procedure below is retained for review; it is not a command to retry on production/root.
+The owner approved this Free-only scope. Historical snapshot creation failed with HTTP 400 because the source is a non-root branch. The same approved source was instead recovered through Console historical branching to **`br-noisy-river-b3ajidmw`**, with actual point **`2026-11-09T13:00:31Z`**. At pre-024 capture, source/restored data and schema matched 58/58; source was unchanged; both passed 8/8 audits. [Full receipt and limits](RR-003-MANAGED-PITR-EVIDENCE.md). No snapshot was created, so its proposed 24-hour expiry does not apply to the retained recovered branch. No plan upgrade, migration or activation was performed during PITR. The owner subsequently separately approved 024 on the recovered child, and that isolated rehearsal now passes; see the linked 024 evidence. The original procedure below is retained for review; it is not a command to retry on production/root.
 
 Project `withered-salad-00928018`; source **only** `br-curly-rice-b3xenws6`; excluded `br-round-salad-b39y4yce` and `br-dry-poetry-b31cudmb`. Proposed snapshot name `rr003-historical-<UTC>` and new restore name `rr003-pitr-<UTC>`; no existing destination ID, no branch/name/compute swap, promotion, source migration or deletion.
 
