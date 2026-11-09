@@ -17,7 +17,7 @@ The application's GET-only `/api/internal/settlement-ops/status` and `/runtime` 
 - Delivery is FIFO with at-least-once retries using the same `Idempotency-Key`. The recipient must deduplicate by event ID. If the process fails after provider acceptance but before local persistence, duplicate receipt is possible.
 - Non-2xx, transport failure and timeout retain the unsent event. No redirect is followed. The outbox is bounded at 100 events; a full/corrupt state fails closed instead of silently dropping events.
 
-The current delivery transport is the reviewed HTTPS webhook contract. A persistent email service/adapter and scheduler have not been provisioned; the Gmail component test must not be presented as that backend. The existing Vercel project metadata has no email integration. Before enabling scheduling, provision an approved mail-capable receiver/provider and prove actual probe → queued event → email → human acknowledgement → recovered email on the deployed candidate.
+The current delivery transport is the reviewed HTTPS webhook contract. A persistent email service/adapter and scheduler have not been provisioned; the Gmail component test must not be presented as that backend. The existing Vercel project metadata has no email integration. The owner subsequently approved a standalone Resend Free installation with no project connection/env pull; the provider currently requires browser terms acceptance before provisioning. [Exact pending action](RR-003-MAIL-PROVISIONING-PLAN.md). Before enabling scheduling, provision an approved mail-capable receiver/provider and prove actual probe → queued event → email → human acknowledgement → recovered email on the deployed candidate.
 
 ## Operator commands (prepared; no external schedule enabled)
 
@@ -41,4 +41,6 @@ Local unit tests cover state transitions, acknowledgement, queue retries, token/
 
 The owner approved **RPO ≤15 minutes and service RTO ≤60 minutes** on 2026-11-09. These are accepted targets, not proof of compliance. The earlier historical recovery measured database-only intervals against a quiescent sparse source; a full-service recovery/cutover and continuing-write RPO drill remain pending. Six-hour Neon history is a retention window, not an approved substitute for incident detection/backup policy.
 
-Outstanding: hosted candidate with correct runtime role, protected HTTPS machine access, mail service/receiver, persistent scheduler, external fault/recovery drill and service RPO/RTO acceptance. No staging/production deployment or engine activation is performed by this runbook.
+The separately approved protected feature preview now returns runtime attestation 200 with the correct limited role and authenticated status 503 / NO_COMPLETED_CRON_RUN. OIDC machine access was exercised without a project-wide bypass; [managed proof](RR-004-MANAGED-RUNTIME-EVIDENCE.md). No Cron recovery action was included.
+
+Outstanding: mail service/receiver, persistent scheduler, external fault/recovery drill and service RPO/RTO acceptance. No staging/production deployment or engine activation is performed by this runbook.

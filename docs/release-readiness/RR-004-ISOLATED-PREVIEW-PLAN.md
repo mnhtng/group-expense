@@ -1,6 +1,6 @@
 # Reviewed next action: isolated runtime role and protected feature preview
 
-**Prepared, not authorized/executed.** The owner requested continuing readiness work. Earlier scoped approvals covered PITR and migration 024 only, so the resource/credential/deployment changes below need their own explicit decision. This is a technical verification preview, separate from RR-005 staging/production or financial activation.
+**Owner-approved and executed on 2026-11-09.** [Actual managed/login/preview evidence](RR-004-MANAGED-RUNTIME-EVIDENCE.md). The remaining text preserves the approved scope. The owner requested continuing readiness work. Earlier scoped approvals covered PITR and migration 024 only, and the owner subsequently explicitly approved the resource/credential/deployment changes below. This is a technical verification preview, separate from RR-005 staging/production or financial activation.
 
 ## Exact scope
 

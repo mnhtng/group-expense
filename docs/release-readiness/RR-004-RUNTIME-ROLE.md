@@ -1,6 +1,6 @@
 # RR-004 dedicated runtime database role — local verified profile
 
-**Local SQL + complete signed application profile: PASS. Deployed Neon runtime role: NOT VERIFIED / NO-GO.** This implements and tests a concrete privilege plan without changing shared roles, secrets, Vercel settings or financial activation.
+**Local complete application profile and approved isolated deployed runtime role: PASS. Production/develop roles remain unverified; release NO-GO.** [Managed role and actual protected preview evidence](RR-004-MANAGED-RUNTIME-EVIDENCE.md). This implements and tests a concrete privilege plan without changing shared roles, secrets, Vercel settings or financial activation.
 
 ## Implemented boundary
 
@@ -25,7 +25,7 @@ The complete application profile uses a **different database owner** (`rr004_own
 
 ## What remains
 
-No shared/provider role, credential or environment variable was created/rotated. Deployed runtime role identity and actual live ACLs still require confidential provider verification. Applying this plan needs separate branch/role authorization and a rollback/compatibility review. Table ACLs complement application user/actor authorization; they do not implement per-user RLS or defend against a migration owner deliberately replacing trusted functions/triggers. Keep the migration owner's credentials separate from runtime and review future schema additions/grants explicitly. This profile is not independent human financial/security signoff.
+The original local-only work created no shared/provider role or secret. The owner later separately approved creation of a fresh role on the recovered child and four feature-preview-only env entries; their actual login/ACL/endpoint proof now passes. Production/develop runtime identities still require separately scoped review. Applying this plan needs separate branch/role authorization and a rollback/compatibility review. Table ACLs complement application user/actor authorization; they do not implement per-user RLS or defend against a migration owner deliberately replacing trusted functions/triggers. Keep the migration owner's credentials separate from runtime and review future schema additions/grants explicitly. This profile is not independent human financial/security signoff.
 
 
 ## Runtime endpoint and isolated preview preparation
@@ -34,4 +34,4 @@ The source now adds Bearer-protected, read-only `GET /api/internal/settlement-op
 
 The complete non-owner profile passes this endpoint; the ordinary owner profile is rejected. Missing legacy guards, unexpected column INSERT/REFERENCES/UPDATE grants and automatic default privileges are exercised with real SQL and detected. The new shared inventory module avoids importing migration/CLI filesystem code into the Next server bundle.
 
-[Exact next role/preview package](RR-004-ISOLATED-PREVIEW-PLAN.md) is prepared for separate approval. Vercel metadata inspection found no branch-specific feature-preview envs; existing DB/secret entries target production and preview `develop`. No existing values were decrypted/exported. READY feature preview metadata is still from the older remote SHA and cannot certify this endpoint or the candidate's runtime role.
+[Exact next role/preview package](RR-004-ISOLATED-PREVIEW-PLAN.md) was separately approved and executed; see managed evidence. Before this action, Vercel metadata inspection found no branch-specific feature-preview envs; existing DB/secret entries target production and preview `develop`. No existing values were decrypted/exported. READY feature preview metadata is still from the older remote SHA and cannot certify this endpoint or the candidate's runtime role.

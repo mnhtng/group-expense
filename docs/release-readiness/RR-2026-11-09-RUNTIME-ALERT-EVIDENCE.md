@@ -1,6 +1,6 @@
 # Runtime attestation and alert continuation — 2026-11-09
 
-**Local implementation and verification PASS; release NO-GO.** Code digest **`03757fecd09d8b7ba5ae50375675234738fd16eb32ee4e7e26ddc5770489c181`** identifies this candidate. Migration files 001–024 are unchanged. No provider role, credential/environment setting or deployment has been changed by this continuation at this evidence capture.
+**Local implementation and verification PASS; release NO-GO.** Code digest **`03757fecd09d8b7ba5ae50375675234738fd16eb32ee4e7e26ddc5770489c181`** identifies this candidate. Migration files 001–024 are unchanged. This evidence was captured before the separately approved provider action. The owner later approved and completed the isolated role/feature-preview scope; [actual managed proof](RR-004-MANAGED-RUNTIME-EVIDENCE.md) records the live result.
 
 | Verification | Observed result |
 |---|---|
@@ -20,6 +20,6 @@ The alert runner stores a private atomic outbox, locks overlapping processes, re
 
 The Gmail drill was explicitly requested via channel/recipient selection. It was sent once through the connected Gmail tool and acknowledged by the owner in Codex. Receipt, recipient, message/thread IDs and acknowledgement are private in `rr003-artifacts/2026-11-09-runtime-alerts/` (0700 directory/0600 files). It is **not a scheduler or a deployed email backend**. See [operator/delivery runbook](RR-003-ALERT-DELIVERY.md).
 
-Read-only Vercel metadata still shows the feature preview at older remote SHA `41bc3ae…`; its branch has no specific DB/secret env entries. Existing entries target production and preview `develop`. No secret values were decrypted or exported. [Exact isolated role + protected feature-preview package](RR-004-ISOLATED-PREVIEW-PLAN.md) and its SQL are prepared for scoped owner approval. Deployed role/HTTPS monitoring, mail-capable delivery service and persistent scheduler, positive managed finance fixtures, service RPO/RTO, physical-device and independent human release acceptance remain pending.
+Read-only Vercel metadata still shows the feature preview at older remote SHA `41bc3ae…`; its branch has no specific DB/secret env entries. Existing entries target production and preview `develop`. No secret values were decrypted or exported. [Exact isolated role + protected feature-preview package](RR-004-ISOLATED-PREVIEW-PLAN.md) and its SQL were subsequently approved and executed, with protected runtime GET 200 and status GET 503 as expected. Production/develop parity, automated HTTPS monitoring, mail-capable delivery service and persistent scheduler, positive managed finance fixtures, service RPO/RTO, physical-device and independent human release acceptance remain pending.
 
-No GitHub Actions, push, merge, staging/production release or financial activation occurred. PR #16 stays Draft; engine hard OFF.
+No GitHub Actions, push, merge, staging/production release or financial activation occurred; the later separately approved technical feature preview is documented above. PR #16 stays Draft; engine hard OFF.
