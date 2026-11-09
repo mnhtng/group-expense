@@ -2,8 +2,14 @@
 
 **Updated:** 2026-11-09 (original provider baseline: 2026-11-07)
 **Branch:** `feat/settlement-cycles-bilateral` → Draft PR #16 against `develop`  
-**Current gate:** **LOCAL PG17 DATA/SCHEMA RESTORE AND OPS REGRESSION PASS — MANAGED RESTORE / EXTERNAL ALERTING PENDING; NO-GO**.
+**Current gate:** **MANAGED HISTORICAL BASELINE AND LOCAL PG17 RECOVERY/OPS PASS — FULL SERVICE RECOVERY / EXTERNAL ALERTING PENDING; NO-GO**.
 **Absolute boundaries:** Do not enable `SETTLEMENT_CYCLE_ENGINE_READY`, write to production/development/shared Neon, replay financial transactions, merge PR, run `scripts/sc010-restore-drill.sh` on Neon, change snapshot schedules or promote any restored branch.
+
+## Latest executed drill — 2026-11-09
+
+The owner approved Free-only recovery from the isolated RR-001 child into a new branch. The snapshot API rejected that non-root source; Console historical branching succeeded with provider `parent_timestamp=2026-11-09T13:00:31Z`, destination `br-noisy-river-b3ajidmw`. **58/58 full data/schema digests match**, source recapture is unchanged, and all **8 financial audits return zero on each branch**. No snapshot was produced, no source/shared branch was modified, and no migration was authorized by this operation. See [exact managed evidence, cost observations and timing limits](RR-003-MANAGED-PITR-EVIDENCE.md).
+
+This is real preservation of the source's sparse baseline. It does not certify positive managed NONCASH/dispute preservation, a separate backup failure domain, full-service RPO/RTO, external alert delivery or operator acknowledgement. Sections describing the earlier provider inspection and proposed snapshot route below remain historical/planning material; do not repeat a mutation without its own approval or treat them as the successful procedure.
 
 ## 1. Read-only live provider inspection, 2026-11-07
 

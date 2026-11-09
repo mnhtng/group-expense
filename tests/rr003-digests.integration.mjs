@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import pg from "pg";
 import {spawnSync} from "node:child_process";
-import {FINANCIAL_CLASSES,collectFinancialDigests,compareDigests} from "../db/rr003-restore-compare.mjs";
+import {FINANCIAL_CLASSES,collectFinancialDigests,compareDigests,buildProviderDigestSql,validateProviderDigests} from "../db/rr003-restore-compare.mjs";
 import {RR003_TARGET} from "../db/rr003-recovery-policy.mjs";
 
 const url="postgresql://test:test@localhost:5432/group_expense";
@@ -28,6 +28,12 @@ test("RR-003 SQL digests cover every public table and preserve timestamp microse
     await pool.query(`INSERT INTO "user"(id,name,email,"createdAt")
       VALUES($1,'RR003 precision fixture',$2,'2026-11-09T01:02:03.123456Z')`,[id,id+"@example.test"]);
     const before=await collectFinancialDigests(pool,RR003_TARGET.sourceBranch,database);
+    const provider=(await pool.query(buildProviderDigestSql(RR003_TARGET.sourceBranch))).rows[0];
+    assert.equal(provider.inventoryMatches,true);
+    assert.equal(provider.pgMajor,17);
+    assert.equal(validateProviderDigests(provider,RR003_TARGET.sourceBranch,database).format,before.format);
+    assert.deepEqual(provider.manifest.checks,before.checks,
+      "single-statement connector digests must equal direct-client hashes");
     // This is a new synthetic identity, not an original ledger or audit row.
     await pool.query(`UPDATE "user" SET "createdAt"='2026-11-09T01:02:03.123457Z' WHERE id=$1`,[id]);
     const after=await collectFinancialDigests(pool,"br-rr003-disposable-test",database);

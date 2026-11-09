@@ -7,7 +7,7 @@ import {createHash} from "node:crypto";
 import {readFileSync,readdirSync} from "node:fs";
 
 const git=(...args)=>execFileSync("git",args,{encoding:"utf8"});
-const codeFile=p=>/\.(?:[cm]?js|tsx?|sql|css|json|ya?ml|sh)$/.test(p)&&
+const codeFile=p=>/\.(?:[cm]?js|tsx?|sql|css|json|ya?ml|sh|patch)$/.test(p)&&
   !p.startsWith("docs/")&&!p.startsWith(".env");
 const tracked=git("ls-files","-z").split("\0").filter(Boolean);
 const untracked=git("ls-files","--others","--exclude-standard","-z")

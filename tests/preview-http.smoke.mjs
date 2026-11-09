@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import pg from "pg";
+import {fixtureDatabaseUrl} from "../db/rr004-local-runtime.mjs";
 import {seedHistoricalCycleSettings} from "./helpers/settlement-history.mjs";
 import {pollOpsMonitor} from "../scripts/rr003-ops-monitor.mjs";
 
@@ -78,7 +79,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     ["node_modules/next/dist/bin/next", "start", "-p", String(port)],
     { env: { ...process.env, BETTER_AUTH_URL: origin }, stdio: "ignore" },
   );
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new pg.Pool({ connectionString: fixtureDatabaseUrl() });
   try {
     await waitForReady(server);
     const health = await fetch(`${origin}/api/auth/ok`, { signal: AbortSignal.timeout(10_000) });

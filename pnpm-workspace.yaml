@@ -1,3 +1,10 @@
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+
+# Reviewed readiness fixes: preserve deepmerge's public API while preventing
+# prototype setters, and pin the advisory-patched glob implementation.
+patchedDependencies:
+  deepmerge@4.3.1: patches/deepmerge@4.3.1.patch
+overrides:
+  'minimatch@>=7.0.0 <11.0.1': 11.0.1

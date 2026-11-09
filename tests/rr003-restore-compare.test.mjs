@@ -106,3 +106,15 @@ test("RR-003 refuses comparing source to itself, shared branches or obsolete par
   a.format="rr003-financial-baseline-v1";
   assert.throws(()=>compareDigests(a,b),/unsupported financial baseline format/);
 });
+
+test('RR-003 provider digest import rejects truncated classes, wrong branches and failed inventory',async()=>{
+  const {validateProviderDigests,buildProviderDigestSql}=await import('../db/rr003-restore-compare.mjs');
+  const manifest={...baseline(),capturedAt:'2026-11-09T12:00:00.000Z'};
+  const row={manifest,inventoryMatches:true,database:'group_expense',pgMajor:17};
+  assert.equal(validateProviderDigests(row,RR003_TARGET.sourceBranch),manifest);
+  assert.throws(()=>validateProviderDigests({...row,inventoryMatches:false},RR003_TARGET.sourceBranch));
+  assert.throws(()=>validateProviderDigests(row,'br-wrong'));
+  manifest.checks.users.rows=10001;
+  assert.throws(()=>validateProviderDigests(row,RR003_TARGET.sourceBranch),/truncated provider digest/);
+  assert.throws(()=>buildProviderDigestSql("br-unsafe';DROP TABLE groups;--"));
+});

@@ -101,6 +101,68 @@ export const CHECK_NAMES=Object.freeze([
 ]);
 const refuse=message=>{throw Error("RR-003 comparison refused: "+message);};
 
+export function financialDigestQueries(){
+  return [...FINANCIAL_CLASSES.map(([label,table,order])=>[label,
+    'SELECT to_jsonb(t)::text AS canonical FROM public."'+table+
+      '" t ORDER BY '+order+" LIMIT "+(MAX_ROWS_PER_CLASS+1)]),
+    ...SCHEMA_QUERIES.map(([label,sql])=>[label,
+      "SELECT to_jsonb(t)::text AS canonical FROM ("+sql+") t LIMIT "+(MAX_ROWS_PER_CLASS+1)]),
+  ];
+}
+
+/** One SELECT for provider connectors that keep credentials private. All
+ * classes share one statement snapshot. Test equality against the direct
+ * client's canonical digests before using this for a managed restore.
+ */
+export function buildProviderDigestSql(branchId){
+  if(typeof branchId!=="string"||!/^br-[a-z0-9-]+$/.test(branchId))
+    refuse("invalid provider branch identity");
+  const inventory=FINANCIAL_CLASSES.map(x=>x[1])
+    .filter(name=>name!=="bn005_obligation_balances").sort();
+  const results=financialDigestQueries().map(([label,sql])=>`
+    SELECT '${label}' AS label,d.rows,d.sha256 FROM config c
+    CROSS JOIN LATERAL (
+      SELECT count(*)::int AS rows,
+        encode(sha256(convert_to(COALESCE(string_agg(
+          t.canonical||chr(10),'' ORDER BY t.position),''),'UTF8')),'hex') AS sha256
+      FROM (SELECT row_number() OVER() AS position,q.canonical
+        FROM (${sql}) q WHERE c.tz='UTC' AND c.dates='ISO, YMD'
+          AND c.path='public,pg_catalog') t
+    ) d`).join("\nUNION ALL\n");
+  return `WITH config AS MATERIALIZED (
+    SELECT set_config('TimeZone','UTC',true) AS tz,
+      set_config('DateStyle','ISO, YMD',true) AS dates,
+      set_config('search_path','public,pg_catalog',true) AS path
+  ), results AS (${results})
+  SELECT jsonb_build_object(
+    'format','${BASELINE_FORMAT}','projectId','${RR003_TARGET.project}',
+    'branchId','${branchId}',
+    'capturedAt',to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'checks',(SELECT jsonb_object_agg(label,jsonb_build_object('rows',rows,'sha256',sha256)) FROM results)
+  ) AS manifest,
+    (SELECT array_agg(tablename::text ORDER BY tablename) FROM pg_tables
+      WHERE schemaname='public')=ARRAY[${inventory.map(n=>"'"+n+"'").join(",")}]::text[] AS "inventoryMatches",
+    current_database() AS database,
+    current_setting('server_version_num')::int/10000 AS "pgMajor"
+  FROM config`;
+}
+
+export function validateProviderDigests(row,branchId,database=RR003_TARGET.database){
+  const manifest=row?.manifest;
+  if(row?.inventoryMatches!==true||row.pgMajor!==17||row.database!==database||
+    manifest?.format!==BASELINE_FORMAT||manifest.projectId!==RR003_TARGET.project||
+    manifest.branchId!==branchId||!Number.isFinite(Date.parse(manifest.capturedAt))||
+    Object.keys(manifest.checks??{}).length!==CHECK_NAMES.length)
+    refuse("provider digest metadata or inventory mismatch");
+  for(const name of CHECK_NAMES){
+    const check=manifest.checks[name];
+    if(!Number.isSafeInteger(check?.rows)||check.rows<0||check.rows>MAX_ROWS_PER_CLASS||
+      !/^[a-f0-9]{64}$/.test(check.sha256??""))
+      refuse("invalid or truncated provider digest: "+name);
+  }
+  return manifest;
+}
+
 export function verifyCompareUrl(raw,requiredHost){
   if(typeof raw!=="string"||!raw||typeof requiredHost!=="string"||
     !/^ep-[a-z0-9-]+\.c-\d+\.[a-z0-9-]+\.aws\.neon\.tech$/.test(requiredHost))
@@ -191,14 +253,7 @@ export async function collectFinancialDigests(pool,branchId,database=RR003_TARGE
     if(JSON.stringify(inventory.rows.map(x=>x.tablename))!==JSON.stringify(expectedTables))
       refuse("public table inventory differs from approved recovery coverage");
     const checks={};
-    const queries=[...FINANCIAL_CLASSES.map(([label,table,order])=>[label,
-      // All identifiers come only from the hard-coded allowlist above.
-      'SELECT to_jsonb(t)::text AS canonical FROM public."'+table+
-        '" t ORDER BY '+order+" LIMIT "+(MAX_ROWS_PER_CLASS+1)]),
-      ...SCHEMA_QUERIES.map(([label,sql])=>[label,
-        "SELECT to_jsonb(t)::text AS canonical FROM ("+sql+") t LIMIT "+(MAX_ROWS_PER_CLASS+1)]),
-    ];
-    for(const [label,sql] of queries){
+    for(const [label,sql] of financialDigestQueries()){
       // JS Date/JSON parsing would lose timestamp/numeric precision here.
       const rows=await client.query(sql);
       if(rows.rows.length>MAX_ROWS_PER_CLASS)

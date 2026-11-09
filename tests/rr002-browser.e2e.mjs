@@ -13,6 +13,7 @@ import {mkdir} from "node:fs/promises";
 import {resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {test} from "node:test";
+import {fixtureDatabaseUrl} from "../db/rr004-local-runtime.mjs";
 import {seedHistoricalCycleSettings} from "./helpers/settlement-history.mjs";
 
 const ONLY_DB="postgresql://test:test@localhost:5432/group_expense";
@@ -31,7 +32,7 @@ function guard(env=process.env){
 guard(); // MUST precede any DB connection, Next.js startup or browser load.
 const playwright=await import(pathToFileURL(process.env.RR002_PLAYWRIGHT_ENTRY).href);
 const pg=(await import("pg")).default;
-const pool=new pg.Pool({connectionString:ONLY_DB,max:4});
+const pool=new pg.Pool({connectionString:fixtureDatabaseUrl(),max:4});
 const port=3112;
 const password="RR002-synthetic-password-123!";
 const day=n=>{

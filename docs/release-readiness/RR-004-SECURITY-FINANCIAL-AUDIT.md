@@ -29,6 +29,14 @@ The complete final local round used Node 22.23.4 to match Vercel/CI 22.x. See [2
 
 ## Production dependency advisory scan — 2026-11-09
 
+### Current remediation and retest
+
+The resulting locked graph now has **329 dependencies, 0 moderate/high/critical and 1 low**. The registry audit still exits 1; no advisory is ignored. **F-07 is fixed and compatibility-tested** by overriding affected minimatch versions to 11.0.1, including real ts-morph source discovery/glob tests and both complete application profiles. **F-08 has a local mitigation, independent acceptance pending**: a pinned pnpm patch replaces destination assignments with own data-property definitions in all deepmerge entry files. The original returned-prototype poisoning was reproduced; malicious target/source/nested and ordinary merge/custom/array/symbol regressions now pass. The upstream version/advisory is still unresolved, so this is not a clean registry audit or universal sanitizer claim. [Detailed continuation results and sources](RR-2026-11-09-CONTINUATION-EVIDENCE.md).
+
+The [runtime role profile](RR-004-RUNTIME-ROLE.md) now passes actual independent TCP LOGIN permission-denial tests, full signed HTTP, all four browsers and eight finance audits with a separate non-owner application role. No shared/provider role or deployed credential was changed; live-role certification still remains pending. The [real managed historical baseline](RR-003-MANAGED-PITR-EVIDENCE.md) also passes 58 digest comparisons and eight independent audits per branch; positive managed finance fixtures and service acceptance remain pending.
+
+### Initial scan (historical; superseded by remediation above)
+
 `pnpm --config.manage-package-manager-versions=false audit --prod --json` scanned the existing locked production dependency graph, **328 dependencies**: **0 critical, 0 high, 1 moderate, 1 low**. Exit code **1** is retained as a non-clean audit, not converted to PASS. No dependency/lockfile was changed.
 
 - **F-07, moderate, unresolved:** `minimatch@10.2.6`, via `shadcn → ts-morph → @ts-morph/common`. [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) reports glob-pattern amplification; patched version is 11.0.1. A forced cross-major transitive override has not been compatibility-tested or applied.
@@ -36,14 +44,14 @@ The complete final local round used Node 22.23.4 to match Vercel/CI 22.x. See [2
 
 Source search found only the static `shadcn/tailwind.css` import, no application JS imports of these tools. The final Next build's `*.nft.json` traces contain no matching `deepmerge`, `minimatch` or `shadcn` package path. **Inference:** the observed exposure is the declared production dependency/build/tooling graph, with no demonstrated financial-request reachability. This does not establish that attacker input can never reach a future CLI/build invocation. Do not use untrusted registries/glob patterns with this tooling while unresolved; review an upstream-compatible update/removal or record a bounded risk acceptance. Moving packages to devDependencies solely to hide the scan is not remediation.
 
-Independent security review must explicitly dispose of F-07/F-08 before release; neither is claimed fixed or independently accepted.
+Independent security review must inspect F-07's update and explicitly dispose of F-08's remaining upstream advisory/local mitigation before release. No independent acceptance is claimed.
 
 ## Remaining release blockers
 
 1. **Independent reviewers:** accountable finance and security owners must review the actual final source, migrations, test evidence and exception list. No agent PASS can sign for them.
-2. **Runtime database authority:** read-only inspection of the isolated Neon connector role showed no superuser flag, but ownership of 51 public tables and CREATE in public. This attests the connector role only; deployed runtime credentials/role were not exported or verified. A table owner can disable triggers. Before release, demonstrate a separate non-owner runtime role without schema CREATE/ALTER/TRUNCATE or audit UPDATE/DELETE, retain a separately held migration role, and rerun role/HTTP tests. Schema hashes are not proof of ACLs, RLS, role memberships or provider policy parity.
-3. **Managed restore + monitoring:** historical provider restore, positive managed finance coverage, approved/measured RPO/RTO, external HTTPS fault/alert delivery and named operator acknowledgement remain pending.
+2. **Runtime database authority:** read-only inspection of the isolated Neon connector role showed no superuser flag, but ownership of 51 public tables and CREATE in public. This attests the connector role only; deployed runtime credentials/role were not exported or verified. A table owner can disable triggers. A complete separate non-owner profile now passes locally; the deployed role still needs confidential identity/ACL attestation and an approved application plan. Schema hashes are not proof of ACLs, RLS, role memberships or provider policy parity.
+3. **Managed restore + monitoring:** historical provider baseline recovery is PASS. Positive managed finance coverage, approved/service-measured RPO/RTO, external HTTPS fault/alert delivery and named operator acknowledgement remain pending.
 4. **Environment drift:** source includes 024; the isolated Neon child still has 23 migrations. Shared databases were not migrated or attested to this new source. Approval and a new child rehearsal are required before certifying 024 on Neon.
 5. **Devices and production gate:** physical-device/PWA/accessibility tests are owner-deferred, not passed. The financial engine is hard OFF and production activation/cohort enforcement is not implemented by this change.
 
-**Required human signatures:** security reviewer, finance reviewer and release owner; reviewed SHA or final source digest; date; findings accepted/rejected; explicit residual-risk decisions. All are PENDING. Security signoff must include the two unresolved dependency advisories.
+**Required human signatures:** security reviewer, finance reviewer and release owner; reviewed SHA or final source digest; date; findings accepted/rejected; explicit residual-risk decisions. All are PENDING. Security signoff must include the dependency override and remaining upstream advisory/local patch.
