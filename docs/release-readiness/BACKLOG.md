@@ -3,6 +3,7 @@
 **Feature branch:** `feat/settlement-cycles-bilateral` → Draft PR #16 against `develop`.
 **Scope:** verification and operational assurance **after** SC-010, not new settlement features.
 **Release status:** **NO-GO**. `SETTLEMENT_CYCLE_ENGINE_READY=false` is immutable for this track.
+**Latest owner instruction:** execute feature → develop/staging → main/production through PR review and merge; [execution record](RR-005-RELEASE-EXECUTION.md). This supersedes the historical no-deployment authorization statements, without certifying missing gates or activating the financial engine. Email remains deferred.
 **Protocol (owner request, 2026-11-09):** continue safely across RR-003–005 in one task; preserve separate approval boundaries for provider mutations, shared migrations, deployment, activation and independent signoff. Bind evidence to a clean commit or explicitly identified working-tree code digest.
 
 ## Existing implementation
