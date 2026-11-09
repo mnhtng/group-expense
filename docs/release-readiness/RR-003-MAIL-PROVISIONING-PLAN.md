@@ -1,6 +1,8 @@
 # Next mail action — Resend Free, isolated from application environments
 
-**Resend marketplace installation is verified on Free; the named sender-domain resource is waiting for an owned domain.** The owner selected email, supplied the private recipient and confirmed the Gmail channel drill. Marketplace discovery returned `resend/resend-email`; live billing metadata reports plan ID **`free`**, cost **0.00**, **no payment method required**, 3,000 emails/month and 100/day. Paid plans are excluded.
+**DEFERRED BY OWNER — 2026-11-09.** The owner explicitly requested skipping the email feature after confirming that only Gmail is available. Stop mail provisioning, account/key setup and drill sends. No domain or account input is requested. The notes below preserve the historical approved attempt; they are not instructions to resume it. Resuming email requires a new owner request.
+
+Resend marketplace installation was verified on Free; no named sender-domain resource or sending credential was created. The owner previously selected email, supplied the private recipient and confirmed the Gmail channel drill. Marketplace discovery returned `resend/resend-email`; live billing metadata reported plan ID **`free`**, cost **0.00**, **no payment method required**, 3,000 emails/month and 100/day. Paid plans are excluded.
 
 Original approved action: create one standalone Resend Free installation/resource named `rr003-ops-mail-20261109` in Vercel team `team_sVKg7rgJ5wX6UEaSTvKKgAk0`. Do **not connect it to the GroupExpense project**, do not pull project envs, do not auto-inject any email key into production/develop/preview, and do not accept a paid plan, preauthorization or upgrade.
 
@@ -28,4 +30,8 @@ The subsequent exact resource request stopped with **Missing required metadata: 
 
 The installed Free plan is verified independently from the CLI help's paid resource-plan suggestions. No paid plan fallback is allowed; recheck eligibility and stop before any paid selection. GroupExpense still has the same 20 env metadata entries, no Resend key was injected, and no sending credential has been retrieved. The email adapter has not been represented as live or complete without that credential/backend resource. Private installation receipt: `rr003-artifacts/2026-11-09-runtime-alerts/resend-installation-receipt.json`.
 
-**Next input:** owner supplies an existing domain under their control, or states that only Gmail is available so the supported test-only/alternative sender path can be assessed. Existing approval does not permit buying a domain or editing DNS. Any required DNS verification records must be reviewed under that separate boundary. Persistent monitor hosting/scheduling remains a separate unresolved dependency.
+## Owner decision superseding the pending action
+
+The owner confirmed Gmail-only availability and subsequently said to skip the email feature. Official [Resend test-domain guidance](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain) permits owner-inbox test sends without a custom domain, but that path was not activated. A read-only browser visit reached the Resend login page; no login, key creation or mail send followed. A private CLI SSO-link receipt is excluded from Git and must not be published.
+
+Retain the existing Free installation `icfg_J0I3yo7hfcdtAJL3H9okuSz1` with zero connected projects; no removal or billing change was requested. No Resend key was retrieved or injected into application environments. No further email setup is pending from the owner. The generic HTTPS monitor/outbox remains available, while hosted scheduling, external fault/recovery delivery and service RPO/RTO verification remain unresolved. Deferring email does not mark RR-003 PASS or waive its release gate.

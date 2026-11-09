@@ -1,6 +1,8 @@
 # RR-003 alert delivery and operator acknowledgement
 
-**Implemented and locally verified; hosted automatic email monitoring remains pending.** The owner chose email and explicitly confirmed receipt/reading of drill `1ad909cd-a633-4835-9e5d-af650dd822bb`. The recipient and Gmail receipt are retained privately, not in source. That was a single agent-invoked Gmail component test; it does not certify a scheduled monitor.
+**Generic monitor/outbox implemented and locally verified; email deferred by owner.** The owner previously chose email and explicitly confirmed receipt/reading of drill `1ad909cd-a633-4835-9e5d-af650dd822bb`. The recipient and Gmail receipt are retained privately, not in source. That was a single agent-invoked Gmail component test; it does not certify a scheduled monitor.
+
+**Latest owner decision — 2026-11-09:** skip the email feature. Email provisioning, credentials and further email drills are deferred; no domain/account setup is requested. The generic HTTPS monitoring/outbox code is retained. Hosted alert delivery and scheduling are still unverified, so RR-003 remains open.
 
 ## Probe and delivery authority
 
@@ -17,7 +19,7 @@ The application's GET-only `/api/internal/settlement-ops/status` and `/runtime` 
 - Delivery is FIFO with at-least-once retries using the same `Idempotency-Key`. The recipient must deduplicate by event ID. If the process fails after provider acceptance but before local persistence, duplicate receipt is possible.
 - Non-2xx, transport failure and timeout retain the unsent event. No redirect is followed. The outbox is bounded at 100 events; a full/corrupt state fails closed instead of silently dropping events.
 
-The current delivery transport is the reviewed HTTPS webhook contract. A persistent email service/adapter and scheduler have not been provisioned; the Gmail component test must not be presented as that backend. The existing Vercel project metadata has no email integration. The owner subsequently approved a standalone Resend Free installation with no project connection/env pull; terms acceptance and the Free installation are now verified, while the named sender-domain resource requires an owner-controlled domain before provisioning. [Exact pending action](RR-003-MAIL-PROVISIONING-PLAN.md). Before enabling scheduling, provision an approved mail-capable receiver/provider and prove actual probe → queued event → email → human acknowledgement → recovered email on the deployed candidate.
+The current delivery transport is the reviewed HTTPS webhook contract. An email adapter and scheduler have not been provisioned; the Gmail component test must not be presented as that backend. The standalone Resend installation is verified Free with zero connected projects, but no named resource or key exists. Email work is now deferred by owner; [historical attempt and stop decision](RR-003-MAIL-PROVISIONING-PLAN.md). Before enabling scheduling, select an approved delivery channel/host and prove actual probe → queued event → external notification → human acknowledgement → recovered notification on the deployed candidate. No replacement channel is activated by the email deferral.
 
 ## Operator commands (prepared; no external schedule enabled)
 
@@ -43,4 +45,4 @@ The owner approved **RPO ≤15 minutes and service RTO ≤60 minutes** on 2026-1
 
 The separately approved protected feature preview now returns runtime attestation 200 with the correct limited role and authenticated status 503 / NO_COMPLETED_CRON_RUN. OIDC machine access was exercised without a project-wide bypass; [managed proof](RR-004-MANAGED-RUNTIME-EVIDENCE.md). No Cron recovery action was included.
 
-Outstanding: mail service/receiver, persistent scheduler, external fault/recovery drill and service RPO/RTO acceptance. No staging/production deployment or engine activation is performed by this runbook.
+Outstanding: an approved external delivery channel/receiver, persistent scheduler, external fault/recovery drill and service RPO/RTO acceptance. Email implementation is deferred by owner. No staging/production deployment or engine activation is performed by this runbook.
