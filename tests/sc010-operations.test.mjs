@@ -99,7 +99,8 @@ test("SC-010 bearer-only operations are auditable, non-overlapping and never ena
   assert.match(runner,/classifyOpsOutcome/);
   assert.match(auth,/timingSafeEqual/);
   assert.match(auth,/CRON_SECRET/);
-  for(const handler of [route,health])assert.match(handler,/authorizedOpsRequest/);
+  assert.match(route,/authorizedOpsRequest/);
+  assert.match(health,/authorizedOpsReadRequest/);
   assert.match(route,/x-ops-replay-reason/);
   assert.match(route,/mode==="manual-replay"/);
   assert.match(route,/status:202/);

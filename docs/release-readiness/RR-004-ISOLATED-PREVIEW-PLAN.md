@@ -1,0 +1,20 @@
+# Reviewed next action: isolated runtime role and protected feature preview
+
+**Prepared, not authorized/executed.** The owner requested continuing readiness work. Earlier scoped approvals covered PITR and migration 024 only, so the resource/credential/deployment changes below need their own explicit decision. This is a technical verification preview, separate from RR-005 staging/production or financial activation.
+
+## Exact scope
+
+- Neon project `withered-salad-00928018`, existing recovered child **`br-noisy-river-b3ajidmw`**, database `group_expense`, existing compute `ep-snowy-art-b3vqd8qc` only. Source `br-curly-rice-b3xenws6`, development and production remain excluded.
+- Create fresh LOGIN **`rr004_app_20261109`** through the provider's scoped **read_only** role operation, never its default admin mode. Apply the [reviewable grant package](RR-004-ISOLATED-ROLE-GRANTS.sql) to replace current/future automatic grants with the tested explicit application matrix. This revokes PUBLIC schema CREATE/database TEMPORARY **on this recovered database only**; it is not suitable for blind application to a shared database.
+- Recheck no administrative flags/memberships, no ownership/DDL/temp/SECURITY DEFINER authority, explicit table/column privileges, no automatic future-object grants, and all 19 required immutable triggers on their correct tables. Fail closed if the provider cannot create a scoped non-admin login or if old/unexpected grants remain.
+- Capture all 58 data/schema digests before/after and run eight independent audits. Expected data/schema digests remain identical: grants/role ACLs are attested separately. No migration or financial/audit DML is included.
+- Vercel project **`prj_pBD9UtMAhNGFWh7Qmzskq90lVSC7`**, team `team_sVKg7rgJ5wX6UEaSTvKKgAk0`, **preview for `feat/settlement-cycles-bilateral` only**. Install four new branch-scoped preview secrets: `DATABASE_URL` for the new limited role, independent `BETTER_AUTH_SECRET`, `CRON_SECRET` and `OPS_READ_SECRET`. The read token differs from the Cron token. No migration-owner credential, existing secret export/rotation or test-only write flags. Refuse if these exact branch keys unexpectedly already exist.
+- Upload the committed local candidate as a new protected **preview**, using Node 22 and the existing locked pnpm build. No Git push/Actions run, production/develop alias assignment, promotion, staging or production deployment. Normal feature-preview alias assignment may point to this new feature preview. Existing SSO protection stays enabled.
+- Use the existing authenticated Vercel CLI for protected requests, with the dedicated app read token in an HTTP header. Do not turn off protection or create a project-wide automation bypass. If authenticated access cannot be established, record the blocker instead of broadening access.
+- Only read-only GET probes: unauthenticated/wrong-token denial; `/api/internal/settlement-ops/runtime` with expected role/connection fingerprints; `/status` with bounded alert codes. An empty operational log may legitimately return 503. No Cron POST, user signup, synthetic financial seeding or money request is included.
+
+## Cost and verification boundary
+
+Keep Neon Free and its existing 0.25-CU compute/default idle policy. Use existing Vercel allowance, no paid build machine, new plan, billing acceptance or quota purchase. Stop before any upgrade/paid resource requirement. Retain the created role and feature preview for review; deletion/reset/credential rotation is a separate deliberate action. No rollback by editing ledger/audit data.
+
+The current code has locally passed the non-owner build/HTTP/four-browser profile with the runtime endpoint, and both current/future privilege regressions. Candidate source identity and final standard-profile evidence are recorded with the commit. This preview can prove deployed runtime identity/permissions, but it does not by itself certify automated email scheduling, service RTO, positive managed finance fixtures, independent human review or production readiness.

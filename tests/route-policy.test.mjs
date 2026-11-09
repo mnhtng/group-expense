@@ -12,6 +12,7 @@ test("public entry points, Better Auth and cron remain available", () => {
   assert.equal(classifyRoute("/api/auth/sign-up/email"), "auth-api");
   assert.equal(classifyRoute("/api/internal/push-drain"), "internal-cron");
   assert.equal(classifyRoute("/api/internal/settlement-ops/status"), "internal-cron");
+  assert.equal(classifyRoute("/api/internal/settlement-ops/runtime"), "internal-cron");
 });
 test("future private routes default to protection; segment boundaries matter", () => {
   for (const path of ["/groups", "/groups/aaa/expenses/new", "/debts",

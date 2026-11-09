@@ -17,6 +17,11 @@ test('RR-004 real non-owner LOGIN cannot edit audit bodies, change money, run DD
     assert.deepEqual(identity,{role:name,login:name},'must be a real limited login, not SET ROLE on an owner session');
     const good=evaluateRuntimePrivileges(await readRuntimePrivileges(runtime));
     assert.equal(good.ok,true,JSON.stringify(good));
+    await owner.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "${name}"`);
+    assert.equal(evaluateRuntimePrivileges(await readRuntimePrivileges(runtime)).ok,false,
+      'future automatic grants require explicit review too');
+    await owner.query(buildRuntimeGrantSql(name));
+    assert.equal(evaluateRuntimePrivileges(await readRuntimePrivileges(runtime)).ok,true);
     for(const sql of [
       'CREATE TABLE rr004_denied(id integer)',
       'CREATE TEMP TABLE rr004_denied(id integer)',
@@ -36,12 +41,25 @@ test('RR-004 real non-owner LOGIN cannot edit audit bodies, change money, run DD
     assert.equal(evaluateRuntimePrivileges(await readRuntimePrivileges(runtime)).ok,false,
       'unexpected old column grants must be detected even without table-level UPDATE');
     await owner.query('REVOKE UPDATE(reason) ON group_settlement_cycle_disputes FROM "'+name+'"');
+    for(const [privilege,column] of [['INSERT','filename'],['REFERENCES','filename']]){
+      await owner.query(`GRANT ${privilege}(${column}) ON schema_migrations TO "${name}"`);
+      assert.equal(evaluateRuntimePrivileges(await readRuntimePrivileges(runtime)).ok,false,
+        'column-level authority cannot bypass the table privilege profile');
+      await owner.query(`REVOKE ${privilege}(${column}) ON schema_migrations FROM "${name}"`);
+    }
     await owner.query('ALTER TABLE group_settlement_bilateral_proposals DISABLE TRIGGER bn002_proposal_immutable');
     try{
       assert.ok(evaluateRuntimePrivileges(await readRuntimePrivileges(runtime)).blockerCodes
         .includes('IMMUTABLE_LOCK_GUARD_MISSING'));
     }finally{
       await owner.query('ALTER TABLE group_settlement_bilateral_proposals ENABLE TRIGGER bn002_proposal_immutable');
+    }
+    await owner.query('ALTER TABLE expense_events DISABLE TRIGGER rr004_expense_audit_no_truncate');
+    try{
+      assert.equal(evaluateRuntimePrivileges(await readRuntimePrivileges(runtime)).ok,false,
+        'legacy audit protections are required by the runtime profile too');
+    }finally{
+      await owner.query('ALTER TABLE expense_events ENABLE TRIGGER rr004_expense_audit_no_truncate');
     }
   }finally{
     await runtime.end();

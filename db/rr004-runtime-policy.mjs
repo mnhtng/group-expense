@@ -2,7 +2,7 @@
  * The role must already exist as a dedicated non-owner LOGIN. Provider role
  * creation, credential handling and applying these grants need approval.
  */
-import {FINANCIAL_CLASSES} from './rr003-restore-compare.mjs';
+import {FINANCIAL_CLASSES} from './financial-inventory.mjs';
 
 export const APPEND_ONLY_TABLES=Object.freeze([
   'expense_events','expense_completion_events','settlement_events',
@@ -36,9 +36,19 @@ export const COLUMN_UPDATES=Object.freeze({
   obligations:['voided_at'],settlements:['status','resolved_at','resolved_by'],
   notifications:['read_at'],
 });
-const lockGuards=['sc004_manifest_immutable','bn002_proposal_immutable',
+const guardNames=['sc004_manifest_immutable','bn002_proposal_immutable',
   'bn003_event_immutable','bn004_app_immutable','sc006_adjustment_guard',
   'sc009_dispute_guard','sc009_dispute_event_guard'];
+const guards=Object.entries(LOCK_COLUMNS).map(([table],i)=>({table_name:table,
+  trigger_name:guardNames[i],operations:16}));
+for(const [table,prefix] of [
+  ['expense_events','expense'],['expense_completion_events','completion'],
+  ['settlement_events','cash'],['group_membership_events','membership'],
+  ['group_note_events','note'],['group_settlement_config_events','config'],
+]){
+  guards.push({table_name:table,trigger_name:`rr004_${prefix}_audit_immutable`,operations:24});
+  guards.push({table_name:table,trigger_name:`rr004_${prefix}_audit_no_truncate`,operations:32});
+}
 export const RUNTIME_TABLES=Object.freeze([...FINANCIAL_CLASSES.map(x=>x[1]),'sc009_dispute_states']);
 const append=new Set(APPEND_ONLY_TABLES);
 const quote=name=>{
@@ -62,6 +72,8 @@ export function buildRuntimeGrantSql(roleName){
     `GRANT CONNECT ON DATABASE group_expense TO ${role};`,
     `REVOKE ALL ON SCHEMA public FROM ${role};`,
     `GRANT USAGE ON SCHEMA public TO ${role};`,
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM ${role};`,
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM ${role};`,
   ];
   for(const table of RUNTIME_TABLES){
     const t='public.'+quote(table),p=expectedRuntimePrivileges(table);
@@ -88,6 +100,7 @@ export function evaluateRuntimePrivileges(snapshot){
     ['ownsDatabase','DATABASE_OWNER'],['ownsObjects','OBJECT_OWNER'],
     ['schemaCreate','SCHEMA_CREATE'],['databaseCreate','DATABASE_CREATE'],
     ['temporary','TEMPORARY_OBJECTS'],['securityDefiners','EXECUTABLE_SECURITY_DEFINER'],
+    ['defaultObjectPrivileges','UNREVIEWED_FUTURE_OBJECT_GRANTS'],
   ])if(!r||typeof r[key]!=='boolean'||r[key])blockers.push(code);
   if(r?.lockGuardsPresent!==true)blockers.push('IMMUTABLE_LOCK_GUARD_MISSING');
   const tables=snapshot?.tables;
@@ -98,6 +111,8 @@ export function evaluateRuntimePrivileges(snapshot){
     const p=expectedRuntimePrivileges(t.table);
     if(['select','insert','update','delete'].some(k=>t[k]!==p[k])||
       t.truncate!==false||t.trigger!==false||t.references!==false||
+      !Array.isArray(t.insertColumns)||t.insertColumns.length!==0||
+      !Array.isArray(t.referenceColumns)||t.referenceColumns.length!==0||
       JSON.stringify([...(t.updateColumns??[])].sort())!==JSON.stringify([...p.columns].sort()))
       blockers.push('TABLE_PRIVILEGE_MISMATCH');
   }
@@ -118,10 +133,15 @@ export async function readRuntimePrivileges(client){
     has_database_privilege(current_user,current_database(),'TEMPORARY') AS temporary,
     EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace='public'::regnamespace AND prosecdef
       AND has_function_privilege(current_user,oid,'EXECUTE')) AS "securityDefiners",
-    (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
-      WHERE c.relnamespace='public'::regnamespace AND t.tgname=ANY($1::text[])
-        AND t.tgenabled IN('O','A') AND (t.tgtype::int & 16)<>0)=$2::int AS "lockGuardsPresent"
-    FROM pg_roles r WHERE r.rolname=current_user`,[lockGuards,lockGuards.length])).rows[0];
+    EXISTS(SELECT 1 FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+      WHERE a.grantee=r.oid AND d.defaclnamespace IN(0,'public'::regnamespace)) AS "defaultObjectPrivileges",
+    NOT EXISTS(SELECT 1 FROM jsonb_to_recordset($1::jsonb)
+      AS expected(table_name text,trigger_name text,operations int)
+      WHERE NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+        WHERE c.relnamespace='public'::regnamespace AND c.relname=expected.table_name
+          AND t.tgname=expected.trigger_name AND t.tgenabled IN('O','A')
+          AND (t.tgtype::int & expected.operations)=expected.operations)) AS "lockGuardsPresent"
+    FROM pg_roles r WHERE r.rolname=current_user`,[JSON.stringify(guards)])).rows[0];
   const tables=(await client.query(`SELECT c.relname AS table,
     has_table_privilege(current_user,c.oid,'SELECT') AS select,
     has_table_privilege(current_user,c.oid,'INSERT') AS insert,
@@ -130,6 +150,14 @@ export async function readRuntimePrivileges(client){
     has_table_privilege(current_user,c.oid,'TRUNCATE') AS truncate,
     has_table_privilege(current_user,c.oid,'TRIGGER') AS trigger,
     has_table_privilege(current_user,c.oid,'REFERENCES') AS references,
+    CASE WHEN has_table_privilege(current_user,c.oid,'INSERT') THEN ARRAY[]::text[]
+      ELSE ARRAY(SELECT a.attname::text FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0
+        AND NOT a.attisdropped AND has_column_privilege(current_user,c.oid,a.attnum,'INSERT') ORDER BY a.attname)
+      END AS "insertColumns",
+    CASE WHEN has_table_privilege(current_user,c.oid,'REFERENCES') THEN ARRAY[]::text[]
+      ELSE ARRAY(SELECT a.attname::text FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0
+        AND NOT a.attisdropped AND has_column_privilege(current_user,c.oid,a.attnum,'REFERENCES') ORDER BY a.attname)
+      END AS "referenceColumns",
     CASE WHEN has_table_privilege(current_user,c.oid,'UPDATE') THEN ARRAY[]::text[]
       ELSE ARRAY(SELECT a.attname::text FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0
         AND NOT a.attisdropped AND has_column_privilege(current_user,c.oid,a.attnum,'UPDATE') ORDER BY a.attname)

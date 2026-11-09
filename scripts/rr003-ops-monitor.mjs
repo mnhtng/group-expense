@@ -101,7 +101,7 @@ if(invoked){
       const result=await pollOpsMonitor({
         statusUrl:process.env.RR003_STATUS_URL,
         approvedHost:process.env.RR003_APPROVED_HOST,
-        secret:process.env.CRON_SECRET,
+        secret:process.env.OPS_READ_SECRET??process.env.CRON_SECRET,
       });
       // Only bounded operational signal codes; never echo URLs or bearer.
       console.log(JSON.stringify(result));

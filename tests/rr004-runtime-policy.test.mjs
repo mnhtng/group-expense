@@ -4,17 +4,19 @@ import {RUNTIME_TABLES,expectedRuntimePrivileges,evaluateRuntimePrivileges,
   buildRuntimeGrantSql} from '../db/rr004-runtime-policy.mjs';
 const valid=()=>({role:{login:true,superuser:false,createRole:false,createDb:false,
   replication:false,bypassRls:false,memberships:0,ownsDatabase:false,ownsObjects:false,
-  schemaCreate:false,databaseCreate:false,temporary:false,securityDefiners:false,lockGuardsPresent:true},
+  schemaCreate:false,databaseCreate:false,temporary:false,securityDefiners:false,
+  defaultObjectPrivileges:false,lockGuardsPresent:true},
   tables:RUNTIME_TABLES.map(table=>{const p=expectedRuntimePrivileges(table);return {
     table,select:p.select,insert:p.insert,update:p.update,delete:p.delete,
-    updateColumns:p.columns,truncate:false,trigger:false,references:false};})});
+    updateColumns:p.columns,insertColumns:[],referenceColumns:[],
+    truncate:false,trigger:false,references:false};})});
 test('RR-004 dedicated runtime profile cannot certify a release or live deployment',()=>{
   const r=evaluateRuntimePrivileges(valid());assert.equal(r.ok,true);
   assert.equal(r.liveRoleCertified,false);assert.equal(r.releaseDecision,'NO-GO');
 });
 test('RR-004 rejects owner/admin, memberships, DDL/temp, unsafe functions and missing guards',()=>{
   for(const key of ['superuser','createRole','createDb','replication','bypassRls','ownsDatabase',
-    'ownsObjects','schemaCreate','databaseCreate','temporary','securityDefiners']){
+    'ownsObjects','schemaCreate','databaseCreate','temporary','securityDefiners','defaultObjectPrivileges']){
     for(const value of [true,undefined,null]){
       const s=valid();s.role[key]=value;assert.equal(evaluateRuntimePrivileges(s).ok,false,key);
     }
@@ -28,7 +30,7 @@ test('RR-004 rejects owner/admin, memberships, DDL/temp, unsafe functions and mi
 test('RR-004 rejects missing tables, audit editing, immutable column escalation and TRUNCATE',()=>{
   const missing=valid();missing.tables.pop();assert.equal(evaluateRuntimePrivileges(missing).ok,false);
   for(const patch of [{update:true},{delete:true},{truncate:true},{trigger:true},{references:true},
-    {updateColumns:['id','reason']}]){
+    {updateColumns:['id','reason']},{insertColumns:['reason']},{referenceColumns:['id']}]){
     const s=valid();Object.assign(s.tables.find(t=>t.table==='group_settlement_cycle_disputes'),patch);
     assert.equal(evaluateRuntimePrivileges(s).ok,false);
   }

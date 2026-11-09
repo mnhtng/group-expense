@@ -16,7 +16,8 @@ function routeIs(path: string, root: string): boolean {
 export function classifyRoute(pathname: string): RouteKind {
   if (routeIs(pathname, "/api/auth")) return "auth-api";
   if (pathname === "/api/internal/push-drain" ||
-      pathname === "/api/internal/settlement-ops/status") return "internal-cron";
+      pathname === "/api/internal/settlement-ops/status" ||
+      pathname === "/api/internal/settlement-ops/runtime") return "internal-cron";
   if (routeIs(pathname, "/api")) return "private-api";
 
   if (

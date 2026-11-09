@@ -41,7 +41,7 @@ Private local receipt, manifests and count-only audits are in ignored `rr003-art
 - Independent source/restored finance audit completion was **273 seconds** after that start.
 - Recovered state predates the action start by **770 seconds / 12m50s**. **Zero observed baseline row/hash differences** is not a promise of zero RPO under continuing writes. This source was quiescent and sparse.
 
-These are measured **database drill intervals**, not full application/service RTO. There was no declared production incident, restored web deployment, client cutover or independently witnessed service acceptance. The proposed RPO ≤15m / RTO ≤60m policy has **not** been approved or certified.
+These are measured **database drill intervals**, not full application/service RTO. There was no declared production incident, restored web deployment, client cutover or independently witnessed service acceptance. At drill time, the RPO/RTO policy was unapproved. The owner subsequently approved **RPO ≤15m / service RTO ≤60m**; compliance still has not been certified by a full-service drill.
 
 ## Cost, retained resources and limits
 

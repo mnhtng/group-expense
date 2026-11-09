@@ -9,9 +9,9 @@
 - Runtime must have no superuser, CREATE ROLE/DB, replication, BYPASSRLS or role memberships; no database/public-object ownership, schema CREATE, database CREATE or TEMPORARY privileges; no executable public SECURITY DEFINER functions.
 - Explicit table/view inventory, read-only migration history/views, INSERT-only source/allocation/event documents, and only necessary mutable-table operations. No TRUNCATE, TRIGGER or REFERENCES privileges.
 - Original obligation UPDATE is limited to `voided_at`; CASH header UPDATE to status/resolution fields; notification UPDATE to `read_at`. Runtime cannot change original obligation or CASH amounts through direct SQL.
-- `SELECT FOR UPDATE` requires UPDATE privilege even on immutable documents. For seven locked audit/document tables, only an identifier column is granted; existing immutable triggers reject actual UPDATE. The evaluator checks those guards remain enabled and rejects unexpected UPDATE column grants. No trigger security was weakened to get application tests passing.
+- `SELECT FOR UPDATE` requires UPDATE privilege even on immutable documents. For seven locked audit/document tables, only an identifier column is granted; existing immutable triggers reject actual UPDATE. The evaluator now checks all **19** required immutable guards on their correct tables (including migration 024), rejects unexpected UPDATE/INSERT/REFERENCES column grants, and rejects automatic future-object grants. No trigger security was weakened to get application tests passing.
 
-Table-level REVOKE does not erase old column grants. The policy resets its reviewed grants and the evaluator rejects any unexpected legacy UPDATE column grant; provision a **fresh** role or separately review/revoke old grants. The policy also revokes PUBLIC schema CREATE and database TEMPORARY, which can affect other clients of a shared database. Applying it outside the disposable environment requires an explicit reviewed role/branch plan.
+Table-level REVOKE does not erase old column grants. The policy resets its reviewed grants/current-owner default table/sequence grants and the evaluator rejects unexpected legacy column or future-object grants; provision a **fresh** role or separately review/revoke old grants. The policy also revokes PUBLIC schema CREATE and database TEMPORARY, which can affect other clients of a shared database. Applying it outside the disposable environment requires an explicit reviewed role/branch plan.
 
 ## Real verification, not SET ROLE simulation
 
@@ -26,3 +26,12 @@ The complete application profile uses a **different database owner** (`rr004_own
 ## What remains
 
 No shared/provider role, credential or environment variable was created/rotated. Deployed runtime role identity and actual live ACLs still require confidential provider verification. Applying this plan needs separate branch/role authorization and a rollback/compatibility review. Table ACLs complement application user/actor authorization; they do not implement per-user RLS or defend against a migration owner deliberately replacing trusted functions/triggers. Keep the migration owner's credentials separate from runtime and review future schema additions/grants explicitly. This profile is not independent human financial/security signoff.
+
+
+## Runtime endpoint and isolated preview preparation
+
+The source now adds Bearer-protected, read-only `GET /api/internal/settlement-ops/runtime` using the **same pool/login as the application**. It returns privilege blocker codes, fingerprints of current/session roles and the endpoint/database pair, and deployment SHA when supplied by Vercel. It never returns raw role names, database URLs or schema rows. HTTP 200 means the tested ACL profile and same-login check pass; 503 is returned for an owner/unsafe profile or unavailable read. Migration-owner credentials must never be installed in the application environment. This is an authenticated point-in-time attestation, not an independent approval or a replacement for matching schema/migration evidence.
+
+The complete non-owner profile passes this endpoint; the ordinary owner profile is rejected. Missing legacy guards, unexpected column INSERT/REFERENCES/UPDATE grants and automatic default privileges are exercised with real SQL and detected. The new shared inventory module avoids importing migration/CLI filesystem code into the Next server bundle.
+
+[Exact next role/preview package](RR-004-ISOLATED-PREVIEW-PLAN.md) is prepared for separate approval. Vercel metadata inspection found no branch-specific feature-preview envs; existing DB/secret entries target production and preview `develop`. No existing values were decrypted/exported. READY feature preview metadata is still from the older remote SHA and cannot certify this endpoint or the candidate's runtime role.

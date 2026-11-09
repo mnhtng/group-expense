@@ -33,6 +33,8 @@ Performed via the connected Neon provider API, not inferred from a local Postgre
 
 **Important tool capability constraint observed:** The connected Neon `restore_snapshot` action requires a real `snapshot_id`, but `list_snapshots` currently returned **zero**. The separate `create_branch` action clones a parent's **current HEAD**, not a specified older point. Therefore **neither action can currently demonstrate recovery to a chosen past timestamp** with the available snapshot inventory. Do not create a HEAD clone and call it PITR. An operator must first verify eligible historical restore/snapshot functionality on this Free-plan project and obtain an approved restorable snapshot ID or an explicitly supported historical-restore API; snapshot creation or upgrading a plan is a separate authorized action. Never call `finalize_branch_restore` (it can swap names/reassign computes).
 
+**Latest owner decision (2026-11-09): RPO ≤15 minutes and service RTO ≤60 minutes are approved targets.** The earlier database-only drill does not prove service compliance. Email channel receipt/reading was explicitly acknowledged for the one-off drill; automatic monitoring remains pending. [Delivery implementation and evidence](RR-003-ALERT-DELIVERY.md).
+
 **Risk:** With a history window of only 6h, a corruption detected later than 6h may no longer have a restorable historical point unless some independently verified backup exists. User or accountable operator must declare acceptable RPO/RTO before any release claim, and decide whether the Free-plan retention and lack of snapshots meet the actual business risk; no policy target is invented by this ticket.
 
 ## 2. Read-only tooling implemented
@@ -98,7 +100,7 @@ RR003_MONITOR_RUN=approved-read-only node scripts/rr003-ops-monitor.mjs
 | Project/branches/history inventory | **READ-ONLY COMPLETE** | Live Neon metadata reviewed, 6h history, three branches |
 | Current schema and original record counts | **READ-ONLY COMPLETE** | Isolated child: 23 migrations, 2 expenses/2 obligations, no Cron runs |
 | Snapshot backup strategy | **BLOCKED** | Snapshot availability/plan, retention adequacy, separate approval for changes |
-| RPO/RTO operational targets | **UNDECLARED** | Human owner sets required RPO/RTO based on business impact |
+| RPO/RTO operational targets | **OWNER APPROVED: RPO ≤15m / service RTO ≤60m** (2026-11-09) | Full-service recovery/continuing-write verification still pending |
 | Provider PITR restore | **NOT EXECUTED** | Specifically approved new child, provider receipt and proof of historical point |
 | Financial restore conservation | **NOT EXECUTED** | 58-check exact comparison on actual restored branch + independent finance audit |
 | Live 200/503 + external alert/acknowledgement | **NOT EXECUTED** | Approved HTTPS target, protected monitor, controlled fault and delivery evidence |

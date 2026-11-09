@@ -10,6 +10,7 @@ import {pollOpsMonitor} from "../scripts/rr003-ops-monitor.mjs";
 const port = 3101;
 const origin = `http://127.0.0.1:${port}`;
 const pollIntervalMs = 600;
+const opsReadSecret="synthetic-read-only-monitor-secret-for-http-regression";
 
 async function waitForReady(server, timeoutMs = 25_000) {
   const expires = Date.now() + timeoutMs;
@@ -77,7 +78,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
   const server = spawn(
     process.execPath,
     ["node_modules/next/dist/bin/next", "start", "-p", String(port)],
-    { env: { ...process.env, BETTER_AUTH_URL: origin }, stdio: "ignore" },
+    { env: { ...process.env, BETTER_AUTH_URL: origin,OPS_READ_SECRET:opsReadSecret }, stdio: "ignore" },
   );
   const pool = new pg.Pool({ connectionString: fixtureDatabaseUrl() });
   try {
@@ -112,6 +113,35 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       "public push worker must bypass authentication");
     assert.equal((await fetch(`${origin}/offline.html`)).status,200,
       "public offline fallback must bypass authentication");
+
+    const runtimeUrl=`${origin}/api/internal/settlement-ops/runtime`;
+    assert.equal((await fetch(runtimeUrl)).status,401);
+    assert.equal((await fetch(runtimeUrl,{headers:{authorization:"Bearer wrong-token"}})).status,401);
+    const runtimeReport=await fetch(runtimeUrl,{
+      headers:{authorization:`Bearer ${process.env.CRON_SECRET}`},
+    });
+    const limited=Boolean(process.env.RR004_FIXTURE_DATABASE_URL);
+    assert.equal(runtimeReport.status,limited?200:503,
+      "actual application login must pass only in the non-owner profile");
+    assert.equal(runtimeReport.headers.get("cache-control"),"private, no-store");
+    const attestation=await runtimeReport.json();
+    assert.equal(attestation.ok,limited);
+    assert.equal(attestation.roleFingerprint,createHash("sha256").update("test").digest("hex"));
+    assert.equal(attestation.loginFingerprint,attestation.roleFingerprint);
+    assert.equal(attestation.connectionFingerprint,
+      createHash("sha256").update(JSON.stringify(["localhost","group_expense"])).digest("hex"));
+    assert.equal(attestation.financialEngineReady,false);
+    assert.equal(attestation.releaseDecision,"NO-GO");
+    assert.ok(!JSON.stringify(attestation).includes(process.env.DATABASE_URL));
+    assert.equal((await fetch(runtimeUrl,{method:"POST"})).status,405);
+    assert.equal((await fetch(runtimeUrl,{headers:{authorization:`Bearer ${opsReadSecret}`}})).status,
+      limited?200:503);
+    assert.equal((await fetch(`${origin}/api/internal/settlement-ops/status`,{
+      headers:{authorization:`Bearer ${opsReadSecret}`},
+    })).status,503,"empty local operational history is observable with the read-only token");
+    assert.equal((await fetch(`${origin}/api/internal/push-drain`,{
+      method:"POST",headers:{authorization:`Bearer ${opsReadSecret}`,"x-ops-replay-reason":"retry"},
+    })).status,401,"monitor token must never authorize Cron or replay writes");
 
     const forgedCookie=await fetch(`${origin}/groups`,{
       headers:{cookie:"better-auth.session_token=forged"},

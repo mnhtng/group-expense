@@ -118,6 +118,12 @@ The costly RR-002 PR workflow is now `pull_request: types: [labeled]`; only addi
 
 The owner subsequently approved **024 only on recovered child `br-noisy-river-b3ajidmw`**. It now has **24/24 matching migration checksums**, 12 enabled audit triggers, 55 unchanged digest classes and exactly three expected schema/log changes. Repeat is a 58/58 unchanged no-op; all eight financial audits pass. Source remains at **23**, with 58/58 unchanged hashes. See [024 managed migration evidence](RR-001-024-NEON-MIGRATION-EVIDENCE.md). Runtime least-privilege grants are implemented and fully exercised locally, not installed or certified on a deployed Neon login. Dependency remediation removes the moderate minimatch finding and patches the reproduced deepmerge defect; the registry still reports **one low** upstream advisory, with independent patch/risk acceptance pending. External monitor delivery/operator acknowledgement, service RPO/RTO, positive managed finance fixtures, physical-device acceptance and independent human signatures remain unresolved. **Release NO-GO; PR Draft; engine OFF.**
 
+### Runtime/alert continuation and owner decisions
+
+The next source adds a protected runtime attestation endpoint, a dedicated read-only monitor token that cannot POST Cron, stricter current/future/column ACL and 19-trigger checks, and a persistent alert outbox with retry, escalation, manual acknowledgement and recovery events. [Alert delivery implementation](RR-003-ALERT-DELIVERY.md) · [runtime role profile](RR-004-RUNTIME-ROLE.md). A one-off email drill was sent through connected Gmail and the owner explicitly confirmed receipt/reading; **automatic hosted email monitoring is still pending**. The owner has now approved **RPO ≤15m and service RTO ≤60m** as targets, with service compliance still unverified.
+
+[The isolated role + protected feature-preview package](RR-004-ISOLATED-PREVIEW-PLAN.md) is concrete and reviewable; it requires new scoped resource/deployment permission. Existing PITR/024 approvals do not authorize role/ACL changes or a new deployment. No shared credential values were exported, no new Neon role or Vercel environment was mutated, and no preview/staging/production deployment was performed by this continuation at this point.
+
 ### Initial takeover observations (historical; superseded above)
 
 [Local source-bound evidence](RR-2026-11-09-LOCAL-EVIDENCE.md) · [RR-004 findings and acceptance](RR-004-SECURITY-FINANCIAL-AUDIT.md) · [RR-005 decision/approval package](RR-005-RELEASE-DECISION.md).
