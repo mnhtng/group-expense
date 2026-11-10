@@ -26,7 +26,7 @@ Repository: `mnhtng/group-expense`; Vercel team `team_sVKg7rgJ5wX6UEaSTvKKgAk0`,
 
 ## Status
 
-Execution in progress; migration authorization review is blocking deployment. Hardware tests, independent security/finance signoff, hosted external alerting and full-service RPO/RTO certification remain unverified.
+Execution in progress under the owner's subsequent direct approval of the entire concrete migration/runtime/publishing/PR package. The previous automatic-review blockers are resolved for that scope. Hardware tests, independent security/finance signoff, hosted external alerting and full-service RPO/RTO certification remain unverified.
 
 ## Actual receipts before migration
 
@@ -58,3 +58,13 @@ The combined local commit + feature push command was also rejected before execut
 - Apply only pending versioned SQL: 007–024 on rehearsal `br-sparkling-sea-b3uowbgf`; 011–024 on staging `br-dry-poetry-b31cudmb`; then 007–024 on production `br-round-salad-b39y4yce`. DB is `group_expense` throughout. All prior checksums, original-column hashes and eight finance audits must pass; keep the two pre-migration backups intact. A failed preservation check stops the corresponding rollout.
 - Create limited app logins `rr005_staging_app_20261109` and `rr005_production_app_20261109` on their respective target branches; use the current explicit runtime grant matrix. Set only each matching Vercel environment's pooled `DATABASE_URL`, remove its runtime `DATABASE_URL_DIRECT`, and add a distinct `OPS_READ_SECRET`. Preserve Better Auth/VAPID/Cron secrets and existing sessions; migration credentials stay outside runtime.
 - Review/merge feature → develop, verify staging, then review/merge develop → main and verify production. No branch protection bypass, paid upgrade, email send or financial-engine activation.
+
+## Approved execution receipts — rehearsal and staging schema/runtime
+
+The owner directly approved the entire package above, including publishing the non-secret operational metadata to the public repository. Rehearsal **007–024 applied atomically** on the named production clone; all 24 source checksums match, all 20 original-table hashes match, eight finance audits have zero violations, and the repeated migration inventory/checksum verification is a no-op.
+
+Staging **011–024 applied atomically** on its named development branch. All 24 checksums match, eight finance audits are zero, and all **16 original financial/business tables** match their original-column baseline. Automatic review required narrowing subsequent comparisons to exclude authentication, user profiles, verification, push credentials, invitation token hashes and push-job diagnostics. The final staging assertion returns only a preservation boolean; it does not return these sensitive fields or hashes. Preserve this narrower scope when reporting acceptance; the excluded tables were not independently rehashed.
+
+Created `rr005_staging_app_20261109` as scoped read-only first, then applied the reviewed explicit grants in one transaction. Real-role catalog evaluation PASS: 53 table/view profiles, 19 guards, no ownership/admin/membership/DDL/temp/security-definer/future broad grants. Staging-only `DATABASE_URL` now uses the limited pooled login; staging-only `OPS_READ_SECRET` is new and distinct. Removed only staging's `DATABASE_URL_DIRECT` from runtime. The other 18 env metadata entries, including existing auth/VAPID/Cron, production and feature-preview entries, are unchanged; SSO and production branch `main` remain unchanged. No original owner credential was exported.
+
+Staging application deployment and production steps are still pending; these schema/ACL receipts alone do not establish a successful deployed application.
