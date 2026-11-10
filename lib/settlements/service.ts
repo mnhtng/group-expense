@@ -74,7 +74,7 @@ async function memberGate(client:PoolClient, groupId:string, actorId:string) {
   );
   if (!g.rowCount) throw new SettlementError(404, "Không tìm thấy nhóm.");
   const m = await client.query(
-    "SELECT 1 FROM group_members WHERE group_id=$1 AND user_id=$2", [groupId,actorId],
+    "SELECT 1 FROM group_members WHERE group_id=$1 AND user_id=$2 AND status='active'", [groupId,actorId],
   );
   if (!m.rowCount) throw new SettlementError(404, "Không tìm thấy nhóm.");
 }
@@ -93,15 +93,15 @@ export async function createSettlement(groupId:string, actorId:string, raw:Creat
     }
     const ids=input.allocations.map(a=>a.obligationId);
     const rows=await client.query<{id:string;debtor_id:string;creditor_id:string;amount_minor:string;
-      voided_at:string|null;confirmed_minor:string;pending_minor:string}>(
+      voided_at:string|null;confirmed_minor:string;confirmed_cash_minor:string;confirmed_setoff_minor:string;pending_minor:string}>(
       `SELECT o.id,o.debtor_id,o.creditor_id,o.amount_minor::text,o.voided_at,
-         COALESCE((SELECT SUM(sa.amount_minor) FROM settlement_allocations sa
-           JOIN settlements s ON s.id=sa.settlement_id
-           WHERE sa.obligation_id=o.id AND s.status='confirmed'),0)::text AS confirmed_minor,
-         COALESCE((SELECT SUM(sa.amount_minor) FROM settlement_allocations sa
-           JOIN settlements s ON s.id=sa.settlement_id
-           WHERE sa.obligation_id=o.id AND s.status='pending'),0)::text AS pending_minor
-       FROM obligations o JOIN expenses e ON e.id=o.expense_id
+         (bal.confirmed_cash_minor+bal.confirmed_setoff_minor)::text AS confirmed_minor,
+         bal.confirmed_cash_minor::text AS confirmed_cash_minor,
+         bal.confirmed_setoff_minor::text AS confirmed_setoff_minor,
+         bal.pending_cash_minor::text AS pending_minor
+       FROM obligations o JOIN bn005_obligation_balances bal
+         ON bal.obligation_id=o.id
+       JOIN expenses e ON e.id=o.expense_id
        WHERE o.group_id=$1 AND o.id=ANY($2::uuid[]) AND o.voided_at IS NULL
          AND e.deleted_at IS NULL ORDER BY o.id FOR UPDATE OF o`,
       [groupId,ids],
@@ -114,7 +114,10 @@ export async function createSettlement(groupId:string, actorId:string, raw:Creat
       throw new SettlementError(403,"Chỉ hai bên liên quan được báo thanh toán.");
     const amounts=new Map(input.allocations.map(a=>[a.obligationId,BigInt(a.amountMinor)]));
     for(const row of rows.rows) {
-      const available=BigInt(row.amount_minor)-BigInt(row.confirmed_minor)-BigInt(row.pending_minor);
+      const available=BigInt(row.amount_minor)-BigInt(row.confirmed_cash_minor)-
+        BigInt(row.confirmed_setoff_minor)-BigInt(row.pending_minor);
+      if(available<0n)throw new SettlementError(409,
+        "Sổ công nợ không hợp lệ: tiền đã xác nhận hoặc giữ chỗ vượt nợ gốc.");
       if ((amounts.get(row.id)??0n)>available)
         throw new SettlementError(409,"Tiền yêu cầu vượt số dư khả dụng; đã có khoản đang chờ hoặc đã trả.");
     }
@@ -188,13 +191,13 @@ const selectSettlement=`
   JOIN "user" d ON d.id=s.debtor_id JOIN "user" c ON c.id=s.creditor_id
   JOIN groups g ON g.id=s.group_id AND g.archived_at IS NULL
   WHERE EXISTS(SELECT 1 FROM group_members m
-    WHERE m.group_id=s.group_id AND m.user_id=$1)
+    WHERE m.group_id=s.group_id AND m.user_id=$1 AND m.status='active')
 `;
 export async function listGroupSettlements(groupId:string,actorId:string):Promise<SettlementRow[]|null> {
   if(!validUUID(groupId)) return null;
   const gate=await pool.query(
     `SELECT 1 FROM group_members m JOIN groups g ON g.id=m.group_id
-     WHERE g.id=$1 AND m.user_id=$2 AND g.archived_at IS NULL`,[groupId,actorId]);
+     WHERE g.id=$1 AND m.user_id=$2 AND m.status='active' AND g.archived_at IS NULL`,[groupId,actorId]);
   if(!gate.rowCount)return null;
   const rows=await pool.query<SettlementRow>(
     selectSettlement+" AND s.group_id=$2 ORDER BY (s.status='pending') DESC,s.created_at DESC LIMIT 150",

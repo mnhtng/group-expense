@@ -25,27 +25,27 @@ export function SettlementRequestForm({groupId,debtId,availableMinor,direction}:
       if(!response.ok){setError(result.error??"Không thể tạo yêu cầu.");return;}
       router.push(`/groups/${groupId}/settlements/${result.id}`);
       router.refresh();
-    }catch{setError("Lỗi kết nối. Thử lại với cùng yêu cầu để tránh tạo trùng.");}
+    }catch{setError("Mất kết nối. Thử lại để kiểm tra trạng thái.");}
     finally{setSaving(false)}
   }
   if(BigInt(availableMinor)===0n)return <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">
-    Khoản nợ không còn số dư khả dụng (đã được thanh toán hoặc đang chờ xác nhận).
+    Khoản này đã thanh toán hoặc đang chờ xác nhận.
   </p>;
   return <form onSubmit={submit} className="space-y-3 rounded-2xl border bg-card p-4">
     <h2 className="font-semibold">{direction==="debtor"?"Thông báo đã trả":"Thông báo đã nhận tiền"}</h2>
-    <p className="text-xs text-muted-foreground">Giao dịch sẽ chỉ trừ nợ sau khi bên còn lại xác nhận.</p>
+    <p className="text-xs text-muted-foreground">Công nợ chỉ giảm sau khi bên kia xác nhận.</p>
     <label className="block text-sm">Số tiền (VND)
       <input required inputMode="numeric" pattern="[1-9][0-9]*" value={amount}
         onChange={e=>{setAmount(e.target.value.trim());requestKey.current=null;}}
         className="mt-1 w-full rounded-xl border bg-background p-3 text-base"/>
     </label>
-    <label className="block text-sm">Ghi chú
+    <label className="block text-sm">Ghi chú (không bắt buộc)
       <textarea maxLength={500} value={note} onChange={e=>{setNote(e.target.value);requestKey.current=null;}}
         className="mt-1 w-full rounded-xl border bg-background p-3" rows={2}/>
     </label>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <button disabled={saving} className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-      {saving?"Đang gửi...":"Gửi yêu cầu xác nhận"}
+      {saving?"Đang gửi...":"Gửi yêu cầu"}
     </button>
   </form>;
 }

@@ -27,6 +27,8 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-money-in: var(--money-in);
+  --color-money-out: var(--money-out);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -64,6 +66,8 @@
   --accent: oklch(0.96 0.002 17.2);
   --accent-foreground: oklch(0.214 0.009 43.1);
   --destructive: oklch(0.577 0.245 27.325);
+  --money-in: oklch(0.49 0.19 150);
+  --money-out: oklch(0.52 0.23 27);
   --border: oklch(0.922 0.005 34.3);
   --input: oklch(0.922 0.005 34.3);
   --ring: oklch(0.714 0.014 41.2);
@@ -99,6 +103,8 @@
   --accent: oklch(0.268 0.011 36.5);
   --accent-foreground: oklch(0.986 0.002 67.8);
   --destructive: oklch(0.704 0.191 22.216);
+  --money-in: oklch(0.78 0.19 150);
+  --money-out: oklch(0.75 0.20 27);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.547 0.021 43.1);
@@ -135,3 +141,86 @@
     @apply font-sans;
   }
 }
+
+/* Shared native-feeling mobile layout. Safe area applies to installed PWAs.
+   Do not add a second px-* / py-* class on .app-page instances. */
+@layer components {
+  .app-shell {
+    --app-tabbar-content-height: 76px;
+    --app-tabbar-safe-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    min-height: 100dvh;
+    padding-bottom: calc(var(--app-tabbar-content-height) + var(--app-tabbar-safe-bottom) + 28px);
+  }
+
+  .app-page {
+    width: 100%;
+    max-width: 42rem;
+    margin-inline: auto;
+    padding-left: max(24px, env(safe-area-inset-left, 0px));
+    padding-right: max(24px, env(safe-area-inset-right, 0px));
+    padding-top: max(24px, calc(env(safe-area-inset-top, 0px) + 14px));
+    padding-bottom: 28px;
+  }
+
+  .app-shell button:not(:disabled),
+  .app-shell a {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .app-shell button {
+    min-height: 44px;
+  }
+
+  .app-shell input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  .app-shell select,
+  .app-shell textarea {
+    min-height: 48px;
+    font-size: 16px; /* avoids iOS Safari zooming the viewport on focus */
+  }
+
+  .app-shell :is(button, a, input, select, textarea):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+}
+
+@media (min-width: 640px) {
+  .app-page {
+    padding-left: max(32px, env(safe-area-inset-left, 0px));
+    padding-right: max(32px, env(safe-area-inset-right, 0px));
+    padding-top: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Do not hide the fixed bottom navigation when focus changes.
+   Focus can move from a consent checkbox to a button BETWEEN pointerdown
+   and pointerup. Showing a z-40 nav at that instant intercepts the release
+   event, so the button never receives click (RR-002 root cause). The shell
+   reserves sufficient space below content for the stable nav. */
+
+@layer components {
+  .app-tabbar-inner {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+}
+
+@media (min-width: 640px) {
+  .app-tabbar-inner {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
+
+/* Do not reposition the fixed expense footer on :focus either: an
+   input-to-submit gesture must not shift overlay hit regions mid-click.
+   Footer placement is determined by its own layout and safe-area spacing. */

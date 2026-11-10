@@ -1,5 +1,7 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { mergeNotificationFeed } from "@/lib/notifications/merge-feed";
+import { formatDateTimeDMY } from "@/lib/date-format";
 import { useRouter } from "next/navigation";
 type Notification={
   id:string;kind:string;title:string;body:string;href:string;
@@ -13,18 +15,23 @@ export function NotificationInbox(){
   const [busy,setBusy]=useState(true);
   const [error,setError]=useState("");
   const [mutating,setMutating]=useState(false);
+  const [loadingMore,setLoadingMore]=useState(false);
+  const loadedOlder=useRef(false);
   const load=useCallback(async(cursor?:string)=>{
+    if(cursor){loadedOlder.current=true;setLoadingMore(true);}
     try{
       const response=await fetch(`/api/notifications?limit=20${cursor?`&cursor=${cursor}`:""}`,
         {cache:"no-store",credentials:"same-origin"});
       if(!response.ok)throw Error("Không thể tải thông báo.");
       const data=await response.json();
-      setRows(previous=>cursor?[...previous,...data.notifications]:data.notifications);
-      setNextCursor(data.nextCursor??null);
+      setRows(previous=>mergeNotificationFeed(previous,data.notifications,Boolean(cursor)));
+      // Background refresh must not reset a cursor after the user loaded
+      // older pages. The list stays mounted and the scroll remains stable.
+      if(cursor || !loadedOlder.current)setNextCursor(data.nextCursor??null);
       setUnread(data.unreadCount??0);
       setError("");
     }catch(e){setError(e instanceof Error?e.message:"Không thể tải thông báo.");}
-    finally{setBusy(false)}
+    finally{setBusy(false);if(cursor)setLoadingMore(false)}
   },[]);
   useEffect(()=>{
     queueMicrotask(()=>{void load();});
@@ -36,7 +43,8 @@ export function NotificationInbox(){
   async function open(row:Notification){
     if(!row.readAt) {
       try{
-        await fetch(`/api/notifications/${row.id}`,{method:"PATCH",credentials:"same-origin"});
+        const res=await fetch(`/api/notifications/${row.id}`,{method:"PATCH",credentials:"same-origin"});
+        if(!res.ok)throw Error("Mark as read failed");
         setRows(old=>old.map(x=>x.id===row.id?{...x,readAt:new Date().toISOString()}:x));
         setUnread(n=>Math.max(0,n-1));
       }catch{ /* navigation remains available even if the mark-as-read call fails */ }
@@ -55,14 +63,14 @@ export function NotificationInbox(){
   }
   return <section className="space-y-4">
     <div className="flex items-center justify-between gap-3">
-      <p className="text-sm text-muted-foreground">{unread} thông báo chưa đọc</p>
+      <p className="text-sm text-muted-foreground">{unread} chưa đọc</p>
       <button type="button" disabled={mutating||unread===0} onClick={markAll}
         className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50">Đọc tất cả</button>
     </div>
     {error&&<p role="alert" className="rounded-xl border p-3 text-sm text-destructive">{error}</p>}
     {busy&&<p role="status" className="text-sm text-muted-foreground">Đang tải thông báo...</p>}
     {!busy&&rows.length===0&&<p className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">
-      Chưa có thông báo. Khi có thanh toán chờ xác nhận hoặc được xử lý, thông báo sẽ xuất hiện ở đây.
+      Chưa có thông báo.
     </p>}
     <div className="space-y-3">
       {rows.map(row=><button type="button" key={row.id} onClick={()=>void open(row)}
@@ -73,15 +81,16 @@ export function NotificationInbox(){
             <strong className="block text-sm">{row.title}</strong>
             <p className="mt-1 text-sm">{row.body}</p>
             <p className="mt-2 text-xs text-muted-foreground">
-              {row.actorName} · {row.groupName} · {new Date(row.createdAt).toLocaleString("vi-VN")}
+              {row.actorName} · {row.groupName} · {formatDateTimeDMY(row.createdAt)}
             </p>
           </div>
         </div>
       </button>)}
     </div>
-    {nextCursor&&<button type="button" onClick={()=>void load(nextCursor)}
-      className="w-full rounded-xl border px-4 py-3 text-sm">
-      Tải thêm thông báo
+    {nextCursor&&<button type="button" disabled={loadingMore}
+      onClick={()=>{if(!loadingMore)void load(nextCursor);}}
+      className="min-h-11 w-full rounded-xl border px-4 py-3 text-sm disabled:opacity-50">
+      {loadingMore?"Đang tải...":"Tải thêm"}
     </button>}
   </section>;
 }

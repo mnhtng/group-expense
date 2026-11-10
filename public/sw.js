@@ -1,14 +1,32 @@
 /* Financial data is network-only; cache a public offline fallback only. */
 self.addEventListener("push", event => {
-  if (!event.data) return;
+  // iOS WebKit requires a user-visible notification for every delivered push
+  // event. Never swallow an empty/malformed payload: WebKit may revoke push
+  // permission if a push event completes without showNotification().
   event.waitUntil((async () => {
-    let payload;
-    try { payload = event.data.json(); } catch { return; }
-    if (!payload || typeof payload.title !== "string") return;
-    const destination = new URL(typeof payload.url === "string" ? payload.url : "/", self.location.origin);
-    const url = destination.origin === self.location.origin ? destination.href : self.location.origin + "/";
-    await self.registration.showNotification(payload.title.slice(0,160), {
-      body: typeof payload.body === "string" ? payload.body.slice(0,500) : "",
+    let payload = {
+      title: "Group Expense",
+      body: "Bạn có thông báo mới trong ứng dụng.",
+      url: "/activity",
+    };
+    try {
+      if (event.data) {
+        const received = event.data.json();
+        if (received && typeof received.title === "string" && received.title.trim()) {
+          payload = {
+            title: received.title,
+            body: typeof received.body === "string" ? received.body : "",
+            url: typeof received.url === "string" ? received.url : "/activity",
+          };
+        }
+      }
+    } catch { /* Use visible fallback for an invalid message. */ }
+    let destination;
+    try { destination = new URL(payload.url, self.location.origin); }
+    catch { destination = new URL("/activity", self.location.origin); }
+    const url = destination.origin === self.location.origin ? destination.href : self.location.origin + "/activity";
+    await self.registration.showNotification(payload.title.slice(0, 160), {
+      body: payload.body.slice(0, 500),
       icon: "/icon.svg",
       badge: "/icon.svg",
       tag: "group-expense-" + url,
