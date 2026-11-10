@@ -27,7 +27,7 @@ export default async function ExpenseDetailPage({params}:{
   const pending=BigInt(expense.pendingMinor);
   const due=BigInt(expense.dueMinor);
   const confirmed=BigInt(expense.confirmedMinor);
-  const allSettled=remaining===0n && pending===0n;
+  const allSettled=remaining===0n && pending===0n && expense.invalidCount===0;
   const editable=canEdit&&!completed&&confirmed===0n&&pending===0n;
   const percent=due===0n?100:Number((confirmed*100n)/due);
   const status=completed?"Đã hoàn thành"
@@ -79,7 +79,7 @@ export default async function ExpenseDetailPage({params}:{
       <p className="text-sm text-muted-foreground">
         {expense.debtorCount===0
           ?"Hóa đơn không phát sinh công nợ giữa các thành viên."
-          :`${expense.debtorCount} người có công nợ · ${percent}% đã xác nhận hoàn trả`}
+          :`${expense.debtorCount} người có công nợ · ${percent}% đã xác nhận xử lý`}
       </p>
       <div className="h-2.5 overflow-hidden rounded-full bg-secondary"
         role="progressbar" aria-label="Tiến độ xác nhận công nợ"
@@ -90,15 +90,19 @@ export default async function ExpenseDetailPage({params}:{
       <dl className="grid grid-cols-2 gap-x-3 gap-y-4 border-t pt-3 text-sm">
         <div><dt className="text-xs text-muted-foreground">Công nợ phát sinh</dt>
           <dd className="mt-1 font-semibold tabular-nums">{vnd(expense.dueMinor)}</dd></div>
-        <div><dt className="text-xs text-muted-foreground">Đã xác nhận</dt>
+        <div><dt className="text-xs text-muted-foreground">Đã xử lý (tổng)</dt>
           <dd className="mt-1 font-semibold tabular-nums text-money-in">{vnd(expense.confirmedMinor)}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Đã chuyển tiền</dt>
+          <dd className="mt-1 font-semibold tabular-nums">{vnd(expense.confirmedCashMinor)}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Bù trừ phi tiền mặt</dt>
+          <dd className="mt-1 font-semibold tabular-nums">{vnd(expense.confirmedSetoffMinor)}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Đang chờ xác nhận</dt>
           <dd className="mt-1 font-semibold tabular-nums">{vnd(expense.pendingMinor)}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Còn phải hoàn trả</dt>
           <dd className="mt-1 font-semibold tabular-nums text-money-out">{vnd(expense.remainingMinor)}</dd></div>
       </dl>
       {!completed && allSettled&&<p className="rounded-xl bg-money-in/10 p-3 text-sm text-money-in">
-        Tất cả công nợ đã được xác nhận. Chỉ người tạo hóa đơn có thể chốt hoàn thành.
+        Tất cả nghĩa vụ đã được xác nhận bằng tiền và/hoặc bù trừ. Chỉ người tạo hóa đơn có thể chốt hoàn thành.
       </p>}
       {!completed && !allSettled&&<p className="text-xs text-muted-foreground">
         Thanh toán đang chờ xác nhận chưa được tính là hoàn trả thành công.
@@ -146,9 +150,9 @@ export default async function ExpenseDetailPage({params}:{
             </span>
           </div>
           <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-            <span>Gốc: {vnd(debt.amountMinor)} · Đã nhận: {vnd(debt.confirmedMinor)}</span>
+            <span>Gốc: {vnd(debt.amountMinor)} · Đã xử lý: {vnd(debt.confirmedMinor)}</span>
             <strong className={`tabular-nums ${settled?"text-money-in":"text-money-out"}`}>
-              {settled?"✓ Đủ tiền":`Còn ${vnd(debt.outstandingMinor)}`}
+              {settled?"✓ Đã tất toán":`Còn ${vnd(debt.outstandingMinor)}`}
             </strong>
           </div>
         </Link>;

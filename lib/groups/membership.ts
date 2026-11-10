@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/pool";
+import { revokeSettlementManagersWithMembership } from "@/lib/settlement-cycles/settings";
 
 export class MembershipError extends Error {
   constructor(public statusCode: 400 | 403 | 404 | 409, message: string) {
@@ -12,10 +13,11 @@ export class MembershipError extends Error {
 
 export type ExitEligibility = {
   canLeave: boolean;
-  reason: "ready" | "owner" | "unsettled" | "pending";
+  reason: "ready" | "owner" | "unsettled" | "pending" | "creator_confirmation";
   toPayMinor: string;
   toReceiveMinor: string;
   pendingCount: number;
+  uncompletedInvoiceCount: number;
 };
 
 async function transaction<T>(cb:(client:PoolClient)=>Promise<T>):Promise<T>{
@@ -49,30 +51,45 @@ async function activeRole(client:PoolClient,groupId:string,userId:string) {
 }
 
 async function eligibility(client:PoolClient,groupId:string,userId:string,isOwner:boolean):Promise<ExitEligibility> {
-  const result=await client.query<{toPayMinor:string;toReceiveMinor:string;pendingCount:number}>(
+  const result=await client.query<{toPayMinor:string;toReceiveMinor:string;pendingCount:number;invalidCount:number;uncompletedInvoiceCount:number}>(
     `WITH remaining AS (
-      SELECT o.debtor_id,o.creditor_id,
-        GREATEST(0::numeric,o.amount_minor::numeric
-          - COALESCE((SELECT sum(a.amount_minor)::numeric
-            FROM settlement_allocations a JOIN settlements s ON s.id=a.settlement_id
-            WHERE a.obligation_id=o.id AND s.status='confirmed'),0::numeric)) AS due
-      FROM obligations o JOIN expenses e ON e.id=o.expense_id
+      SELECT o.debtor_id,o.creditor_id,b.outstanding_minor AS due
+      FROM obligations o
+      JOIN bn005_obligation_balances b ON b.obligation_id=o.id
+      JOIN expenses e ON e.id=o.expense_id
       WHERE o.group_id=$1 AND o.voided_at IS NULL AND e.deleted_at IS NULL
         AND (o.debtor_id=$2 OR o.creditor_id=$2)
     )
     SELECT
       COALESCE(sum(due) FILTER(WHERE debtor_id=$2),0)::text AS "toPayMinor",
       COALESCE(sum(due) FILTER(WHERE creditor_id=$2),0)::text AS "toReceiveMinor",
+      count(*) FILTER(WHERE due<0)::int AS "invalidCount",
       (SELECT count(*)::int FROM settlements
        WHERE group_id=$1 AND status='pending'
-         AND (debtor_id=$2 OR creditor_id=$2)) AS "pendingCount"
+         AND (debtor_id=$2 OR creditor_id=$2)) AS "pendingCount",
+      (SELECT count(*)::int FROM expenses e
+       WHERE e.group_id=$1 AND e.created_by=$2 AND e.deleted_at IS NULL
+         AND e.completed_at IS NULL AND (
+           EXISTS(SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+             WHERE se.expense_id=e.id)
+           OR EXISTS(SELECT 1 FROM group_settlement_cycle_adjustments adj
+             WHERE adj.expense_id=e.id)
+           OR EXISTS(SELECT 1 FROM group_settlement_cycles c
+             JOIN group_settlement_cycle_snapshots snap ON snap.cycle_id=c.id
+             WHERE c.group_id=$1 AND c.state='locked'
+               AND e.occurred_on>=c.period_start AND e.occurred_on<c.period_end
+               AND e.created_at>snap.cutoff_at)
+         )) AS "uncompletedInvoiceCount"
     FROM remaining`,
     [groupId,userId],
   );
-  const stats=result.rows[0]??{toPayMinor:"0",toReceiveMinor:"0",pendingCount:0};
+  const stats=result.rows[0]??{toPayMinor:"0",toReceiveMinor:"0",pendingCount:0,invalidCount:0,uncompletedInvoiceCount:0};
+  if(stats.invalidCount>0)throw new MembershipError(409,
+    "Số dư công nợ không hợp lệ; không thể rời nhóm trước khi đối soát.");
   const hasDebt=BigInt(stats.toPayMinor)>0n||BigInt(stats.toReceiveMinor)>0n;
   const reason:ExitEligibility["reason"]=isOwner?"owner":
-    stats.pendingCount>0?"pending":hasDebt?"unsettled":"ready";
+    stats.pendingCount>0?"pending":hasDebt?"unsettled":
+    stats.uncompletedInvoiceCount>0?"creator_confirmation":"ready";
   return {canLeave:reason==="ready",reason,...stats};
 }
 
@@ -116,8 +133,24 @@ export async function departGroup(groupId:string,actorId:string,targetId:string,
     const check=await eligibility(client,groupId,targetId,false);
     if(!check.canLeave) {
       throw new MembershipError(409,
-        `Còn công nợ hoặc yêu cầu chờ xử lý: cần trả ${check.toPayMinor}đ, cần nhận ${check.toReceiveMinor}đ, pending ${check.pendingCount}.`);
+        `Còn nghĩa vụ cần giải quyết: trả ${check.toPayMinor}đ, nhận ${check.toReceiveMinor}đ, chờ ${check.pendingCount}, hóa đơn cần người tạo chốt ${check.uncompletedInvoiceCount}.`);
     }
+    // A member who departs can no longer create recurring invoices or pay
+    // for a template that still includes them. Pause affected rules under
+    // the SAME group-locked membership transaction, preserving past bills.
+    const paused=await client.query(
+      `UPDATE recurring_expense_rules r SET status='paused',
+         pause_reason='Thành viên của mẫu đã rời nhóm; cần sửa và tiếp tục.',
+         version=version+1,updated_at=now()
+       WHERE r.group_id=$1 AND r.status='active'
+         AND (r.created_by=$2 OR r.payer_id=$2 OR EXISTS(
+           SELECT 1 FROM jsonb_array_elements(r.items) item
+           WHERE COALESCE(item->'participants','[]'::jsonb) ? $2
+              OR EXISTS(SELECT 1 FROM jsonb_array_elements(
+                 COALESCE(item->'shares','[]'::jsonb)) sh
+                 WHERE sh->>'userId'=$2)
+         ))`,
+      [groupId,targetId]);
     const r=await client.query(
       `UPDATE group_members SET status=$3,left_at=now(),
          removed_by=CASE WHEN $3='removed' THEN $4 ELSE NULL END,
@@ -126,7 +159,9 @@ export async function departGroup(groupId:string,actorId:string,targetId:string,
       [groupId,targetId,mode,actorId],
     );
     if(r.rowCount!==1)throw new MembershipError(409,"Thành viên đã thay đổi trạng thái.");
-    await recordEvent(client,groupId,targetId,actorId,mode);
+    // Revoke BEFORE COMMIT: a future rejoin must never restore previous delegation.
+    await revokeSettlementManagersWithMembership(client,groupId,actorId,"member_departed",targetId);
+    await recordEvent(client,groupId,targetId,actorId,mode,{pausedRecurringRules:paused.rowCount});
     return {status:mode};
   });
 }
@@ -146,6 +181,8 @@ export async function transferGroupOwnership(groupId:string,actorId:string,targe
       WHERE group_id=$1 AND user_id=$2 AND status='active'`,[groupId,targetId]);
     await client.query("UPDATE groups SET owner_id=$2,updated_at=now() WHERE id=$1",
       [groupId,targetId]);
+    // All old grants are revoked; new owner can explicitly re-authorize managers.
+    await revokeSettlementManagersWithMembership(client,groupId,actorId,"ownership_transferred");
     await recordEvent(client,groupId,targetId,actorId,"ownership_transferred",
       {previousOwnerId:actorId,newOwnerId:targetId});
     return {ownerId:targetId};

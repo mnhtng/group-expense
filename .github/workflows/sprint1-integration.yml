@@ -15,6 +15,11 @@ on:
       - 'lib/expenses/**'
       - 'lib/debts/**'
       - 'lib/settlements/**'
+      - 'lib/settlement-cycles/**'
+      - 'lib/recurring/**'
+      - 'app/api/internal/**'
+      - 'scripts/sc010-restore-drill.sh'
+      - 'scripts/rr003-ops-monitor.mjs'
       - 'lib/notifications/**'
       - 'app/api/groups/**'
       - 'app/api/debts/**'
@@ -43,6 +48,11 @@ on:
       - 'lib/expenses/**'
       - 'lib/debts/**'
       - 'lib/settlements/**'
+      - 'lib/settlement-cycles/**'
+      - 'lib/recurring/**'
+      - 'app/api/internal/**'
+      - 'scripts/sc010-restore-drill.sh'
+      - 'scripts/rr003-ops-monitor.mjs'
       - 'lib/notifications/**'
       - 'app/api/groups/**'
       - 'app/api/debts/**'
@@ -73,6 +83,20 @@ jobs:
       DATABASE_URL: postgresql://test:test@localhost:5432/group_expense
       BETTER_AUTH_SECRET: test-secret-for-ci-not-used-in-production-12345
       BETTER_AUTH_URL: http://localhost:3101
+      # CI-only placeholder, never a production secret. Exercises Cron auth.
+      CRON_SECRET: ci-cycle-metadata-throwaway-do-not-use-outside-tests
+      # Only with exact disposable localhost PG URL + CI=true can SC-005 requests run.
+      SC005_TEST_ONLY: isolated-pg17
+      # BN-004 noncash financial writes exist ONLY in disposable PG17 HTTP CI.
+      BN004_TEST_ONLY: isolated-pg17
+      # BN-006 residual cash available only in disposable PG17 integration.
+      BN006_TEST_ONLY: isolated-pg17
+      # SC-007 reconciliation/concurrency tests may run ONLY in disposable PG17.
+      SC007_TEST_ONLY: isolated-pg17
+      # SC-009 daily reminders are exercised only against disposable PG17.
+      SC009_TEST_ONLY: isolated-pg17
+      # SC-010 logical restore drill only on the disposable GitHub Actions PG17.
+      SC010_TEST_ONLY: isolated-pg17
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -86,5 +110,9 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm db:migrate
       - run: pnpm test:integration
+      - run: pnpm test:finance:audit
       - run: pnpm build
       - run: pnpm test:http
+      - run: pnpm test:finance:audit
+      - name: SC-010 disposable logical backup and restore drill
+        run: bash scripts/sc010-restore-drill.sh

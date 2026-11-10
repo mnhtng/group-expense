@@ -54,6 +54,19 @@ export default async function GroupPage({params,searchParams}:{
         + Hóa đơn
       </Link>
     </div>
+    <Link href={`/groups/${groupId}/cycles`}
+      className="flex min-h-[88px] items-center justify-between gap-4 rounded-3xl border bg-card p-5 transition-colors hover:bg-secondary/40 active:bg-secondary/60">
+      <span>
+        <strong className="block">Quyết toán theo kỳ</strong>
+        <span className="mt-1 block text-sm text-muted-foreground">
+          Rà soát kỳ, công nợ gốc, bù trừ hai người và phần tiền còn lại
+        </span>
+        <span className="mt-2 inline-block rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold">
+          Chế độ xem trước · chưa phát hành giao dịch
+        </span>
+      </span>
+      <span aria-hidden="true">→</span>
+    </Link>
     <Link href={`/groups/${groupId}/recurring`}
       className="flex min-h-[88px] items-center justify-between gap-4 rounded-3xl border bg-card p-5 transition-colors hover:bg-secondary/40">
       <span>
