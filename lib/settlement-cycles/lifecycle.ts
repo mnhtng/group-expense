@@ -169,7 +169,7 @@ async function requestReview(client:PoolClient,cycle:RawCycle,actorId:string|nul
 }
 
 export async function listSettlementCycles(groupId:string,actorId:string,
-  limit=50):Promise<{cycles:CycleRecord[];canManage:boolean;effectiveEnabled:false}>{
+  limit=50):Promise<{cycles:CycleRecord[];canManage:boolean;effectiveEnabled:boolean}>{
   assertUuid(groupId);
   if(!Number.isInteger(limit)||limit<1||limit>100)
     throw error(400,"Giới hạn danh sách không hợp lệ.");
@@ -179,7 +179,7 @@ export async function listSettlementCycles(groupId:string,actorId:string,
     [groupId,limit],
   );
   return {cycles:rows.rows.map(publicCycle),canManage:permissions.canManage,
-    effectiveEnabled:false};
+    effectiveEnabled:permissions.effectiveEnabled};
 }
 
 /** SC-008 member-visible history paging is independent from business

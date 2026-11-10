@@ -1,4 +1,5 @@
 import "server-only";
+import {readEngineAccess} from "@/lib/settlement-cycles/engine";
 import {randomUUID} from "node:crypto";
 import type {PoolClient} from "pg";
 import {pool} from "@/lib/db/pool";
@@ -89,7 +90,7 @@ export async function listLateCycleAdjustments(groupId:string,originCycleId:stri
     return {originCycleId,lateInvoices:rows.rows,
       total:rows.rowCount??0,eligibleTarget:target?.state==="review"?target:null,
       waitingForReview:Boolean(target&&target.state!=="review"),
-      canManage:settings.canManage,financialEngineEnabled:false};
+      canManage:settings.canManage,financialEngineEnabled:settings.effectiveEnabled};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
 }
@@ -122,7 +123,7 @@ export async function assignLateCycleInvoice(groupId:string,originCycleId:string
           p.expenseVersion!==input.expectedExpenseVersion||p.note!==note)
           throw fail(409,"Mã yêu cầu đã dùng cho điều chỉnh khác.");
         return {adjustment:serialized(p),alreadyAssigned:true,
-          financialEngineEnabled:false};
+          financialEngineEnabled:(await readEngineAccess(client,groupId)).financialEngineEnabled};
       }
       const active=await client.query<{requested_enabled:boolean}>(
         "SELECT requested_enabled FROM group_settlement_settings WHERE group_id=$1",
@@ -151,7 +152,7 @@ export async function assignLateCycleInvoice(groupId:string,originCycleId:string
           input.expenseId,input.expectedExpenseVersion,actorId,
           input.requestKey,note]);
       return {adjustment:serialized(inserted.rows[0]),
-        alreadyAssigned:false,financialEngineEnabled:false};
+        alreadyAssigned:false,financialEngineEnabled:(await readEngineAccess(client,groupId)).financialEngineEnabled};
     });
   }catch(e) {
     if(e instanceof SettlementSettingsError)throw e;

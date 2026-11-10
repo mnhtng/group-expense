@@ -53,7 +53,7 @@ export async function POST(request:Request,{params}:Context){
       try{await drainPushQueue(result.id,20);}
       catch{console.error("BN-006 cash push deferred for retry.");}
     });
-    return NextResponse.json({...result,financialEngineEnabled:false},{
+    return NextResponse.json(result,{
       status:result.alreadyCreated?200:201,headers:settlementNoStore});
   }catch(error){return settlementErrorResponse(error);}
 }

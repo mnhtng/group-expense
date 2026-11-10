@@ -1,6 +1,7 @@
 import "server-only";
 import {randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
+import {readEngineRollout} from "@/lib/settlement-cycles/engine";
 import {generateDueRecurringExpenses} from "@/lib/recurring/service";
 import {drainPushQueue} from "@/lib/notifications/push-worker";
 import {processCycleMetadataCron} from "@/lib/settlement-cycles/lifecycle";
@@ -178,6 +179,7 @@ export async function readSettlementOpsHealth(){
       overduePushJobs:m.overduePushJobs,
       nowMs:Date.now(),
     });
+    const rollout=await readEngineRollout(client);
     await client.query("COMMIT");
     return {
       health:alertCodes.length>0?"attention":"ok",
@@ -189,8 +191,8 @@ export async function readSettlementOpsHealth(){
         completedAt:row.completedAt?.toISOString()??null,
         stageResults:row.stageResults,
       })),
-      financialEngineReady:false,
-      releaseDecision:"NO-GO" as const,
+      rollout,financialEngineReady:rollout.enabled,
+      releaseDecision:rollout.enabled?"CONTROLLED_ROLLOUT" as const:"NO-GO" as const,
     };
   }catch(error){await client.query("ROLLBACK");throw error;}
   finally{client.release();}

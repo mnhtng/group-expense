@@ -39,7 +39,7 @@ export function SettlementCycleSettingsPanel({
             ? (data as {error:string}).error
             : "Không thể cập nhật cấu hình.");
       }
-      setInfo("Đã lưu cấu hình chuẩn bị. Hệ thống quyết toán chưa được kích hoạt.");
+      setInfo("Đã lưu lựa chọn quyết toán của nhóm.");
       router.refresh();
     } catch(cause) {
       setError(cause instanceof Error?cause.message:"Lỗi kết nối. Vui lòng thử lại.");
@@ -47,10 +47,10 @@ export function SettlementCycleSettingsPanel({
   }
   return <section aria-labelledby="settlement-preparation" className="space-y-4 rounded-3xl border bg-card p-5">
     <div className="space-y-1">
-      <h2 id="settlement-preparation" className="text-lg font-semibold">Chuẩn bị quyết toán theo kỳ</h2>
+      <h2 id="settlement-preparation" className="text-lg font-semibold">Quyết toán theo kỳ</h2>
       <p className="text-sm text-muted-foreground">
-        Tính năng đang xây dựng và chưa hoạt động. Thiết lập này chỉ lưu lựa chọn
-        của nhóm; không tạo kỳ, bù trừ hoặc thay đổi công nợ hiện tại.
+        Nhóm cần đăng ký và được mở quyền sử dụng trước khi ghi nhận quyết toán.
+        Lưu lựa chọn không tự tạo bù trừ hoặc xác nhận thanh toán.
       </p>
     </div>
     <div className="rounded-2xl bg-secondary/70 p-3 text-sm">
@@ -64,7 +64,7 @@ export function SettlementCycleSettingsPanel({
             if(!e.target.checked)setNetting(false);
           }}
           className="size-5 shrink-0 accent-primary"/>
-        <span>Đăng ký sử dụng chế độ quyết toán theo kỳ khi phát hành đầy đủ</span>
+        <span>Đăng ký sử dụng quyết toán theo kỳ</span>
       </label>
       <label className="flex min-h-12 items-center gap-3 rounded-xl border p-3 text-sm">
         <input type="checkbox" checked={requestedBilateralNetting}

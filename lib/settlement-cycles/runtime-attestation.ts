@@ -1,6 +1,7 @@
 import "server-only";
 import {createHash} from "node:crypto";
 import {pool} from "@/lib/db/pool";
+import {readEngineRollout} from "@/lib/settlement-cycles/engine";
 import {readRuntimePrivileges,evaluateRuntimePrivileges}
   from "@/db/rr004-runtime-policy.mjs";
 
@@ -14,6 +15,7 @@ export async function readRuntimeAttestation(){
       session_user AS login,current_database() AS database`)).rows[0];
     const snapshot=await readRuntimePrivileges(client);
     const result=evaluateRuntimePrivileges(snapshot);
+    const rollout=await readEngineRollout(client);
     await client.query("COMMIT");
     const fingerprint=(value:string)=>createHash("sha256").update(value).digest("hex");
     const url=new URL(process.env.DATABASE_URL!);
@@ -29,7 +31,8 @@ export async function readRuntimeAttestation(){
         url.hostname.replace(/-pooler(?=\.)/,""),identity.database,
       ])),
       deploymentSha:deployment&&/^[a-f0-9]{40}$/.test(deployment)?deployment:null,
-      financialEngineReady:false,releaseDecision:"NO-GO",
+      rollout,financialEngineReady:rollout.enabled,
+      releaseDecision:rollout.enabled?"CONTROLLED_ROLLOUT":"NO-GO",
     };
   }catch(error){
     await client.query("ROLLBACK");throw error;

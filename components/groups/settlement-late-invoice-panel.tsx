@@ -13,7 +13,7 @@ type EligibleCycle={id:string;startDate:string;endDate:string;state:string};
 type LateView={
   originCycleId:string;lateInvoices:LateInvoice[];total:number;
   eligibleTarget:EligibleCycle|null;waitingForReview:boolean;
-  canManage:boolean;financialEngineEnabled:false;
+  canManage:boolean;financialEngineEnabled:boolean;
 };
 const cash=(v:string)=>new Intl.NumberFormat("vi-VN").format(BigInt(v))+" ₫";
 export function SettlementLateInvoicePanel({groupId,originCycleId,canManage,

@@ -1,4 +1,5 @@
 import {NextResponse} from "next/server";
+import {getGroupEngineAccess} from "@/lib/settlement-cycles/engine";
 import {withAuthenticatedApi} from "@/lib/security/api-guards";
 import {settlementBody,settlementError} from "@/lib/settlement-cycles/http";
 import {inspectCycleSnapshot,lockCycleSnapshot,
@@ -13,7 +14,7 @@ export const GET=withAuthenticatedApi<Context>(async(_request,{params},user)=>{
       snapshot,
       lateExpenseCount:snapshot?.state==="locked"
         ? await countLateCycleExpenses(groupId,cycleId,user.id):0,
-      financialEngineEnabled:false,
+      financialEngineEnabled:(await getGroupEngineAccess(groupId)).financialEngineEnabled,
     });
   }catch(cause){return settlementError(cause);}
 });
@@ -27,7 +28,7 @@ export const POST=withAuthenticatedApi<Context>(async(request,{params},user)=>{
       snapshot:await lockCycleSnapshot(groupId,cycleId,user.id,
         body.expectedVersion as number,body.requestKey as string,
         body.expectedFingerprint as string),
-      financialEngineEnabled:false,
+      financialEngineEnabled:(await getGroupEngineAccess(groupId)).financialEngineEnabled,
     });
   }catch(cause){return settlementError(cause);}
 });

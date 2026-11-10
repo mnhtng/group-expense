@@ -1,3 +1,4 @@
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -68,13 +69,12 @@ test("RR-001 fails closed on missing URL, credentials, wrong port or fragments",
 });
 test("RR-001 read-only audit cannot enable finance or invoke a schema writer",()=>{
   const source=readFileSync("db/rr001-neon-preflight.mjs","utf8");
-  const settings=readFileSync("lib/settlement-cycles/settings.ts","utf8");
   assert.match(source,/REPEATABLE READ READ ONLY/);
   assert.match(source,/schema_migrations ORDER BY filename/);
   assert.match(source,/sha256/);
   assert.match(source,/schemaWritePerformed:false/);
   assert.doesNotMatch(source,/\b(?:INSERT INTO|UPDATE\s+obligations|DELETE FROM|ALTER TABLE|CREATE TABLE|DROP TABLE)\b/i);
-  assert.match(settings,/SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assertDefaultEngineDisabled();
 });
 
 test("RR-001 historical 23-migration evidence reports new source migrations as pending",async()=>{
@@ -87,7 +87,7 @@ test("RR-001 historical 23-migration evidence reports new source migrations as p
   const result=await verifyMigrationChecksums(rows);
   assert.equal(result.installedCount,23);
   assert.equal(result.sourceSchemaParity,false);
-  assert.deepEqual(result.pendingMigrationFiles,["024_legacy_audit_immutability.sql"]);
+  assert.deepEqual(result.pendingMigrationFiles,["024_legacy_audit_immutability.sql","025_settlement_engine_rollout.sql"]);
   await assert.rejects(verifyMigrationChecksums([...rows,{filename:names[23]}]),/approved baseline/);
   rows[0].checksum_sha256="a".repeat(64);
   await assert.rejects(verifyMigrationChecksums(rows),/checksum drift/);

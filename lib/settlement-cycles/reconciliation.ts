@@ -1,4 +1,5 @@
 import "server-only";
+import {readEngineAccess} from "@/lib/settlement-cycles/engine";
 import {pool} from "@/lib/db/pool";
 import type {PoolClient} from "pg";
 import {SettlementSettingsError} from "@/lib/settlement-cycles/settings";
@@ -17,7 +18,7 @@ export type CycleReconciliation={
   outstandingMinor:string;availableMinor:string;
   unresolvedDisputes:number;pendingCashRequests:number;
   uncompletedInvoices:number;currentProposals:number;
-  readyForManualReview:boolean;financialEngineEnabled:false;
+  readyForManualReview:boolean;financialEngineEnabled:boolean;
 };
 export type CycleAuditEvent={
   id:string;kind:string;eventType:string;actorId:string|null;
@@ -149,7 +150,7 @@ export async function readCycleReconciliation(groupId:string,cycleId:string,acto
         asMoney(money.outstandingMinor)===0n&&v.unresolvedDisputes===0&&
         v.pendingCashRequests===0&&v.uncompletedInvoices===0&&
         v.currentProposals===0,
-      financialEngineEnabled:false} satisfies CycleReconciliation;
+      financialEngineEnabled:(await readEngineAccess(c,groupId)).financialEngineEnabled} satisfies CycleReconciliation;
   });
 }
 export async function listCycleAudit(groupId:string,cycleId:string,actorId:string,
@@ -169,7 +170,7 @@ export async function listCycleAudit(groupId:string,cycleId:string,actorId:strin
       [groupId,cycleId,actorId,limit,offset]);
     return {items:items.rows.map(v=>({...v,at:v.at.toISOString()})),
       page,total:count,totalPages:Math.max(1,Math.ceil(count/50)),
-      financialEngineEnabled:false};
+      financialEngineEnabled:(await readEngineAccess(c,groupId)).financialEngineEnabled};
   });
 }
 export async function exportCycleCsv(groupId:string,cycleId:string,actorId:string,

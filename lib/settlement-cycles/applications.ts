@@ -3,25 +3,21 @@ import {createHash,randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
 import type {PoolClient} from "pg";
 import {SettlementError} from "@/lib/settlements/service";
+import {readEngineAccess,requireEngineAccess} from "@/lib/settlement-cycles/engine";
 import {activeGroup,pairActive,cycle,enabled,computed,transact}
   from "@/lib/settlement-cycles/proposals";
 
 /** BN-004 ONLY: stores an append-only, exactly balanced NONCASH document.
  * Does NOT mutate original obligations, cash settlements, cycle state,
  * balances, invoices or UI (integration belongs to BN-005).
- * The global financial engine stays OFF; only the isolated PG17 CI
- * fixture is allowed to execute this experimental financial write.
+ * New writes require the operator cohort and group opt-in; isolated legacy
+ * fixtures remain separately bounded to disposable PG17.
  */
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA=/^[0-9a-f]{64}$/;
 const fail=(status:400|403|404|409,message:string)=>
   new SettlementError(status,message);
 
-export function isBilateralApplicationTestWritable():boolean{
-  return process.env.CI==="true" &&
-    process.env.BN004_TEST_ONLY==="isolated-pg17" &&
-    process.env.DATABASE_URL==="postgresql://test:test@localhost:5432/group_expense";
-}
 export type ApplyBilateralInput={
   expectedVersion:number;expectedFingerprint:string;requestKey:string;
 };
@@ -101,13 +97,14 @@ export async function getBilateralApplication(groupId:string,cycleId:string,
     const r=await client.query<Stored>(
       `SELECT ${applicationColumns} FROM group_settlement_bilateral_applications
        WHERE proposal_id=$1`,[proposalId]);
+    const access=await readEngineAccess(client,groupId);
     await client.query("COMMIT");
     return {application:r.rows[0]?toDocument(r.rows[0]):null,
-      financialEngineEnabled:false};
+      financialEngineEnabled:access.bilateralEnabled};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
 }
-/** One approved proposal -> ONE atomic application in the disposable CI DB.
+/** One approved proposal -> ONE atomic application in an authorized group.
  * Pair and source hashes are compared to live money before any insert.
  */
 export async function applyBilateralNoncash(groupId:string,cycleId:string,
@@ -117,8 +114,6 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
     input.expectedVersion<1||!SHA.test(input.expectedFingerprint)||
     !UUID.test(input.requestKey))throw fail(400,
       "Phiên bản, fingerprint hoặc mã yêu cầu không hợp lệ.");
-  if(!isBilateralApplicationTestWritable())
-    throw fail(409,"Bút toán bù trừ chưa được mở trong môi trường này.");
   const digest=createHash("sha256").update(JSON.stringify([
     "bn004-noncash-v1",groupId,cycleId,proposalId,actorId,
     input.expectedVersion,input.expectedFingerprint,
@@ -143,8 +138,10 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
       if(previous){
         if(previous.proposalId!==proposalId||previous.requestDigest!==digest)
           throw fail(409,"Mã yêu cầu đã dùng cho bút toán khác.");
-        return {application:toDocument(previous),alreadyApplied:true};
+        return {application:toDocument(previous),alreadyApplied:true,
+          financialEngineEnabled:(await readEngineAccess(client,groupId)).bilateralEnabled};
       }
+      const access=await requireEngineAccess(client,groupId,"BN004_TEST_ONLY");
       if(!(await enabled(client,groupId)))
         throw fail(409,"Nhóm chưa bật quyết toán và bù trừ hai chiều.");
       await pairActive(client,groupId,p.partyLow,p.partyHigh);
@@ -219,7 +216,8 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
         `SELECT ${applicationColumns} FROM group_settlement_bilateral_applications
          WHERE id=$1`,[id]);
       if(!saved.rows[0])throw fail(409,"Không đọc lại được bút toán bù trừ.");
-      return {application:toDocument(saved.rows[0]),alreadyApplied:false};
+      return {application:toDocument(saved.rows[0]),alreadyApplied:false,
+        financialEngineEnabled:access.bilateralEnabled};
     });
   }catch(e){
     if(e instanceof SettlementError)throw e;

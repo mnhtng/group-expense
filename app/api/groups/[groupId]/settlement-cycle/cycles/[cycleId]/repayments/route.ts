@@ -11,7 +11,7 @@ const unauthorized=()=>NextResponse.json(
   {error:"Chưa đăng nhập."},{status:401,headers:settlementNoStore});
 
 /** Everyone in the group can preview only one-direction cash totals.
- * The release flag prevents all NEW scoped cash writes outside isolated CI.
+ * New scoped cash writes require operator admission and explicit group opt-in.
  */
 export async function GET(_request:Request,{params}:Context){
   const session=await getCurrentSession();

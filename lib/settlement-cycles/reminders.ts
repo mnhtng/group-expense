@@ -1,6 +1,6 @@
 import "server-only";
 import {pool} from "@/lib/db/pool";
-import {SETTLEMENT_CYCLE_ENGINE_READY} from "@/lib/settlement-cycles/settings";
+import {readEngineAccess,readEngineRollout} from "@/lib/settlement-cycles/engine";
 
 const DB="postgresql://test:test@localhost:5432/group_expense";
 const testOnly=()=>process.env.CI==="true"&&
@@ -13,7 +13,7 @@ const testOnly=()=>process.env.CI==="true"&&
 export async function issueCycleReminders(limit=40){
   if(!Number.isSafeInteger(limit)||limit<1||limit>100)
     throw Error("SC-009 reminder limit invalid.");
-  if(!SETTLEMENT_CYCLE_ENGINE_READY&&!testOnly())
+  if(!(await readEngineRollout(pool)).enabled&&!testOnly())
     return {disabled:true,candidates:0,attempted:0,inserted:0};
   const c=await pool.connect();
   try{
@@ -93,10 +93,20 @@ export async function issueCycleReminders(limit=40){
     )
     SELECT recipient,"groupId","cycleId",ref,title,body
     FROM candidates
+    WHERE $2 OR "groupId" IN(SELECT group_id FROM settlement_cycle_engine_cohort WHERE admitted)
     ORDER BY "groupId","cycleId",ref,recipient
-    LIMIT $1`,[limit]);
+    LIMIT $1`,[limit,testOnly()]);
+    await c.query("SELECT id FROM groups WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE",
+      [[...new Set(r.rows.map(v=>v.groupId))]]);
+    await c.query("SELECT pg_advisory_xact_lock_shared(250025,1)");
+    const control=await c.query<{enabled:boolean}>(
+      "SELECT enabled FROM settlement_cycle_engine_control WHERE id=1");
+    if(!control.rows[0]?.enabled&&!testOnly()){
+      await c.query("COMMIT");return {disabled:true,candidates:0,attempted:0,inserted:0};
+    }
     let inserted=0;
     for(const v of r.rows){
+      if(!testOnly()&&!(await readEngineAccess(c,v.groupId)).financialEngineEnabled)continue;
       const before=await c.query<{n:number}>(`SELECT count(*)::int AS n
         FROM notifications WHERE recipient_id=$1 AND event_key=$2`,
         [v.recipient,`remind:${day}:${v.ref}:${v.recipient}`]);

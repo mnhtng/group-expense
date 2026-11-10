@@ -3130,7 +3130,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const sc008List=await sc008Page(sc008ListUrl);
     assert.equal(sc008List.response.status,200,sc008List.html.slice(0,150));
     assert.match(sc008List.html,/Các kỳ đã ghi nhận/);
-    assert.match(sc008List.html,/Chế độ xem trước/);
+    assert.match(sc008List.html,/Quyết toán chưa mở cho nhóm/);
     assert.match(sc008List.html,/Đã khóa sổ/);
     const sc008OriginalCount=(await pool.query(`
       SELECT count(*)::int AS n FROM group_settlement_cycle_snapshot_obligations
@@ -3145,7 +3145,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.match(sc008Source.html,/Tiền mặt đã xác nhận/);
     assert.match(sc008Source.html,/Đã bù trừ phi tiền mặt/);
     assert.match(sc008Source.html,/Tiền mặt chờ xác nhận/);
-    assert.match(sc008Source.html,/Chưa phát hành giao dịch quyết toán/);
+    assert.match(sc008Source.html,/Quyết toán chưa mở cho nhóm/);
     assert.match(sc008Source.html,/Phân trang nguồn công nợ/);
     const sc008PageTwo=await sc008Page(sc008DetailUrl+"?page=2");
     assert.equal(sc008PageTwo.response.status,200);
@@ -3754,7 +3754,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.match(sc008LatePage.html,/Late original grocery invoice/);
     assert.match(sc008LatePage.html,/Hóa đơn nhập muộn/);
     assert.match(sc008LatePage.html,/Có chứng từ gán kỳ|có chứng từ gán kỳ/);
-    assert.match(sc008LatePage.html,/Chưa phát hành giao dịch quyết toán/);
+    assert.match(sc008LatePage.html,/Quyết toán chưa mở cho nhóm/);
 
     // SC-007 release regression: a late invoice's ORIGINAL occurred_on
     // precedes the target cycle, but a proven SC-006 attribution in its

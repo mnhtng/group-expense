@@ -1,3 +1,4 @@
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -59,6 +60,13 @@ test("RR-003 probes signed GET only, no replay and no URL/secret in results",asy
   assert.ok(!JSON.stringify(result).includes(secret));
   assert.ok(!JSON.stringify(result).includes(host));
 });
+test('RR-003 recognizes bounded controlled rollout but rejects unqualified engine-ready claims',()=>{
+ const body={health:'ok',alertCodes:[],financialEngineReady:true,releaseDecision:'CONTROLLED_ROLLOUT',
+   rollout:{enabled:true,cohortLimit:1,admittedGroups:1,revision:2}};
+ assert.equal(classifyOpsProbeResponse(200,body).ok,true);
+ for(const patch of [{enabled:false},{cohortLimit:2},{admittedGroups:0},{admittedGroups:2},{revision:0}])
+   assert.equal(classifyOpsProbeResponse(200,{...body,rollout:{...body.rollout,...patch}}).ok,false);
+});
 test("RR-003 transport failures and invalid JSON fail closed",async()=>{
   const failed=await pollOpsMonitor(valid(),{
     fetchImpl:async()=>{throw Error("would contain token, never print me");},
@@ -76,8 +84,7 @@ test("RR-003 read-only monitor cannot activate finance or trigger manual replay"
   assert.match(source,/approved-read-only/);
   assert.doesNotMatch(source,/method:"POST"|X-Ops-Replay-Reason/);
   assert.doesNotMatch(source,/\b(?:INSERT|UPDATE|DELETE|DROP|ALTER)\s+(?:INTO|FROM|TABLE)/i);
-  assert.match(readFileSync("lib/settlement-cycles/settings.ts","utf8"),
-    /SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assertDefaultEngineDisabled();
 });
 
 test("RR-003 redacts uppercase unknown codes and bounds untrusted HTTP bodies",async()=>{
