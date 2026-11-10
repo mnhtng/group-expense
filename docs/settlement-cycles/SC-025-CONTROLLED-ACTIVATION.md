@@ -70,9 +70,10 @@ Migration025 SHA256:
 
 The owner separately approved the [managed package](../release-readiness/SC-025-MANAGED-EXECUTION.md).
 Managed rehearsal now PASS:25 checksums,42 preserved original business relations,
-58 signed HTTPS assertions, one synthetic NONCASH/two CASH documents, eight zero
-audits, final OFF/admitted0. Staging025 and actual runtime role also PASS; staging
-app and production follow only after their preceding gates. [Current receipts](../release-readiness/SC-025-MANAGED-EVIDENCE.md).
+58 protected HTTPS requests, one synthetic NONCASH/two CASH documents, eight zero
+audits, final OFF/admitted0. Staging and production025, actual limited runtime
+roles and deployed apps PASS through PR21/22, with20 staging and10 canonical
+production GET checks. [Current receipts](../release-readiness/SC-025-MANAGED-EVIDENCE.md).
 No real group has been admitted; staging/production stay OFF with empty cohorts.
 
 Apply025/grants before deploying this source. An old pre025 application's strict
@@ -83,7 +84,7 @@ After restore, compare raw evidence first, then explicitly pause the restored
 policy before connecting application/notification sinks; record that policy/audit
 delta separately from original financial preservation.
 
-Remaining acceptance: staging/production application rollout, Cron/fault and
+Remaining acceptance: Cron/fault and
 full-service RPO15m/RTO60m drills, external non-email monitoring, physical devices,
 independent financial/security review and observed rollout1→5→25. These are not
 certified by local tests or by the prior engine-OFF deployment.
