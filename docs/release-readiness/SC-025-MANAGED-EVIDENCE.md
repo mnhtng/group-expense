@@ -4,7 +4,9 @@ The owner explicitly approved the complete [execution package](SC-025-MANAGED-EX
 for source `4c1bd66b3e09c743131f87c4ab0774460fee4f84`. App code digest remains
 `c440984adbc97b16f6837d292aca060edff5848943ffc3da5e3ef3f00ef360ae`;
 documentation-only receipts do not change it. [PR21](https://github.com/mnhtng/group-expense/pull/21)
-targets develop. No real group activation or email is authorized by this package.
+merged into develop; [PR22](https://github.com/mnhtng/group-expense/pull/22)
+merged the accepted application into main. The approved package is complete.
+No real group activation or email is authorized by this package.
 
 ## Rehearsal: PASS, returned to paused state
 
@@ -55,7 +57,7 @@ and passed. A later Neon connector role-authentication error was checked through
 the actual app pool and a separate `pg` connection using only the new limited
 role; both passed. No owner connection URL was exported or protection relaxed.
 
-## Staging schema/runtime policy: PASS; app deployment pending
+## Staging and production: schema, runtime and application PASS
 
 On `br-dry-poetry-b31cudmb`,025 was applied atomically with all42 original business
 relations preserved,25/25 source checksums and eight zero-violation audits.
@@ -64,9 +66,30 @@ login. Password, pooled runtime URL, auth/VAPID/Cron/OPS secrets and sessions we
 preserved. Policy remains OFF/cap1/revision1 with an empty cohort. No staging
 synthetic financial records or group admission were created.
 
-Production025 and application deployment remain pending until staging app PASS.
-The old pre025 application's strict inventory endpoint is temporarily incompatible
-with the extra objects; do not claim a certified old-app rollback on025.
+After staging app acceptance, production `br-round-salad-b39y4yce` received only
+025 and the explicit matrix for existing `rr005_production_app_20261109`.
+Its25 checksums,42 original business relations, eight zero-violation audits and
+actual56-object/29-guard non-owner login all PASS. Production also remains
+OFF/cap1/revision1/cohort0. No financial fixture/admission was created on either
+shared environment. The20 original environment entries retain their metadata;
+only the five feature-preview entries were added. No original secret was exported.
+
+| Surface | Application merge | Initial SC025 deployment | Live GET acceptance |
+|---|---|---|---|
+| Staging | PR21, `7bbd0b1b939b86ab725ac73b954f843be1112202` | `dpl_G8aCSDQ7CT6YcVbisAujBppqmVFQ` |20 checks across immutable URL and develop alias; expected SHA/role/connection and OFF/cohort0; status503 only `NO_COMPLETED_CRON_RUN` |
+| Production | PR22, `e85b88e0c833ff0109e588319f81994d307e47d7` | `dpl_2tjgcXmB22GyMwMKxoMhLqaFq44W` |10 checks on [canonical production](https://group-expense.vercel.app); expected SHA/role/connection and OFF/cohort0; status200, empty alert codes |
+
+Missing/wrong read token returns401 and the read token cannot run Cron. Auth
+health, sign-in, private-route redirect, no-store, manifest and service-worker
+checks PASS. Main's merge tree matches accepted develop. These are read-only
+shared-environment checks; positive financial interactions occurred only on
+the isolated rehearsal. Staging503 is not healthy scheduled-operations evidence.
+
+Initial SC025 deployments above are retained, schema025-compatible runtime
+candidates. No actual managed application rollback was exercised. The older
+pre025 strict inventory checker rejects the extra objects; do not claim it as
+a certified rollback on025. Later documentation-only deployment IDs/SHA receipts
+belong in the closing PR comments, without recursively changing app source.
 
 ## Hosted CI and remaining gates
 
