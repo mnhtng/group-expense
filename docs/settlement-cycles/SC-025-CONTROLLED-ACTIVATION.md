@@ -68,12 +68,12 @@ API approval/engine state reports actual scoped access rather than a fixed false
 Migration025 SHA256:
 `4e731a648bae6f3f962a71b146205d9a69930e63aed1f3e6788fdea24f4d2423`.
 
-No managed migration025, hosted financial test or real-group activation has been
-performed in this work. Existing approvals naming007–024 did not name025 or
-permission to activate real groups. The [prepared managed package](../release-readiness/SC-025-MANAGED-EXECUTION.md)
-names rehearsal→staging→production targets, exact025 checksum,56-object role
-grants, protected feature preview and synthetic-only financial fixture scope on
-the isolated rehearsal. Staging/production stay OFF with empty cohorts.
+The owner separately approved the [managed package](../release-readiness/SC-025-MANAGED-EXECUTION.md).
+Managed rehearsal now PASS:25 checksums,42 preserved original business relations,
+58 signed HTTPS assertions, one synthetic NONCASH/two CASH documents, eight zero
+audits, final OFF/admitted0. Staging025 and actual runtime role also PASS; staging
+app and production follow only after their preceding gates. [Current receipts](../release-readiness/SC-025-MANAGED-EVIDENCE.md).
+No real group has been admitted; staging/production stay OFF with empty cohorts.
 
 Apply025/grants before deploying this source. An old pre025 application's strict
 runtime inventory checker reports schema mismatch after the extra tables appear;
@@ -83,7 +83,7 @@ After restore, compare raw evidence first, then explicitly pause the restored
 policy before connecting application/notification sinks; record that policy/audit
 delta separately from original financial preservation.
 
-Remaining managed acceptance: positive synthetic full-cycle flow, Cron/fault and
+Remaining acceptance: staging/production application rollout, Cron/fault and
 full-service RPO15m/RTO60m drills, external non-email monitoring, physical devices,
 independent financial/security review and observed rollout1→5→25. These are not
 certified by local tests or by the prior engine-OFF deployment.

@@ -1,6 +1,6 @@
 # Delivery ledger — implementation and readiness evidence
 
-## 2026-11-10 — SC-025 activation continuation (local implementation)
+## 2026-11-10 — SC-025 activation continuation
 
 Current branch `feat/settlement-cycle-activation` starts from main PR20 and
 preserves the PWA install banner. Operator-only policy replaces the literal-OFF
@@ -10,8 +10,10 @@ opt-in and retain two-party authorization, idempotency and SQL conservation.
 
 [Implementation and final verification](SC-025-CONTROLLED-ACTIVATION.md);
 [concrete managed execution scope](../release-readiness/SC-025-MANAGED-EXECUTION.md).
-No managed025, hosted positive financial test or real-group activation has
-occurred in this continuation. Email remains deferred. The baseline and dated
+The separately approved managed rehearsal passed025, actual limited runtime and
+the full synthetic signed financial flow. Staging schema/role PASS; app rollout
+is underway. [Managed receipts](../release-readiness/SC-025-MANAGED-EVIDENCE.md).
+No real-group activation has occurred. Email remains deferred. The baseline and dated
 entries below are historical; later release receipts supersede their old
 no-deployment statements.
 

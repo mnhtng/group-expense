@@ -1,9 +1,11 @@
 # SC-025 — managed rehearsal and application release package
 
-Status: prepared, **not executed**. Local source is on
+Status: **owner-approved on2026-11-10; execution underway**. Source is on
 `feat/settlement-cycle-activation`, based on main PR20 (PWA preserved).
 The final reviewed source commit and local results are recorded in
 [SC025 implementation evidence](../settlement-cycles/SC-025-CONTROLLED-ACTIVATION.md).
+[Actual managed receipts](SC-025-MANAGED-EVIDENCE.md) distinguish completed and
+pending steps. The owner approved the whole package below, not just rehearsal.
 
 ## Why a separate approval
 
