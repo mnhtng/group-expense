@@ -11,8 +11,9 @@ opt-in and retain two-party authorization, idempotency and SQL conservation.
 [Implementation and final verification](SC-025-CONTROLLED-ACTIVATION.md);
 [concrete managed execution scope](../release-readiness/SC-025-MANAGED-EXECUTION.md).
 The separately approved managed rehearsal passed025, actual limited runtime and
-the full synthetic signed financial flow. Staging schema/role PASS; app rollout
-is underway. [Managed receipts](../release-readiness/SC-025-MANAGED-EVIDENCE.md).
+the full synthetic signed financial flow. PR21→staging and PR22→production now
+PASS schema25/actual limited roles/deployed GET verification. Both engines remain
+OFF with empty cohorts. [Managed receipts](../release-readiness/SC-025-MANAGED-EVIDENCE.md).
 No real-group activation has occurred. Email remains deferred. The baseline and dated
 entries below are historical; later release receipts supersede their old
 no-deployment statements.

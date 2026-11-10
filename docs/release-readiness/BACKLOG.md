@@ -1,36 +1,37 @@
 # Release Readiness — gated verification backlog
 
-**Activation continuation in progress:** owner requested real financial paths and
+**SC025 implementation and approved deployment complete:** owner requested real financial paths and
 bounded group rollout. [SC025 implementation/verification](../settlement-cycles/SC-025-CONTROLLED-ACTIVATION.md)
 replaces the old constant-OFF architecture with operator-only, default-OFF database
 policy. Owner-approved rehearsal025 and the hosted synthetic financial flow PASS;
-staging schema/role PASS, application rollout underway. No real-group enrollment.
+staging/production schema25, limited roles and application rollout PASS through
+PR21/22. No real-group enrollment.
 [Current managed receipts](SC-025-MANAGED-EVIDENCE.md) supersede the pre025
 application receipts below; staging/production remain OFF with empty cohorts.
 
-**Current feature branch:** `feat/settlement-cycle-activation` → [PR21](https://github.com/mnhtng/group-expense/pull/21) against `develop`.
-**Scope:** verification and operational assurance **after** SC-010, not new settlement features.
-**Application release:** deployed through PR16→develop/staging and PR17→main/production; live runtime/HTTP verification PASS. **Financial activation status: NO-GO**, `SETTLEMENT_CYCLE_ENGINE_READY=false`; missing independent/device/ops/recovery gates remain open. [Completed rollout receipts](RR-005-RELEASE-EXECUTION.md).
-**Latest owner instruction:** execute feature → develop/staging → main/production through PR review and merge; [execution record](RR-005-RELEASE-EXECUTION.md). This supersedes the historical no-deployment authorization statements, without certifying missing gates or activating the financial engine. Email remains deferred.
+**Application PRs:** [PR21](https://github.com/mnhtng/group-expense/pull/21) feature→develop and [PR22](https://github.com/mnhtng/group-expense/pull/22) develop→main, merged.
+**Scope:** settlement implementation plus verification/operational assurance after SC-010; earlier dated entries remain historical.
+**Application release:** schema25/application/runtime verification PASS on staging and production. **Real-group financial activation: NO-GO**, database policy OFF, empty cohorts; independent/device/ops/recovery gates remain open. [Completed SC025 receipts](SC-025-MANAGED-EVIDENCE.md). [Earlier application-only release](RR-005-RELEASE-EXECUTION.md).
+**Latest owner instruction:** approved the entire [SC025 execution package](SC-025-MANAGED-EXECUTION.md), including isolated synthetic finance and subsequent staged deployment. It does not certify remaining gates or admit real groups. Email remains deferred.
 **Protocol (owner request, 2026-11-09):** continue safely across RR-003–005 in one task; preserve separate approval boundaries for provider mutations, shared migrations, deployment, activation and independent signoff. Bind evidence to a clean commit or explicitly identified working-tree code digest.
 
 ## Existing implementation
 
-SC-001–SC-010 and BN-001–BN-006 are implemented on the feature branch. PostgreSQL 17 disposable CI, HTTP tests, original-ledger audits and SC-010 logical restore pass. They do **not** establish managed Neon restore capability, real-device correctness or permission to release financial changes.
+SC-001–SC-010, BN-001–BN-006 and SC025 are implemented and deployed. Source digest `c440984adbc97b16f6837d292aca060edff5848943ffc3da5e3ef3f00ef360ae`:182 unit,13 PG17 integration, limited-role production build/HTTP, four active browser profiles and61 restore comparisons PASS. Managed synthetic finance and both deployed limited roles also PASS. This does not certify physical devices, independent human signoff, full-service recovery or real-group rollout.
 
 ## Backlog and gates
 
 | Ticket | Priority | Goal | Exit criterion | Status |
 |---|---|---|---|---|
-| **RR-001** | P0 | Isolated Neon migration 011–023 rehearsal | Confirm exact isolated child and credential endpoints; record pre-migration source hashes; separately authorize 011–023 *on that child alone*; verify migration idempotency and checksums; reconcile original balances/provenance and parent immutability; independent permission/HTTP and restore gates follow separately | **SCHEMA PASS — historical 011–023 on original child; separately approved 024 now PASS on recovered child, 24/24 checksums, 8/8 audits; release NO-GO** |
-| **RR-002** | P0 | Browser and mobile real-interaction E2E | Chromium + WebKit, iOS installed PWA and Android; consent, focus, stale proposal, error, offline, deep links, bilateral privacy and 44px touch; artifacts and regression list | **LOCAL AUTOMATED BROWSER PASS 4/4 (rerun 2026-11-09)** — full signed Chromium, WebKit, emulated iPhone and Android Playwright flow passed on final dirty-source digest using Node 22 / disposable PG17; physical iOS/Android installed PWA, representative real-device accessibility/keyboard, and final reviewed-SHA signoff still pending; **overall NO-GO** |
-| **RR-003** | P0 | Recoverability and operations alerting | Authorized provider backup/PITR restore into new independent Neon branch; independent immutable-source reconciliation, declared RPO/RTO, verified authenticated 503/alert response path, operator acknowledgement | **MANAGED HISTORICAL BASELINE + LOCAL RECOVERY/OPS PASS; full gate NO-GO** — new child `br-noisy-river-b3ajidmw`, 58/58 matching digests and 8/8 audits, source unchanged; positive managed finance fixtures, service RPO/RTO, external delivery and acknowledgement pending |
-| **RR-004** | P0 | Independent security and finance signoff | Full original + confirmed CASH + NONCASH + pending conservation, source-link accuracy, disputed-source denials, roles, concurrency, secrets, threats and documented review by accountable humans | **LOCAL + APPROVED ISOLATED DEPLOYED RUNTIME ROLE PASS; independent signoff and production/develop parity PENDING** |
-| **RR-005** | P1 | Staging and staged-release decision | Owner-approved application rollout via PRs, compatible forward schema and distinct runtime roles; financial activation/cohort release retains its independent gates | **APPLICATION DEPLOYED/VERIFIED** through PR16 staging then PR17 production under direct owner approval; local old-app rollback compatibility PASS. **Financial activation/cohort rollout NOT performed**, engine OFF; remaining RR002/003/004 acceptance remains unverified |
+| **RR-001** | P0 | Authorized isolated migration rehearsal | Exact branch/list/checksums, idempotency, original-data preservation and financial audits | **SCHEMA PASS** — separately approved025 on rehearsal/staging/production;25 hashes,42 original business relations preserved and8 zero audits per target. Historical011–024 evidence retained below |
+| **RR-002** | P0 | Browser and physical-device interactions | Chromium/WebKit plus real iOS/Android installed PWA; consent/focus/privacy/offline/accessibility/44px targets | **LOCAL BROWSER PASS4/4,2026-11-10** — real signed browser controls also exercise admitted-group proposals, revocation/new version, dual approval, NONCASH and residual CASH. Physical devices/installed PWA acceptance remain pending |
+| **RR-003** | P0 | Recovery and operations alerting | Managed historical restore, positive financial preservation, service RPO15m/RTO60m, external monitor/ack/recovery | **PARTIAL PASS** — historical PITR58/58; SC025 positive managed finance/42 original-business comparisons/eight audits PASS. Production status200/empty alerts; staging503 only NO_COMPLETED_CRON_RUN. Positive-fixture PITR/full-service RPO-RTO and external non-email delivery/ack remain pending |
+| **RR-004** | P0 | Independent security and finance signoff | Source/financial invariants/permissions/advisories reviewed by accountable humans | **TECHNICAL PARITY PASS** — actual isolated/staging/production roles56 objects/29 guards, scoped writes/conservation/idempotency PASS. Independent human security/finance signoff remains pending |
+| **RR-005** | P1 | Application and observed real-group rollout | Staging→production, schema-compatible rollback, explicit pilot1→5→25 and observation | **APPLICATION DEPLOYED/VERIFIED** through PR21/22, schema25 and bounded default-OFF policy. Initial025 builds attest as compatible runtime candidates; actual managed rollback and observed real-group rollout remain unperformed. Shared cohorts empty |
 
 ## Non-negotiable constraints
 
-1. **No changes to original obligation ledger, CASH/NONCASH allocations or immutable snapshots in readiness tooling.** No synthetic bank transfer.
+1. **Never rewrite existing original financial/audit records.** New synthetic financial documents were authorized only on the named isolated rehearsal; none on staging/production. No synthetic bank transfer.
 2. **No ORM.** Keep PostgreSQL through the existing `pg` driver and versioned SQL migrations.
 3. Publishing, provider changes and merge/deploy follow the exact owner-approved [SC025 package](SC-025-MANAGED-EXECUTION.md); real-group activation remains separate. No project-wide secret export.
 4. The SC-010 disposable PG17 restore script is **never** run on Neon.
