@@ -79,7 +79,7 @@ export function NotificationInbox(){
           {!row.readAt&&<span aria-label="Chưa đọc" className="mt-2 h-2 w-2 shrink-0 rounded-full bg-primary"/>}
           <div className="min-w-0 flex-1">
             <strong className="block text-sm">{row.title}</strong>
-            <p className="mt-1 text-sm">{row.body}</p>
+            <p className="mt-1 line-clamp-2 text-sm">{row.body}</p>
             <p className="mt-2 text-xs text-muted-foreground">
               {row.actorName} · {row.groupName} · {formatDateTimeDMY(row.createdAt)}
             </p>

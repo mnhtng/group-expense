@@ -201,8 +201,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const groupsHtml = await groupScreen.text();
     assert.match(groupsHtml, /Nhóm của tôi/);
     // Native-feeling PWA shell is rendered server-side, not added only after hydration.
-    assert.match(groupsHtml, /Tạo nhóm mới/, "mobile create group section must be present");
-    assert.match(groupsHtml, /Nhóm của bạn/, "group list should be separately labelled");
+    assert.match(groupsHtml, /href="\/groups\/new"/, "create group has a dedicated screen");
+    assert.match(groupsHtml, /Bạn chưa có nhóm nào/, "new accounts see an empty group list");
     assert.match(groupsHtml, /Điều hướng chính/, "tab navigation should be accessible");
     assert.match(groupsHtml, /Công nợ/, "financial tab should remain available");
     assert.match(groupsHtml, /Thông báo/, "notifications tab should remain available");
@@ -262,18 +262,23 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     });
     assert.equal(manageResponse.status,200);
     const manageHtml=await manageResponse.text();
-    for(const heading of [
-      "Quản lý nhóm","Thông tin nhóm","Thành viên và quyền hạn",
-      "Chuyển quyền sở hữu","Rời nhóm","Mời thành viên","Lưu trữ nhóm",
-    ])assert.match(manageHtml,new RegExp(heading),"missing management action: "+heading);
-    assert.doesNotMatch(manageHtml,/<details(?:\\s|>)/i,
-      "interactive management controls must never be nested in a toggle");
-
-    // UI regression: management mutations respond in place (JSON) and do not
-    // redirect the browser or discard in-progress form state.
-    assert.match(manageHtml,/Lưu tên nhóm/);
-    assert.match(manageHtml,/Lưu trữ nhóm/);
-    assert.doesNotMatch(manageHtml,/action="[^"]*\?_rsc=/);
+    for(const heading of ["Quản lý nhóm","Thông tin nhóm","Thành viên","Cài đặt quyết toán"])
+      assert.match(manageHtml,new RegExp(heading),"missing management destination: "+heading);
+    assert.doesNotMatch(manageHtml,/<details(?:\s|>)/i);
+    for(const [section,labels] of [
+      ["members",["Chuyển quyền sở hữu","Rời nhóm"]],
+      ["invite",["Mời thành viên"]],
+      ["rename",["Lưu tên nhóm","Lưu trữ nhóm"]],
+      ["archive",["Lưu trữ nhóm"]],
+    ]){
+      const response=await fetch(`${origin}${managePath}?section=${section}`,{
+        headers:{cookie:cookieHeader(jar)},signal:AbortSignal.timeout(10000),
+      });
+      assert.equal(response.status,200);
+      const html=await response.text();
+      for(const label of labels)assert.ok(html.includes(label),section+": "+label);
+      assert.doesNotMatch(html,/action="[^"]*\?_rsc=/);
+    }
     const renameUrl=`${origin}/api/groups/${groupId}/rename`;
     const renameRequest=async(body,sessionJar=jar)=>fetch(renameUrl,{
       method:"PATCH",redirect:"manual",
@@ -704,7 +709,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
         const html = await editPage.text();
         assert.match(html, /NEXT_HTTP_ERROR_FALLBACK|NEXT_NOT_FOUND|404/,
           `${label} must receive not-found instead of invoice edit form`);
-        assert.doesNotMatch(html, /Tên hóa đơn.*Ngày chi tiêu/s,
+        assert.doesNotMatch(html, /Tên khoản chi.*Ngày chi tiêu/s,
           `${label} must not see the edit form`);
       } else {
         assert.equal(editPage.status, 404);
@@ -3120,7 +3125,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const sc008Anon=await sc008Page(sc008ListUrl,new Map());
     assert.ok([200,307].includes(sc008Anon.response.status));
     if(sc008Anon.response.status===200){
-      assert.doesNotMatch(sc008Anon.html,/Công nợ gốc trong kỳ|Quyết toán theo kỳ.*Kỳ/, 
+      assert.doesNotMatch(sc008Anon.html,/Khoản trong kỳ|Các kỳ|Quyết toán.*Kỳ/,
         "unauthenticated cycle listing must never leak ledger information");
       assert.match(sc008Anon.html,/NEXT_REDIRECT|http-equiv|__next-page-redirect/);
     }else{
@@ -3129,7 +3134,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     }
     const sc008List=await sc008Page(sc008ListUrl);
     assert.equal(sc008List.response.status,200,sc008List.html.slice(0,150));
-    assert.match(sc008List.html,/Các kỳ đã ghi nhận/);
+    assert.match(sc008List.html,/Các kỳ/);
     assert.match(sc008List.html,/Quyết toán chưa mở cho nhóm/);
     assert.match(sc008List.html,/Đã khóa sổ/);
     const sc008OriginalCount=(await pool.query(`
@@ -3137,21 +3142,22 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       WHERE group_id=$1 AND cycle_id=$2`,[bnGroup,bnCycle])).rows[0].n;
     assert.ok(sc008OriginalCount>50,
       "SC-008 needs a >50-source fixture to detect a paginated money bug");
-    const sc008Source=await sc008Page(sc008DetailUrl);
+    const sc008Overview=await sc008Page(sc008DetailUrl);
+    assert.match(sc008Overview.html,/Quyết toán chưa mở cho nhóm/);
+    const sc008Source=await sc008Page(sc008DetailUrl+"?view=sources");
     assert.equal(sc008Source.response.status,200,sc008Source.html.slice(0,150));
-    assert.match(sc008Source.html,/Công nợ gốc trong kỳ/);
+    assert.match(sc008Source.html,/Khoản trong kỳ/);
     assert.match(sc008Source.html,
-      new RegExp(`Tổng hợp từ toàn bộ ${sc008OriginalCount} nghĩa vụ gốc`));
-    assert.match(sc008Source.html,/Tiền mặt đã xác nhận/);
-    assert.match(sc008Source.html,/Đã bù trừ phi tiền mặt/);
-    assert.match(sc008Source.html,/Tiền mặt chờ xác nhận/);
-    assert.match(sc008Source.html,/Quyết toán chưa mở cho nhóm/);
+      new RegExp(`${sc008OriginalCount} khoản nợ`));
+    assert.match(sc008Source.html,/Tiền đã xác nhận/);
+    assert.match(sc008Source.html,/Đã bù nợ/);
+    assert.match(sc008Source.html,/Chờ xác nhận/);
     assert.match(sc008Source.html,/Phân trang nguồn công nợ/);
-    const sc008PageTwo=await sc008Page(sc008DetailUrl+"?page=2");
+    const sc008PageTwo=await sc008Page(sc008DetailUrl+"?view=sources&page=2");
     assert.equal(sc008PageTwo.response.status,200);
     assert.match(sc008PageTwo.html,/Trang 2\//);
     assert.match(sc008PageTwo.html,
-      new RegExp(`Tổng hợp từ toàn bộ ${sc008OriginalCount} nghĩa vụ gốc`),
+      new RegExp(`${sc008OriginalCount} khoản nợ`),
       "paging must never alter grand totals");
     const sc008Live=(await pool.query(`
       SELECT COALESCE(sum(b.original_minor),0)::text AS original,
@@ -3749,12 +3755,10 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     // SC-008: audit-proven historical original invoice remains visible
     // in new-cycle rendered source lines with its REAL original date.
     const sc008LatePage=await sc008Page(
-      `${origin}/groups/${sc006Group}/cycles/${sc006Target}`,jar);
+      `${origin}/groups/${sc006Group}/cycles/${sc006Target}?view=sources`,jar);
     assert.equal(sc008LatePage.response.status,200);
     assert.match(sc008LatePage.html,/Late original grocery invoice/);
-    assert.match(sc008LatePage.html,/Hóa đơn nhập muộn/);
-    assert.match(sc008LatePage.html,/Có chứng từ gán kỳ|có chứng từ gán kỳ/);
-    assert.match(sc008LatePage.html,/Quyết toán chưa mở cho nhóm/);
+    assert.match(sc008LatePage.html,/Nhập muộn/);
 
     // SC-007 release regression: a late invoice's ORIGINAL occurred_on
     // precedes the target cycle, but a proven SC-006 attribution in its

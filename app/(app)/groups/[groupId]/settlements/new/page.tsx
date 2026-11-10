@@ -1,4 +1,4 @@
-import Link from "next/link";
+import {PageHeader} from "@/components/ui/app-screen";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails } from "@/lib/groups/service";
@@ -24,10 +24,7 @@ export default async function NewSettlementPage({params}:{params:Promise<{groupI
     pair.debts.push(debt);
   }
   return <main className="app-page space-y-5">
-    <Link href={`/groups/${groupId}/settlements`} className="text-sm text-muted-foreground">
-      ← Thanh toán trong {group.name}
-    </Link>
-    <h1 className="text-2xl font-semibold">Ghi nhận thanh toán</h1>
+    <PageHeader title="Trả tiền" context={group.name} backHref={`/groups/${groupId}/debts`} backLabel="Công nợ"/>
     <BatchSettlementForm groupId={groupId} pairs={[...pairs.values()]}/>
   </main>;
 }

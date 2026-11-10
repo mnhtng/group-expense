@@ -51,7 +51,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
       }
       if(payload&&typeof payload==="object"&&"created" in payload){
         const result=payload as {created:number;reviewed:number;disabled:boolean};
-        setMessage(`Đã tạo ${result.created} kỳ và chuyển ${result.reviewed} kỳ sang chờ rà soát. Không tính hoặc chuyển tiền.`);
+        setMessage(`Đã tạo ${result.created} kỳ và chuyển ${result.reviewed} kỳ sang chờ kiểm tra. Không tính hoặc chuyển tiền.`);
       } else {
         keyRef.current=null;
         setMessage("Đã cập nhật trạng thái kỳ. Không có nghiệp vụ tiền nào được thực hiện.");
@@ -76,8 +76,8 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
         Kỳ quyết toán (chế độ chuẩn bị)
       </h2>
       <p className="text-sm text-muted-foreground">
-        Chỉ quản lý khoảng thời gian và trạng thái “Đang mở / Chờ rà soát”.
-        Chưa khóa sổ, chụp công nợ, thu tiền hoặc bù trừ.
+        Chỉ quản lý khoảng thời gian và trạng thái “Đang mở / Chờ kiểm tra”.
+        Chưa khóa sổ, chụp công nợ, thu tiền hoặc bù nợ.
       </p>
     </div>
     {!requestedEnabled
@@ -95,7 +95,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
             <DateDMYInput value={end} onChange={editEnd} label="Kết thúc kỳ (không bao gồm ngày này)"/>
             <p className="text-xs text-muted-foreground">
               Không chồng lấn kỳ cũ. Chỉ chọn kỳ bắt đầu khi lịch đã hiệu lực.
-              Nút tạo kỳ không phát sinh hóa đơn hoặc thanh toán.
+              Nút tạo kỳ không phát sinh khoản chi hoặc thanh toán.
             </p>
             <button type="button" disabled={busy||!start||!end}
               onClick={createManual}
@@ -118,7 +118,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
             {formatDateDMY(cycle.periodStart)} – trước {formatDateDMY(cycle.periodEnd)}
           </span>
           <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">
-            {cycle.state==="locked"?"Đã khóa snapshot":cycle.state==="review"?"Chờ rà soát":"Đang mở"}
+            {cycle.state==="locked"?"Đã khóa snapshot":cycle.state==="review"?"Chờ kiểm tra":"Đang mở"}
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -133,7 +133,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
               expectedVersion:cycle.version,
             })}
             className="min-h-11 rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-50">
-            Chuyển sang chờ rà soát
+            Chuyển sang chờ kiểm tra
           </button>}
         {(cycle.state==="review"||cycle.state==="locked")&&
           <SettlementSnapshotPanel key={cycle.id}

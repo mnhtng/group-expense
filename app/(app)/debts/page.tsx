@@ -1,79 +1,35 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth/session";
-import { listPersonalDebts, listPersonalDebtItems, sumDebtAmounts } from "@/lib/debts/service";
-import { listPersonalSettlements } from "@/lib/settlements/service";
-import { DebtCard } from "@/components/debts/debt-card";
-
-const vnd = (amount: string) => new Intl.NumberFormat("vi-VN").format(BigInt(amount)) + " ₫";
-
-export default async function DebtsPage() {
-  const user = await requireUser();
-  const [debts, items, settlements] = await Promise.all([
-    listPersonalDebts(user.id),
-    listPersonalDebtItems(user.id),
-    listPersonalSettlements(user.id),
-  ]);
-  const payable = debts.filter(d => d.direction === "pay");
-  const receivable = debts.filter(d => d.direction === "receive");
-  const incomingItems = items.filter(d => d.creditorId === user.id);
-  const outgoingItems = items.filter(d => d.debtorId === user.id);
+import {requireUser} from "@/lib/auth/session";
+import {listPersonalDebts,listPersonalDebtItems,sumDebtAmounts} from "@/lib/debts/service";
+import {listPersonalSettlements} from "@/lib/settlements/service";
+import {DebtCard} from "@/components/debts/debt-card";
+import {EmptyState,GroupedList,PageHeader,SegmentedNav} from "@/components/ui/app-screen";
+const vnd=(v:string)=>new Intl.NumberFormat("vi-VN").format(BigInt(v))+" ₫";
+export default async function DebtsPage({searchParams}:{searchParams:Promise<{tab?:string}>}){
+  const user=await requireUser(),{tab:raw}=await searchParams;
+  const tab=raw==="receive"||raw==="pending"?raw:"pay";
+  const [debts,items,settlements]=await Promise.all([listPersonalDebts(user.id),listPersonalDebtItems(user.id),listPersonalSettlements(user.id)]);
+  const rows=items.filter(d=>tab==="receive"?d.creditorId===user.id:d.debtorId===user.id);
+  const total=sumDebtAmounts(debts.filter(d=>d.direction===tab));
   return <main className="app-page space-y-6">
-    <header>
-      <h1 className="text-2xl font-semibold">Công nợ của tôi</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Theo từng hóa đơn, trên tất cả nhóm</p>
-    </header>
-    <div className="grid grid-cols-2 gap-3">
-      <div className="min-w-0 rounded-2xl border bg-card p-4">
-        <p className="text-xs text-muted-foreground">Tôi cần trả</p>
-        <p className="mt-2 break-words text-lg font-bold tabular-nums text-money-out">
-          −{vnd(sumDebtAmounts(payable))}
-        </p>
-      </div>
-      <div className="min-w-0 rounded-2xl border bg-card p-4">
-        <p className="text-xs text-muted-foreground">Tôi cần nhận</p>
-        <p className="mt-2 break-words text-lg font-bold tabular-nums text-money-in">
-          +{vnd(sumDebtAmounts(receivable))}
-        </p>
-      </div>
-    </div>
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold">Chờ xác nhận ({settlements.length})</h2>
-      {settlements.length === 0 &&
-        <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-          Không có yêu cầu chờ.
-        </p>}
-      {settlements.map(s => {
-        const outgoing = s.debtorId === user.id;
-        return <Link key={s.id} href={`/groups/${s.groupId}/settlements/${s.id}`}
-          className="block space-y-2 rounded-2xl border bg-card p-4 transition-colors hover:bg-secondary/40">
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <strong>{s.initiatedBy === user.id ? "Bạn đã yêu cầu" : "Cần bạn xác nhận"}</strong>
-            <strong className={`shrink-0 tabular-nums ${outgoing ? "text-money-out" : "text-money-in"}`}>
-              {outgoing ? "−" : "+"}{vnd(s.amountMinor)}
-            </strong>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {s.debtorName} trả {s.creditorName} · {s.groupName}
-          </p>
-          <p className="text-xs text-muted-foreground">Đang chờ · Chưa trừ công nợ</p>
-        </Link>;
-      })}
-    </section>
-    {([
-      ["Tôi cần trả", outgoingItems],
-      ["Tôi cần nhận", incomingItems],
-    ] as const).map(([heading, rows]) =>
-      <section key={heading} className="space-y-3">
-        <h2 className="text-lg font-semibold">{heading} ({rows.length} khoản)</h2>
-        {rows.length === 0 &&
-          <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-            Không có khoản nợ nào.
-          </p>}
-        {rows.map(debt => <DebtCard key={debt.id} debt={debt} viewerId={user.id} showGroup />)}
-      </section>
-    )}
-    {items.length === 250 && <p className="text-xs text-muted-foreground">
-      Đang hiển thị tối đa 250 khoản gần nhất. Tổng công nợ phía trên được tính từ toàn bộ khoản còn nợ.
-    </p>}
+    <PageHeader title="Công nợ"/>
+    <SegmentedNav label="Loại công nợ" items={[
+      {href:"/debts",label:"Bạn trả",active:tab==="pay"},
+      {href:"/debts?tab=receive",label:"Bạn nhận",active:tab==="receive"},
+      {href:"/debts?tab=pending",label:"Chờ xác nhận",active:tab==="pending"},
+    ]}/>
+    {tab!=="pending"?<>
+      <div className="space-y-2 py-2"><p className="text-muted-foreground">{tab==="pay"?"Cần trả":"Được nhận"}</p>
+        <p className={`app-money ${tab==="pay"?"text-money-out":"text-money-in"}`}>{vnd(total)}</p></div>
+      {rows.length===0?<EmptyState>Không còn khoản nào.</EmptyState>:<section className="space-y-3" aria-label={tab==="pay"?"Khoản cần trả":"Khoản được nhận"}>
+        {rows.map(debt=><DebtCard key={debt.id} debt={debt} viewerId={user.id} showGroup/>)}</section>}
+      {items.length===250&&<p className="app-caption">Đang hiện 250 khoản gần nhất.</p>}
+    </>:settlements.length===0?<EmptyState>Không có yêu cầu chờ.</EmptyState>:<GroupedList>
+      {settlements.map(s=><Link key={s.id} href={`/groups/${s.groupId}/settlements/${s.id}`} className="app-list-row items-start">
+        <div className="min-w-0 flex-1"><strong>{s.initiatedBy===user.id?"Đã gửi yêu cầu":"Chờ bạn xác nhận"}</strong>
+          <p className="app-caption mt-1">{s.debtorName} trả {s.creditorName}</p><p className="app-caption">{s.groupName}</p></div>
+        <strong className="max-w-[45%] break-words text-right text-lg tabular-nums">{vnd(s.amountMinor)}</strong>
+      </Link>)}
+    </GroupedList>}
   </main>;
 }

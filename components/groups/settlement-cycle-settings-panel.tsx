@@ -47,14 +47,11 @@ export function SettlementCycleSettingsPanel({
   }
   return <section aria-labelledby="settlement-preparation" className="space-y-4 rounded-3xl border bg-card p-5">
     <div className="space-y-1">
-      <h2 id="settlement-preparation" className="text-lg font-semibold">Quyết toán theo kỳ</h2>
-      <p className="text-sm text-muted-foreground">
-        Nhóm cần đăng ký và được mở quyền sử dụng trước khi ghi nhận quyết toán.
-        Lưu lựa chọn không tự tạo bù trừ hoặc xác nhận thanh toán.
-      </p>
+      <h2 id="settlement-preparation" className="text-lg font-semibold">Quyết toán</h2>
+
     </div>
     <div className="rounded-2xl bg-secondary/70 p-3 text-sm">
-      Trạng thái thực tế: <strong>{initial.effectiveEnabled?"Đã hoạt động":"Chưa kích hoạt"}</strong>
+      <strong>{initial.effectiveEnabled?"Đã hoạt động":"Chưa kích hoạt"}</strong>
     </div>
     {initial.canManage&&<div className="space-y-4">
       <label className="flex min-h-12 items-center gap-3 rounded-xl border p-3 text-sm">
@@ -64,33 +61,27 @@ export function SettlementCycleSettingsPanel({
             if(!e.target.checked)setNetting(false);
           }}
           className="size-5 shrink-0 accent-primary"/>
-        <span>Đăng ký sử dụng quyết toán theo kỳ</span>
+        <span>Bật quyết toán</span>
       </label>
       <label className="flex min-h-12 items-center gap-3 rounded-xl border p-3 text-sm">
         <input type="checkbox" checked={requestedBilateralNetting}
           disabled={busy||!requestedEnabled}
           onChange={e=>setNetting(e.target.checked)}
           className="size-5 shrink-0 accent-primary"/>
-        <span>Cho phép đề xuất bù trừ công nợ hai chiều giữa đúng hai thành viên</span>
+        <span>Cho phép bù nợ</span>
       </label>
-      <p className="text-xs text-muted-foreground">
-        Khi hệ thống quyết toán được phát hành, bù trừ vẫn cần hai bên liên quan
-        xác nhận. Không chuyển khoản nợ qua người thứ ba.
-      </p>
+
       <button type="button" disabled={!dirty||busy}
         onClick={()=>void request(base+"/settings","PATCH",{
           expectedVersion:initial.version,requestedEnabled,requestedBilateralNetting,
         })}
         className="min-h-12 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-        {busy?"Đang lưu...":"Lưu lựa chọn cho nhóm"}
+        {busy?"Đang lưu...":"Lưu"}
       </button>
     </div>}
     {initial.canDelegate&&<div className="space-y-3 border-t pt-4">
-      <h3 className="font-semibold">Người được ủy quyền quản lý kỳ</h3>
-      <p className="text-xs text-muted-foreground">
-        Chỉ chủ nhóm cấp/thu hồi quyền này. Admin không được cấp quyền mặc định.
-        Người được ủy quyền không thể sửa hóa đơn hoặc xác nhận tiền thay người khác.
-      </p>
+      <h3 className="font-semibold">Người quản lý kỳ</h3>
+
       {delegates.length===0
         ? <p className="text-sm text-muted-foreground">Chưa ủy quyền cho thành viên nào.</p>
         : delegates.map(m=><div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3">

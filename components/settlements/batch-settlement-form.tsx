@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useState, type FormEvent } from "react";
+import {OptionalNoteField} from "@/components/ui/optional-note-field";
 import { useRouter } from "next/navigation";
 
 type DebtOption={
@@ -60,7 +61,7 @@ export function BatchSettlementForm({groupId,pairs}:{
       {(pair?.debts??[]).map(debt=>{
         const checked=selected.includes(debt.id);
         return <div key={debt.id} className="space-y-2 rounded-xl border bg-card p-4">
-          <label className="flex cursor-pointer items-start gap-3">
+          <label className="flex min-h-11 cursor-pointer items-start gap-3">
             <input type="checkbox" checked={checked} onChange={e=>{
               setSelected(old=>e.target.checked?[...old,debt.id]:old.filter(id=>id!==debt.id));
               invalidate();
@@ -81,11 +82,7 @@ export function BatchSettlementForm({groupId,pairs}:{
         </div>;
       })}
     </div>
-    <label className="block text-sm font-medium">Ghi chú (không bắt buộc)
-      <textarea maxLength={500} value={note} rows={2}
-        onChange={e=>{setNote(e.target.value);invalidate();}}
-        className="mt-2 w-full rounded-xl border bg-background p-3"/>
-    </label>
+    <OptionalNoteField value={note} onChange={value=>{setNote(value);invalidate();}} maxLength={500}/>
     <div className="rounded-xl border bg-muted p-4">
       <p className="text-xs text-muted-foreground">{chosen.length} khoản</p>
       <p className="mt-1 text-xl font-bold tabular-nums">{vnd(total)}</p>

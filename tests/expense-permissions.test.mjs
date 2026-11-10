@@ -36,5 +36,6 @@ test("expense page and edit URL both enforce the same creator-only policy", () =
     assert.doesNotMatch(source, /role\s*===\s*["'](?:owner|admin)["']/);
     assert.doesNotMatch(source, /role\s*!==\s*["'](?:owner|admin)["']/);
   }
-  assert.match(detail, /Chỉ người tạo hóa đơn mới có quyền sửa hoặc xóa/);
+  assert.match(detail, /editable=canEdit&&!completed&&confirmed===0n&&pending===0n/);
+  assert.match(detail, /editable&&<DeleteExpenseButton/);
 });

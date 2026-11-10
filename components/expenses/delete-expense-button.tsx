@@ -22,7 +22,7 @@ export function DeleteExpenseButton({ groupId, expenseId, version }: {
       });
       if (!response.ok) {
         const data = await response.json();
-        setError(data?.error ?? "Không thể xóa hóa đơn.");
+        setError(data?.error ?? "Không thể xóa khoản chi.");
       } else {
         setConfirming(false);
         router.replace(`/groups/${groupId}`);
@@ -34,11 +34,11 @@ export function DeleteExpenseButton({ groupId, expenseId, version }: {
   return <div className="space-y-3">
     {!confirming&&<button type="button" disabled={busy} onClick={()=>{setError("");setConfirming(true);}}
       className="min-h-11 rounded-xl border border-destructive px-4 py-3 text-sm text-destructive disabled:opacity-50">
-      Xóa hóa đơn
+      Xóa khoản chi
     </button>}
-    {confirming&&<InlineConfirmation title="Xóa hóa đơn này?"
-      description="Không thể hoàn tác. Hóa đơn đã thanh toán không thể xóa."
-      confirmLabel="Xóa hóa đơn" danger busy={busy}
+    {confirming&&<InlineConfirmation title="Xóa khoản chi này?"
+      description="Không thể hoàn tác. Khoản chi đã thanh toán không thể xóa."
+      confirmLabel="Xóa khoản chi" danger busy={busy}
       note={note} onNoteChange={setNote}
       onCancel={()=>{setConfirming(false);setError("");setNote("");}} onConfirm={()=>void remove()}/>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}

@@ -10,13 +10,14 @@ function sourceFiles(folder) {
       /\.(tsx|jsx)$/.test(entry.name)?[absolute]:[];
   });
 }
-test("application controls do not use auto-collapsing native disclosures",()=>{
+test("native read-only disclosures never wrap live application controls",()=>{
   for(const file of [...sourceFiles("app"),...sourceFiles("components")]){
     const text=readFileSync(file,"utf8")
       .replace(/\/\*[\s\S]*?\*\//g,"")
       .replace(/^\s*\/\/.*$/gm,"");
-    assert.doesNotMatch(text,/<\s*(?:details|summary)\b/i,
-      "UI must not silently auto-collapse after refresh: "+file);
+    for(const block of text.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)){
+      assert.doesNotMatch(block[1],/<(?:button|input|select|textarea|form|[A-Z][A-Za-z]+)\b/,"Live controls need persistent state: "+file);
+    }
     assert.doesNotMatch(text,/\bwindow\.confirm\s*\(/,
       "Use a persistent inline confirmation, not a browser modal: "+file);
   }
@@ -37,7 +38,7 @@ test("notification polling merges newer rows instead of resetting paginated card
 });
 
 test("create group and invite acceptance do not rely on redirecting server actions",()=>{
-  const home=readFileSync("app/(app)/groups/page.tsx","utf8");
+  const home=readFileSync("app/(app)/groups/new/page.tsx","utf8");
   const invite=readFileSync("app/invite/[token]/page.tsx","utf8");
   assert.match(home,/<CreateGroupForm/);
   assert.match(invite,/<AcceptInviteForm/);

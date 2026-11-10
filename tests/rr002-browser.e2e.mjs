@@ -10,7 +10,6 @@ import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import {spawn} from "node:child_process";
 import {mkdir} from "node:fs/promises";
-import {resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {test} from "node:test";
 import {fixtureDatabaseUrl} from "../db/rr004-local-runtime.mjs";
@@ -187,7 +186,7 @@ async function installSnapshotPointerProbe(page){
       if(!(node instanceof Element))return "other";
       if(node.closest(".app-bottom-nav"))return "bottom-nav";
       if(node.closest("button")?.textContent
-        ?.includes("Xác nhận khóa bản đối soát"))return "lock-button";
+        ?.includes("Chốt số liệu"))return "lock-button";
       if(node.closest('input[type="checkbox"]'))return "checkbox";
       if(node.closest("button"))return "other-button";
       if(node.closest("main"))return "main";
@@ -204,7 +203,7 @@ async function installSnapshotPointerProbe(page){
     const capture=event=>{
       const nav=document.querySelector(".app-bottom-nav");
       const lock=[...document.querySelectorAll("button")].find(button=>
-        button.textContent?.includes("Xác nhận khóa bản đối soát"));
+        button.textContent?.includes("Chốt số liệu"));
       const pointer=event instanceof MouseEvent;
       const x=pointer?Math.round(event.clientX):null;
       const y=pointer?Math.round(event.clientY):null;
@@ -267,6 +266,55 @@ async function scenario(engine,project,options,actors){
     const admin=await create("admin");
     const outsider=await create("outsider");
 
+    // Mobile redesign: a real browser creates a group and an expense through
+    // separate screens, retains both form steps, then verifies stored money.
+    await owner.page.goto(ORIGIN+"/groups");
+    await owner.page.getByRole("link",{name:"Tạo nhóm",exact:true}).click();
+    await owner.page.waitForURL("**/groups/new");
+    const uiGroupName="RR002 mobile "+randomUUID().slice(0,8);
+    await owner.page.getByLabel("Tên nhóm",{exact:true}).fill(uiGroupName);
+    const groupPost=await observeBrowserPost(owner.page,"/api/groups",
+      ()=>owner.page.getByRole("button",{name:"Tạo nhóm",exact:true}).click());
+    assert.equal(groupPost.status(),201);
+    const uiGroupId=(await groupPost.json()).id;
+    await owner.page.waitForURL("**/groups/"+uiGroupId);
+    for(const member of [other,admin])await pool.query(
+      "INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
+      [uiGroupId,member.id]);
+    await owner.page.getByRole("link",{name:"Thêm khoản",exact:true}).click();
+    await owner.page.getByLabel("Tên khoản chi",{exact:true}).fill("RR002 chia tiền lẻ");
+    await owner.page.getByRole("button",{name:"Thêm ghi chú",exact:true}).click();
+    await owner.page.getByLabel("Ghi chú",{exact:true}).fill("Giữ nội dung khi đổi bước");
+    await owner.page.getByRole("button",{name:"Tiếp",exact:true}).click();
+    await owner.page.getByLabel("Tên món 1",{exact:true}).fill("Bữa tối");
+    await owner.page.getByLabel("Đơn giá (VND)",{exact:true}).fill("100001");
+    await owner.page.getByRole("button",{name:"Thông tin",exact:true}).click();
+    assert.equal(await owner.page.getByLabel("Tên khoản chi",{exact:true}).inputValue(),"RR002 chia tiền lẻ");
+    assert.equal(await owner.page.getByLabel("Ghi chú",{exact:true}).inputValue(),"Giữ nội dung khi đổi bước");
+    await owner.page.getByRole("button",{name:"Tiếp",exact:true}).click();
+    assert.equal(await owner.page.getByLabel("Tên món 1",{exact:true}).inputValue(),"Bữa tối");
+    assert.equal(await owner.page.getByLabel("Đơn giá (VND)",{exact:true}).inputValue(),"100001");
+    await noHorizontalOverflow(owner.page,project+" split form");
+    const expensePost=await observeBrowserPost(owner.page,"/api/groups/"+uiGroupId+"/expenses",
+      ()=>owner.page.getByRole("button",{name:"Tạo khoản chi",exact:true}).click());
+    assert.equal(expensePost.status(),201,"two-step form must commit a real expense");
+    const uiExpenseId=(await expensePost.json()).id;
+    await owner.page.waitForURL("**/expenses/"+uiExpenseId);
+    await owner.page.getByRole("heading",{name:"RR002 chia tiền lẻ",exact:true}).waitFor();
+    await owner.page.getByRole("link",{name:"Các món",exact:true}).click();
+    await owner.page.getByText("Bữa tối",{exact:true}).waitFor();
+    const stored=await pool.query(
+      "SELECT e.total_minor::text,e.notes,(SELECT sum(s.amount_minor)::text FROM expense_items i JOIN expense_item_shares s ON s.item_id=i.id WHERE i.expense_id=e.id) AS shares FROM expenses e WHERE e.id=$1",
+      [uiExpenseId]);
+    assert.deepEqual(stored.rows[0],{total_minor:"100001",notes:"Giữ nội dung khi đổi bước",shares:"100001"});
+    if(project.includes("phone")){
+      const viewport=owner.page.viewportSize();
+      await owner.page.setViewportSize({width:320,height:844});
+      await noHorizontalOverflow(owner.page,project+" narrow screen");
+      await capture(owner.page,project,"mobile-expense");
+      await owner.page.setViewportSize(viewport);
+    }
+
     const made=await must(owner,"POST","/api/groups",{
       name:"RR002 isolated synthetic group"},201);
     const groupId=made.id;
@@ -283,19 +331,19 @@ async function scenario(engine,project,options,actors){
       "/settlement-cycle/settings",{
         expectedVersion:1,requestedEnabled:true,
         requestedBilateralNetting:true});
-    await owner.page.goto(ORIGIN+"/groups/"+groupId+"/manage");
-    await owner.page.getByRole("heading",{name:"Quyết toán theo kỳ",exact:true}).waitFor();
+    await owner.page.goto(ORIGIN+"/groups/"+groupId+"/manage?section=cycle");
+    await owner.page.getByRole("heading",{name:"Quyết toán",exact:true}).waitFor();
     assert.equal(await owner.page.getByRole("checkbox",{
-      name:/Đăng ký sử dụng quyết toán theo kỳ/
+      name:/Bật quyết toán/
     }).isChecked(),true);
     assert.equal(await owner.page.getByRole("checkbox",{
-      name:/Cho phép đề xuất bù trừ công nợ hai chiều/
+      name:/Cho phép bù nợ/
     }).isChecked(),true);
     await owner.page.getByText("Chưa kích hoạt",{exact:true}).first().waitFor();
     await noHorizontalOverflow(owner.page,project+" manage");
-    await admin.page.goto(ORIGIN+"/groups/"+groupId+"/manage");
+    await admin.page.goto(ORIGIN+"/groups/"+groupId+"/manage?section=cycle");
     assert.equal(await admin.page.getByRole("heading",{
-      name:"Quyết toán theo kỳ",exact:true}).count(),0,
+      name:"Quyết toán",exact:true}).count(),0,
       "Group admin cannot manage cycle rights without explicit delegation");
 
     // Backdated manual schedule is a synthetic CI-only fixture. The real
@@ -331,12 +379,12 @@ async function scenario(engine,project,options,actors){
     // Actual signed-browser stale fingerprint: the owner reads a REVIEW
     // preview, while another original invoice is added before confirmation.
     await owner.page.goto(ORIGIN+detail);
-    await owner.page.getByRole("heading",{name:"Rà soát trước khi khóa"}).waitFor();
+    await owner.page.getByRole("heading",{name:"Kiểm tra số liệu"}).waitFor();
     await owner.page.getByRole("button",{
-      name:"Xem trước số liệu để đối soát"}).click();
-    await owner.page.getByText("Bản xem trước — chưa khóa").waitFor();
+      name:"Kiểm tra số liệu"}).click();
+    await owner.page.getByText("Chưa chốt").waitFor();
     const lock=owner.page.getByRole("button",{
-      name:"Xác nhận khóa bản đối soát"});
+      name:"Chốt số liệu"});
     assert.equal(await lock.isDisabled(),true,"Lock must require explicit consent");
     await must(owner,"POST","/api/groups/"+groupId+"/expenses",
       draft("RR002 stale review new invoice",owner.id,other.id,20000),201);
@@ -345,7 +393,7 @@ async function scenario(engine,project,options,actors){
     // entire focus transition leading into the button's pointer gesture.
     await installSnapshotPointerProbe(owner.page);
     await owner.page.getByRole("checkbox",{
-      name:/Tôi đã kiểm tra số liệu này/
+      name:/Tôi đã kiểm tra số liệu/
     }).check();
     // The fixed nav must stay stable during checkbox->button focus changes,
     // including desktop and device-emulated pointer interactions.
@@ -376,7 +424,7 @@ async function scenario(engine,project,options,actors){
       document.addEventListener("click",event=>{
         const el=event.target;
         if(el instanceof Element&&el.closest("button")?.textContent
-          ?.includes("Xác nhận khóa bản đối soát"))
+          ?.includes("Chốt số liệu"))
           globalThis.__rr002LockClickCount++;
       },true);
     });
@@ -394,15 +442,15 @@ async function scenario(engine,project,options,actors){
         secureContext:globalThis.isSecureContext,
         randomUUID:typeof globalThis.crypto?.randomUUID,
         buttonTexts:[...document.querySelectorAll("button")].map(el=>
-          el.textContent?.trim()).filter(text=>text?.includes("khóa bản đối soát")||
+          el.textContent?.trim()).filter(text=>text?.includes("Chốt số liệu")||
             text?.includes("Đang khóa")).slice(0,2),
       })).catch(()=>({nativeClicks:"unknown",secureContext:"unknown",
         randomUUID:"unknown",buttonTexts:[]}));
       const previewVisible=await owner.page.getByText(
-        "Bản xem trước — chưa khóa").isVisible().catch(()=>false);
+        "Chưa chốt").isVisible().catch(()=>false);
       const buttonVisible=await lock.isVisible().catch(()=>false);
       const consent=await owner.page.getByRole("checkbox",{
-        name:/Tôi đã kiểm tra số liệu này/
+        name:/Tôi đã kiểm tra số liệu/
       }).isChecked().catch(()=>false);
       const alerts=await owner.page.getByRole("alert").allInnerTexts()
         .catch(()=>[]);
@@ -447,23 +495,23 @@ async function scenario(engine,project,options,actors){
     // A rejected fingerprint must make the entire preview/consent UI
     // disappear and show the specific server error before permitting retry.
     await owner.page.getByText(
-      "Bản xem trước — chưa khóa").waitFor({state:"hidden",timeout:10000});
+      "Chưa chốt").waitFor({state:"hidden",timeout:10000});
     await owner.page.getByRole("alert").filter({
       hasText:/Số liệu hóa đơn hoặc thanh toán đã thay đổi/
     }).waitFor();
     assert.equal(await owner.page.getByRole("checkbox",{
-      name:/Tôi đã kiểm tra số liệu này/
+      name:/Tôi đã kiểm tra số liệu/
     }).count(),0,"a stale preview must also revoke the consent checkbox");
     let state=(await must(owner,"GET",cyclesApi+"/"+cycleId+"/snapshot")).snapshot;
     assert.equal(state.state,"review","stale fingerprint must never lock");
     await owner.page.getByRole("button",{
-      name:"Xem trước số liệu để đối soát"}).click();
-    await owner.page.getByText("Bản xem trước — chưa khóa").waitFor();
+      name:"Kiểm tra số liệu"}).click();
+    await owner.page.getByText("Chưa chốt").waitFor();
     const freshConsent=owner.page.getByRole("checkbox",{
-      name:/Tôi đã kiểm tra số liệu này/
+      name:/Tôi đã kiểm tra số liệu/
     });
     const freshLock=owner.page.getByRole("button",{
-      name:"Xác nhận khóa bản đối soát"});
+      name:"Chốt số liệu"});
     // The same money authorization must work without a mouse: focus the
     // checkbox, press Space, Tab to the button and press Enter. Mobile
     // emulations retain their ordinary user pointer/touch click flow;
@@ -511,7 +559,7 @@ async function scenario(engine,project,options,actors){
       assert.equal(lockedResponse.status(),200,
         "mobile pointer confirmation must commit the real snapshot lock");
     }
-    await owner.page.getByText("Snapshot đã khóa",{exact:true}).first().waitFor();
+    await owner.page.getByText("Đã chốt số liệu",{exact:true}).first().waitFor();
     state=(await must(owner,"GET",cyclesApi+"/"+cycleId+"/snapshot")).snapshot;
     assert.equal(state.state,"locked");
     assert.equal(state.obligationCount,55,"50-row UI must not truncate underlying ledger");
@@ -522,15 +570,19 @@ async function scenario(engine,project,options,actors){
 
     // Server-rendered original source links; live totals are identical on
     // page 1 and page 2, never recomputed from 50 visible rows.
-    await owner.page.goto(ORIGIN+detail);
-    await owner.page.getByRole("heading",{name:"Công nợ gốc trong kỳ"}).waitFor();
-    await owner.page.getByRole("heading",{name:"Quyết toán giữa hai người"}).waitFor();
-    const src=owner.page.getByRole("region",{name:"Công nợ gốc trong kỳ"});
+    await owner.page.goto(ORIGIN+detail+"?view=sources");
+    await owner.page.getByRole("heading",{name:"Khoản trong kỳ",exact:true}).first().waitFor();
+    const src=owner.page.getByRole("region",{name:"Khoản trong kỳ"});
+    await src.getByText("Chi tiết số tiền",{exact:true}).click();
     const totals=await src.locator("dl").first().innerText();
-    assert.match(await src.innerText(),/toàn bộ 55 nghĩa vụ gốc/);
+    assert.match(await src.innerText(),/55 khoản nợ/);
     await src.getByRole("link",{name:"Tiếp"}).click();
     await owner.page.waitForURL(/page=2/);
-    const page2=owner.page.getByRole("region",{name:"Công nợ gốc trong kỳ"});
+    const page2=owner.page.getByRole("region",{name:"Khoản trong kỳ"});
+    await page2.getByText("Trang 2/2",{exact:true}).waitFor();
+    if(await page2.locator("details").first().getAttribute("open")===null)
+      await page2.getByText("Chi tiết số tiền",{exact:true}).click();
+    await page2.locator("dl").first().waitFor({state:"visible"});
     assert.equal(await page2.locator("dl").first().innerText(),totals,
       "Snapshot/live summary must not be reduced by page 2 pagination");
     assert.ok((await page2.getByRole("list",{name:"Nguồn công nợ gốc"}).locator("li").count())>0);
@@ -541,18 +593,19 @@ async function scenario(engine,project,options,actors){
 
     // Pair dropdown permits selecting exactly one counterparty. The
     // financial call-to-action remains truly disabled, not CSS-only.
-    const selector=owner.page.getByLabel("Xem công nợ của tôi với");
+    await owner.page.goto(ORIGIN+detail+"?view=settle");
+    const selector=owner.page.getByLabel("Chọn người");
     await selector.selectOption({label:other.name});
     await assertTapTarget(selector,"counterparty selector");
-    const proposal=owner.page.getByRole("button",{name:"Gửi đề xuất bù trừ"});
+    const proposal=owner.page.getByRole("button",{name:"Gửi đề xuất bù nợ"});
     await proposal.waitFor();
     assert.equal(await proposal.isDisabled(),true);
     await assertTapTarget(proposal,"disabled proposal");
     const originals=owner.page.getByRole("button",{
-      name:"Xem nghĩa vụ gốc dùng để tính bù trừ"});
+      name:"Xem các khoản bù nợ"});
     await originals.focus();
     await owner.page.keyboard.press("Enter");
-    assert.equal(await owner.page.getByRole("button",{name:"Ẩn nghĩa vụ gốc"}).getAttribute("aria-expanded"),"true");
+    assert.equal(await owner.page.getByRole("button",{name:"Ẩn khoản nợ gốc"}).getAttribute("aria-expanded"),"true");
     await owner.page.getByRole("heading",{name:"Chiều 1"}).waitFor();
     await noHorizontalOverflow(owner.page,project+" locked detail");
     if(project.includes("phone"))await capture(owner.page,project,"locked-cycle");
@@ -566,17 +619,18 @@ async function scenario(engine,project,options,actors){
       "Admin cannot inspect another pair's private bilateral proposal");
     const forbiddenOutsider=await send(outsider,"GET",pairUrl);
     assert.ok([403,404].includes(forbiddenOutsider.response.status()));
-    await outsider.page.goto(ORIGIN+detail);
+    await outsider.page.goto(ORIGIN+detail+"?view=sources");
     assert.equal(await outsider.page.getByRole("heading",{
-      name:"Công nợ gốc trong kỳ"}).count(),0,
+      name:"Khoản trong kỳ"}).count(),0,
       "Nonmember cannot render financial details by direct deep link");
 
     // An original pair member opens a dispute with explicit consent;
     // another member must not see its private reason or audit entries.
     const reason="RR002 synthetic invoice split needs two-party reconciliation";
-    await owner.page.getByLabel("Chọn nghĩa vụ gốc cần đối soát")
+    await owner.page.goto(ORIGIN+detail+"?view=check&panel=disputes");
+    await owner.page.getByLabel("Chọn khoản nợ")
       .selectOption({index:1});
-    await owner.page.getByLabel("Lý do (10–500 ký tự)").fill(reason);
+    await owner.page.getByLabel("Nội dung").fill(reason);
     const createDisputeButton=owner.page.getByRole("button",{name:"Gửi tranh chấp"});
     assert.equal(await createDisputeButton.isDisabled(),true,
       "Dispute submission must require a separate acknowledgement");
@@ -599,17 +653,17 @@ async function scenario(engine,project,options,actors){
     const adminDisputes=await must(admin,"GET",apiFor(groupId,cycleId)+"/disputes");
     assert.ok(!adminDisputes.disputes.some(x=>x.id===disputeId),
       "unrelated admin cannot enumerate pair dispute");
-    await other.page.goto(ORIGIN+detail);
+    await other.page.goto(ORIGIN+detail+"?view=check&panel=disputes");
     await other.page.getByText(reason).first().waitFor();
     await other.page.getByRole("button",{
-      name:"Gửi phản hồi cho người mở tranh chấp"}).click();
+      name:"Trả lời"}).click();
     const responseGroup=other.page.getByRole("group",{name:"Phản hồi tranh chấp"});
-    await responseGroup.getByLabel("Giải thích/biên bản (5–500 ký tự)")
+    await responseGroup.getByLabel("Trả lời")
       .fill("RR002 synthetic counterparty accepts this review");
     const eventsPath=disputesPath+"/"+disputeId+"/events";
     const answered=await observeBrowserPost(other.page,eventsPath,
       ()=>responseGroup.getByRole("button",{
-        name:"Ghi nhận vào lịch sử"}).click());
+        name:"Gửi"}).click());
     assert.equal(answered.status(),201,
       "counterparty response must persist before reading the event timeline");
     await other.page.getByText("RR002 synthetic counterparty accepts this review")
@@ -617,18 +671,18 @@ async function scenario(engine,project,options,actors){
     await owner.page.reload();
     await owner.page.getByText(reason).first().waitFor();
     await owner.page.getByRole("button",{
-      name:"Tôi xác nhận đã giải quyết xong"}).click();
+      name:"Đã giải quyết"}).click();
     const resolveGroup=owner.page.getByRole("group",{name:"Phản hồi tranh chấp"});
-    await resolveGroup.getByLabel("Giải thích/biên bản (5–500 ký tự)")
+    await resolveGroup.getByLabel("Trả lời")
       .fill("RR002 mutually reviewed original source");
     const resolved=await observeBrowserPost(owner.page,eventsPath,
       ()=>resolveGroup.getByRole("button",{
-        name:"Ghi nhận vào lịch sử"}).click());
+        name:"Gửi"}).click());
     assert.equal(resolved.status(),201,
       "reporter resolution must persist before the browser reads the timeline");
     await owner.page.getByText("RR002 mutually reviewed original source")
       .first().waitFor();
-    await admin.page.goto(ORIGIN+detail);
+    await admin.page.goto(ORIGIN+detail+"?view=check&panel=disputes");
     assert.equal(await admin.page.getByText(reason).count(),0,
       "pair-private dispute text must not leak through unrelated member UI");
 
@@ -654,9 +708,9 @@ async function scenario(engine,project,options,actors){
         intercepted++;
         await route.abort("failed");
       });
-      await offlinePage.goto(ORIGIN+detail);
+      await offlinePage.goto(ORIGIN+detail+"?view=check");
       const panel=offlinePage.getByRole("region",{
-        name:"Đối soát và trao đổi"});
+        name:"Kiểm tra & trao đổi"});
       try{
         await panel.getByRole("alert").first().waitFor({timeout:15000});
       }catch(cause){
@@ -677,14 +731,14 @@ async function scenario(engine,project,options,actors){
       await offlinePage.unroute(matchesReconciliation);
       await panel.getByRole("button",{name:"Tải lại"}).click();
       await offlinePage.getByRole("heading",{
-        name:"Báo cáo đối soát trực tiếp"}).waitFor();
+        name:"Tổng kết"}).waitFor();
       await noHorizontalOverflow(offlinePage,project+" retry");
     }finally{
       await offlineContext.close();
     }
     await owner.page.reload();
     await owner.page.getByRole("heading",{
-      name:"Chi tiết kỳ quyết toán"}).waitFor();
+      name:"Kiểm tra & trao đổi",level:1}).waitFor();
     assert.ok(!owner.page.url().includes("/sign-in"),
       "browser reload must retain persistent session");
     const afterMoney=await originalBalance(groupId);
@@ -701,9 +755,9 @@ async function scenario(engine,project,options,actors){
     try{
       await pool.query('UPDATE settlement_cycle_engine_control SET enabled=true');
       const openPair=async(user,counterparty)=>{
-        await user.page.goto(ORIGIN+detail);
-        await user.page.getByText('Quyết toán đã mở cho nhóm',{exact:true}).waitFor();
-        await user.page.getByLabel('Xem công nợ của tôi với').selectOption({label:counterparty.name});
+        await user.page.goto(ORIGIN+detail+"?view=settle");
+        assert.equal((await must(user,'GET','/api/groups/'+groupId+'/settlement-cycle/settings')).effectiveEnabled,true);
+        await user.page.getByLabel('Chọn người').selectOption({label:counterparty.name});
       };
       const consentPost=async(user,label,path)=>{
         await user.page.getByRole('button',{name:label,exact:true}).click();
@@ -717,21 +771,21 @@ async function scenario(engine,project,options,actors){
       };
       await openPair(owner,other);
       const proposalPath=apiFor(groupId,cycleId)+'/bilateral-proposals';
-      let created=await consentPost(owner,'Gửi đề xuất bù trừ',proposalPath);
+      let created=await consentPost(owner,'Gửi đề xuất bù nợ',proposalPath);
       let decisionsPath=proposalPath+'/'+created.proposal.id+'/decisions';
-      await consentPost(owner,'Đồng ý bù trừ',decisionsPath);
+      await consentPost(owner,'Đồng ý bù nợ',decisionsPath);
       await consentPost(owner,'Thu hồi đồng ý',decisionsPath);
-      created=await consentPost(owner,'Gửi đề xuất bù trừ',proposalPath);
+      created=await consentPost(owner,'Gửi đề xuất bù nợ',proposalPath);
       assert.equal(created.proposal.version,2,'closed proposal requires a new immutable version');
       decisionsPath=proposalPath+'/'+created.proposal.id+'/decisions';
-      await consentPost(owner,'Đồng ý bù trừ',decisionsPath);
+      await consentPost(owner,'Đồng ý bù nợ',decisionsPath);
       await openPair(other,owner);
-      await consentPost(other,'Đồng ý bù trừ',decisionsPath);
+      await consentPost(other,'Đồng ý bù nợ',decisionsPath);
       await openPair(owner,other);
-      const applied=await consentPost(owner,'Ghi bù trừ phi tiền mặt',
+      const applied=await consentPost(owner,'Bù nợ ngay',
         proposalPath+'/'+created.proposal.id+'/applications');
-      await owner.page.getByRole('heading',{name:'Bút toán đã áp dụng · phi tiền mặt'}).waitFor();
-      const cash=await consentPost(owner,'Yêu cầu thanh toán phần chênh lệch',
+      await owner.page.getByRole('heading',{name:'Đã bù nợ'}).waitFor();
+      const cash=await consentPost(owner,'Yêu cầu trả phần còn lại',
         apiFor(groupId,cycleId)+'/bilateral-applications/'+applied.application.id+'/residual');
       assert.equal(cash.status,'pending','requesting CASH never confirms a transfer');
       await other.page.goto(ORIGIN+'/groups/'+groupId+'/settlements/'+cash.id);

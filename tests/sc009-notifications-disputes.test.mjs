@@ -86,7 +86,7 @@ test("SC-009 mobile UI: signed ledger, audit, 2-person dispute actions and offli
  assert.match(comp,/!consent/);
  assert.match(comp,/mySources=visibleSources\.filter/);
  assert.match(comp,/readyForManualReview/);
- assert.match(comp,/Bù trừ phi tiền mặt|Đã bù trừ phi tiền mặt/);
+ assert.match(comp,/Bù nợ|Đã bù nợ/);
  assert.match(comp,/export\?kind=ledger/);
  assert.match(comp,/export\?kind=audit/);
  assert.match(comp,/canResolve/);

@@ -16,8 +16,8 @@ test("money direction has consistent semantic tokens, signs and neutral third-pa
   assert.match(css, /--color-money-out:\s*var\(--money-out\)/);
   assert.match(personal, /text-money-out/);
   assert.match(personal, /text-money-in/);
-  assert.match(card, /debt\.debtorId === viewerId/);
-  assert.match(card, /debt\.creditorId === viewerId/);
+  assert.match(card, /debt\.debtorId\s*===\s*viewerId/);
+  assert.match(card, /debt\.creditorId\s*===\s*viewerId/);
   assert.match(card, /"text-foreground"/);
   assert.match(card, /"−"/);
   assert.match(card, /"\+"/);
@@ -29,9 +29,9 @@ test("every personal obligation links to its own debt breakdown", () => {
   assert.match(personal, /listPersonalDebtItems\(user\.id\)/);
   assert.match(personal, /<DebtCard key=\{debt\.id\}/);
   assert.match(card, /\/groups\/\$\{debt\.groupId\}\/debts\/\$\{debt\.id\}/);
-  assert.match(card, /sourcePreview/);
-  assert.match(card, /expenseTotalMinor/);
-  assert.match(group, /<DebtCard key=\{debt\.id\}/);
+  assert.match(detail, /sources\.map/);
+  assert.match(detail, /expenseTotalMinor/);
+  assert.match(group, /<DebtCard key=\{\w+\.id\}/);
   assert.match(service, /AND EXISTS \(SELECT 1 FROM group_members m/);
   assert.match(service, /bal\.outstanding_minor > 0/);
 });

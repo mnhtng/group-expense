@@ -24,15 +24,17 @@ function SignInForm() {
     router.replace(safeReturnTo(requested));
     router.refresh();
   }
-  return <main className="mx-auto max-w-md space-y-6 px-5 py-12">
-    <h1 className="font-heading text-2xl font-semibold">Đăng nhập</h1>
+  return <main className="app-page auth-page space-y-6">
+    <h1 className="app-title">Đăng nhập</h1>
     <form action={submit} className="space-y-3">
-      <input aria-label="Email" autoComplete="email" type="email" name="email" required placeholder="Email"
-        className="w-full rounded-xl border bg-background p-3"/>
+      <label className="block space-y-2 font-medium"><span>Email</span>
+      <input aria-label="Email" autoComplete="email" type="email" name="email" required placeholder="ban@example.com"
+        className="w-full rounded-xl border bg-card p-3"/></label>
+      <label className="block space-y-2 font-medium"><span>Mật khẩu</span>
       <input aria-label="Mật khẩu" autoComplete="current-password" type="password" name="password" required placeholder="Mật khẩu"
-        className="w-full rounded-xl border bg-background p-3"/>
+        className="w-full rounded-xl border bg-card p-3"/></label>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-      <button disabled={loading} className="w-full rounded-xl bg-primary p-3 text-primary-foreground">
+      <button disabled={loading} className="app-action w-full">
         {loading ? "Đang đăng nhập..." : "Đăng nhập"}
       </button>
     </form>
