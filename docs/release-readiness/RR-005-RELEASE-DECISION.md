@@ -2,6 +2,8 @@
 
 **Latest owner instruction:** proceed through PRs to develop/staging and main/production with agent review/merge. [Current execution scope and receipts](RR-005-RELEASE-EXECUTION.md) supersede the older deployment authorization hold below. Missing gates remain unverified; financial engine activation remains OFF, and email remains deferred.
 
+**Executed:** direct owner approval was received for the concrete package. PR16 merged to develop and staging passed20 live GET/runtime assertions; PR17 merged to main and canonical production passed10. Both schemas have24 matching checksums, preserved original business data and eight zero audits; runtime roles are limited and separated from migration ownership. See the execution record for exact merge/deployment IDs. The historical NO-GO statements below remain applicable to financial activation and missing certifications, not to the now-completed application deployment.
+
 **2026-11-09: NO-GO. No staging/production deployment, shared migration, merge or financial activation is authorized.** Technical preparation may continue across readiness tickets under the current owner request; external actions retain their separate approval boundaries.
 
 ## Candidate and environment alignment

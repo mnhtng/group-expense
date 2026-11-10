@@ -26,7 +26,7 @@ Repository: `mnhtng/group-expense`; Vercel team `team_sVKg7rgJ5wX6UEaSTvKKgAk0`,
 
 ## Status
 
-Execution in progress under the owner's subsequent direct approval of the entire concrete migration/runtime/publishing/PR package. The previous automatic-review blockers are resolved for that scope. Hardware tests, independent security/finance signoff, hosted external alerting and full-service RPO/RTO certification remain unverified.
+**Application deployed to staging and production through merged PRs #16 and #17; live runtime/HTTP verification PASS.** The owner directly approved the concrete migration/runtime/publishing/PR package. Financial engine remains OFF and email remains deferred. Hardware tests, independent security/finance signoff, hosted external alerting and full-service RPO/RTO certification remain unverified.
 
 ## Actual receipts before migration
 
@@ -67,4 +67,21 @@ Staging **011–024 applied atomically** on its named development branch. All 24
 
 Created `rr005_staging_app_20261109` as scoped read-only first, then applied the reviewed explicit grants in one transaction. Real-role catalog evaluation PASS: 53 table/view profiles, 19 guards, no ownership/admin/membership/DDL/temp/security-definer/future broad grants. Staging-only `DATABASE_URL` now uses the limited pooled login; staging-only `OPS_READ_SECRET` is new and distinct. Removed only staging's `DATABASE_URL_DIRECT` from runtime. The other 18 env metadata entries, including existing auth/VAPID/Cron, production and feature-preview entries, are unchanged; SSO and production branch `main` remain unchanged. No original owner credential was exported.
 
-Staging application deployment and production steps are still pending; these schema/ACL receipts alone do not establish a successful deployed application.
+The following deployed application receipts supersede the earlier pending deployment status.
+
+## Completed application rollout receipts
+
+| Surface | Merge/source | Vercel deployment | Actual HTTP evidence |
+|---|---|---|---|
+| Staging/develop | [PR16](https://github.com/mnhtng/group-expense/pull/16), merge `ce985f0355ad43c8688121b043f12c2fe262984d` | `dpl_FKqmfW7bTnWdvcu4rmbBJecWMYe9`, READY, preview target, Git branch develop | 20 GET assertions PASS across immutable deployment URL and [stable develop alias](https://group-expense-git-develop-mnhtngs-projects.vercel.app) using short-lived development OIDC |
+| Production/main | [PR17](https://github.com/mnhtng/group-expense/pull/17), merge `201756755b35aa8631d7d41e83076235cd404f96` | `dpl_G7SnrqhPLnuqwuN9EVkjqwibmnrt`, READY, production target, Git branch main, canonical alias assigned with no error | 10 GET assertions PASS at [canonical production](https://group-expense.vercel.app) |
+
+Both live app pools attest the correct distinct limited runtime role, expected branch/database fingerprint, exact merge SHA, 200/empty blockers, no-store and engine OFF. Missing/wrong monitor token returns401; the read token cannot execute Cron. Sign-in page, auth health, manifest, service worker and private-route redirect checks PASS. These are managed GET/runtime checks; real signed financial interactions and four-browser coverage remain the separately documented local results.
+
+Production 007–024 applied atomically after staging acceptance and the approved clone rehearsal. All24 migration checksums match, all11 original business tables preserve their original-column baseline, and eight financial audits are zero. The production real-role profile passes53 objects/19 guards without ownership/admin/DDL/temp authority. Production pooled DB/read token configured, production direct owner runtime URL removed; the other18 env entries and SSO remained unchanged. Both pre-migration backups remain intact.
+
+Both new hosted GitHub verification jobs were prevented from starting by the account billing lock, as confirmed from their annotations. No branch protection/ruleset was removed or overridden. The author's account cannot submit a GitHub self-approval; technical reviews were honestly recorded as COMMENT against the exact PR heads, followed by owner-authorized expected-head merge commits. Main's merge tree matched verified develop exactly.
+
+**Known operational limit:** both deployed status endpoints returned503 with only `NO_COMPLETED_CRON_RUN`; no manual Cron replay was performed. Do not present this as healthy scheduled operations or closed RR003. New financial operations remain hard OFF, email is deferred, and no financial/audit data DML or paid upgrade was performed. Independent review, physical devices, external alerting and full-service RPO/RTO remain open.
+
+These are the initial application-release deployment IDs. Subsequent documentation-only PR merges preserve app digest `03757fecd09d8b7ba5ae50375675234738fd16eb32ee4e7e26ddc5770489c181`; latest deployment-SHA/HTTP receipts belong in the closing PR comments and private local receipt directory, rather than recursively editing source for each documentation build.
