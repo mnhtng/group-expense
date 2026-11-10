@@ -3,7 +3,7 @@ import {createHash,randomUUID} from "node:crypto";
 import type {PoolClient} from "pg";
 import {pool} from "@/lib/db/pool";
 import {notifySettlement} from "@/lib/notifications/service";
-import {SETTLEMENT_CYCLE_ENGINE_READY} from "@/lib/settlement-cycles/settings";
+import {isolatedFinancialFixture,readEngineAccess,requireEngineAccess} from "@/lib/settlement-cycles/engine";
 import {SettlementError} from "@/lib/settlements/service";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -12,16 +12,9 @@ const MAX_MINOR=9223372036854775807n;
 const MAX_ALLOCATIONS=20000;
 const err=(status:400|403|404|409,message:string)=>new SettlementError(status,message);
 
-/** The financial feature remains unreleased. Only the private disposable
- * PostgreSQL 17 CI job, using its exact TEST credentials, may exercise the
- * real create/confirm HTTP workflow. There is NO general-purpose env override.
- * Vercel, Neon, production and local developer DBs always fail CLOSED.
- */
+/** Legacy fixture access only; real requests use locked per-group policy. */
 export function isBatchRepaymentWritable():boolean{
-  return SETTLEMENT_CYCLE_ENGINE_READY ||
-    (process.env.CI==="true" &&
-     process.env.SC005_TEST_ONLY==="isolated-pg17" &&
-     process.env.DATABASE_URL==="postgresql://test:test@localhost:5432/group_expense");
+  return isolatedFinancialFixture("SC005_TEST_ONLY");
 }
 
 export type BatchPairPreview={
@@ -184,9 +177,10 @@ export async function listCycleBatchRepayments(groupId:string,cycleId:string,
       "SELECT requested_enabled FROM group_settlement_settings WHERE group_id=$1",
       [groupId],
     );
+    const access=await readEngineAccess(client,groupId);
     await client.query("COMMIT");
-    return {pairs,enabled:isBatchRepaymentWritable() &&
-      flags.rows[0]?.requested_enabled===true,scope:"one_cycle_one_direction"};
+    return {pairs,enabled:access.financialEngineEnabled ||
+      (isBatchRepaymentWritable()&&flags.rows[0]?.requested_enabled===true),scope:"one_cycle_one_direction"};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
 }
@@ -230,8 +224,7 @@ export async function createCycleBatchRepayment(groupId:string,cycleId:string,
       if(!scoped.rowCount)throw err(409,"Yêu cầu lặp không thuộc đúng kỳ và cặp người.");
       return {id:previous.rows[0].id,alreadyCreated:true,cycleId};
     }
-    if(!isBatchRepaymentWritable())throw err(409,
-      "Thanh toán gộp theo kỳ chưa được phát hành; dữ liệu và công nợ không thay đổi.");
+    await requireEngineAccess(client,groupId,"SC005_TEST_ONLY");
     const cfg=await client.query<{requested_enabled:boolean}>(
       "SELECT requested_enabled FROM group_settlement_settings WHERE group_id=$1",
       [groupId]);

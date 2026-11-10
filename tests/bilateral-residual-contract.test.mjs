@@ -3,14 +3,10 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const read=p=>readFileSync(p,"utf8");
 
-test("BN-006 writes only to disposable CI PostgreSQL; no release flag or fake cash",()=>{
+test("BN-006 requires reviewed cohort authorization; residual cash still needs real confirmation",()=>{
   const s=read("lib/settlement-cycles/residual-repayments.ts");
-  const flag=read("lib/settlement-cycles/settings.ts");
-  assert.match(s,/process\.env\.CI==="true"/);
-  assert.match(s,/process\.env\.BN006_TEST_ONLY==="isolated-pg17"/);
-  assert.match(s,/process\.env\.DATABASE_URL==="postgresql:\/\/test:test@localhost:5432\/group_expense"/);
-  assert.match(s,/if\(!isResidualCashTestWritable\(\)\)/);
-  assert.match(flag,/SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assert.match(s,/requireEngineAccess\(client,groupId,"BN006_TEST_ONLY"\)/);
+  assert.match(s,/isolatedFinancialFixture\("BN006_TEST_ONLY"\)/);
   assert.match(s,/VALUES\(\$1,\$2,\$3,\$4,\$5,'pending'/);
   assert.match(s,/notifySettlement\(client,sid,actorId,"settlement_requested"\)/);
   assert.doesNotMatch(s,/UPDATE obligations|UPDATE expenses|UPDATE\s+group_settlement_bilateral_applications|INSERT INTO group_settlement_bilateral_application_allocations/i);

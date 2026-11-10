@@ -1,13 +1,12 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 const read=(path)=>readFileSync(path,"utf8");
 const exactUrl="postgresql://test:test@localhost:5432/group_expense";
 
-test("SC-007 release gate: backend financial engine stays OFF, never env-toggleable",()=>{
-  const cfg=read("lib/settlement-cycles/settings.ts");
-  assert.match(cfg,/SETTLEMENT_CYCLE_ENGINE_READY\s*=\s*false\s+as\s+boolean/);
-  assert.doesNotMatch(cfg,/SETTLEMENT_CYCLE_ENGINE_READY\s*=\s*process\.env/);
+test("SC-007 release gate: operator policy is default OFF and runtime cannot change it",()=>{
+  assertDefaultEngineDisabled();
   const workflow=read(".github/workflows/sprint1-integration.yml");
   assert.match(workflow,/postgres:\s*\n\s*image:\s*postgres:17/);
   assert.match(workflow,/SC007_TEST_ONLY: isolated-pg17/);
@@ -30,9 +29,10 @@ test("SC-007 release gate: all scoped financial writers require CI, isolated PG 
   ];
   for(const [path,flag] of cases){
     const s=read(path);
-    assert.match(s,/process\.env\.CI\s*===\s*["']true["']/);
-    assert.ok(s.includes(`process.env.${flag}`),path);
-    assert.ok(s.includes(exactUrl),path);
+    assert.ok(s.includes(`requireEngineAccess(client,groupId,"${flag}")`),path);
+    const engine=read("lib/settlement-cycles/engine.ts");
+    assert.match(engine,/process\.env\.CI\s*===\s*["']true["']/);
+    assert.ok(engine.includes(exactUrl),path);
     assert.doesNotMatch(s,/SETTLEMENT_CYCLE_ENGINE_READY\s*=\s*true/);
   }
   const audit=read("db/sc007-audit.mjs");

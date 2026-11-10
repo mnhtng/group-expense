@@ -81,11 +81,12 @@ export function SettlementSchedulePanel({groupId,initial}:{
         Chu kỳ quyết toán dự kiến
       </h2>
       <p className="text-sm text-muted-foreground">
-        SC-002 chỉ lưu lịch cấu hình. Hệ thống chưa tạo kỳ, thu tiền hoặc bù trừ.
+        Thay đổi lịch chỉ có hiệu lực từ ngày bắt đầu đã chọn.
+        Lưu lịch không tự xác nhận thanh toán hay bù trừ.
       </p>
     </div>
     {initial.current&&<div className="rounded-xl bg-secondary p-3 text-sm">
-      <p className="font-medium">Lịch đang có hiệu lực về thời gian (chưa kích hoạt engine)</p>
+      <p className="font-medium">{initial.effectiveEnabled?"Lịch quyết toán đang hoạt động":"Lịch đã đến ngày bắt đầu; quyết toán chưa mở cho nhóm"}</p>
       <p className="text-muted-foreground">
         {choices.find(c=>c.value===initial.current?.frequency)?.label}
         {" · "}{initial.current.timeZone}

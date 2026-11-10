@@ -2,14 +2,9 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const read=path=>readFileSync(path,"utf8");
-test("BN-004 is strictly CI-local and never enables real financial engine",()=>{
+test("BN-004 requires operator cohort authorization or a strictly local fixture, never edits original cash",()=>{
   const s=read("lib/settlement-cycles/applications.ts");
-  assert.match(s,/process\.env\.CI==="true"/);
-  assert.match(s,/process\.env\.BN004_TEST_ONLY==="isolated-pg17"/);
-  assert.match(s,/process\.env\.DATABASE_URL==="postgresql:\/\/test:test@localhost:5432\/group_expense"/);
-  assert.match(s,/if\(!isBilateralApplicationTestWritable\(\)\)/);
-  assert.match(read("lib/settlement-cycles/settings.ts"),
-    /SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assert.match(s,/requireEngineAccess\(client,groupId,"BN004_TEST_ONLY"\)/);
   assert.doesNotMatch(s,/UPDATE\s+obligations|UPDATE\s+settlements|INSERT INTO settlements|INSERT INTO settlement_allocations/i);
 });
 test("only original-source proof is applied with exact two-direction conservation",()=>{

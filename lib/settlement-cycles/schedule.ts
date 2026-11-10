@@ -15,7 +15,7 @@ export type ScheduleRevision={
 };
 export type ScheduleView={
   version:number;current:ScheduleRevision|null;pending:ScheduleRevision|null;
-  canManage:boolean;effectiveEnabled:false;
+  canManage:boolean;effectiveEnabled:boolean;
 };
 export type ScheduleInput={
   expectedVersion:number;
@@ -83,7 +83,7 @@ export async function getSettlementSchedule(groupId:string,actorId:string):Promi
     current:periods.current?toView(periods.current):null,
     pending:periods.pending?toView(periods.pending):null,
     canManage:permissions.canManage,
-    effectiveEnabled:false, // SC-002 is config ONLY, SC-003+ are not implemented.
+    effectiveEnabled:permissions.effectiveEnabled,
   };
 }
 

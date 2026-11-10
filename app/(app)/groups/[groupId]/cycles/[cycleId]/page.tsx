@@ -51,11 +51,11 @@ export default async function CycleDetailPage({params,searchParams}:{
     </header>
     <section aria-label="Trạng thái phát hành" role="note"
       className="space-y-1 rounded-2xl border bg-secondary/60 p-4 text-sm">
-      <p className="font-semibold">Chưa phát hành giao dịch quyết toán</p>
+      <p className="font-semibold">{settings.effectiveEnabled?"Quyết toán đã mở cho nhóm":"Quyết toán chưa mở cho nhóm"}</p>
       <p className="text-muted-foreground">
-        Chỉ hiển thị dữ liệu và các thao tác chuẩn bị được cho phép.
         Bù trừ không phải tiền chuyển khoản; yêu cầu tiền mặt đang chờ
-        không đồng nghĩa đã thanh toán. Các nút ghi nhận tài chính vẫn khóa.
+        không đồng nghĩa đã thanh toán.
+        {!settings.effectiveEnabled&&" Các nút ghi nhận tài chính đang khóa; lịch sử vẫn được giữ."}
       </p>
     </section>
     {selected.state==="open"&&<section className="rounded-2xl border bg-card p-5 space-y-2">

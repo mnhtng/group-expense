@@ -41,6 +41,16 @@ const guardNames=['sc004_manifest_immutable','bn002_proposal_immutable',
   'sc009_dispute_guard','sc009_dispute_event_guard'];
 const guards=Object.entries(LOCK_COLUMNS).map(([table],i)=>({table_name:table,
   trigger_name:guardNames[i],operations:16}));
+guards.push({table_name:'settlement_cycle_engine_events',trigger_name:'sc025_events_immutable',operations:24},
+  {table_name:'settlement_cycle_engine_events',trigger_name:'sc025_events_no_truncate',operations:32});
+for(const [table,prefix,guardOps,auditOps] of [
+  ['settlement_cycle_engine_control','control',16,16],
+  ['settlement_cycle_engine_cohort','cohort',20,20],
+])guards.push(
+  {table_name:table,trigger_name:`sc025_${prefix}_guard`,operations:guardOps},
+  {table_name:table,trigger_name:`sc025_${prefix}_audit`,operations:auditOps},
+  {table_name:table,trigger_name:`sc025_${prefix}_no_delete`,operations:8},
+  {table_name:table,trigger_name:`sc025_${prefix}_no_truncate`,operations:32});
 for(const [table,prefix] of [
   ['expense_events','expense'],['expense_completion_events','completion'],
   ['settlement_events','cash'],['group_membership_events','membership'],
@@ -58,7 +68,8 @@ const quote=name=>{
 };
 export function expectedRuntimePrivileges(table){
   if(!RUNTIME_TABLES.includes(table))throw Error('RR-004 unknown table');
-  const readOnly=['schema_migrations','bn005_obligation_balances','sc009_dispute_states'].includes(table);
+  const readOnly=['schema_migrations','bn005_obligation_balances','sc009_dispute_states',
+    'settlement_cycle_engine_control','settlement_cycle_engine_cohort','settlement_cycle_engine_events'].includes(table);
   return {select:true,insert:!readOnly,
     update:!readOnly&&!append.has(table)&&!COLUMN_UPDATES[table],
     delete:deletable.has(table),columns:COLUMN_UPDATES[table]??[]};

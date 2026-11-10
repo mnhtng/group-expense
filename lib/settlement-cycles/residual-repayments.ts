@@ -5,6 +5,7 @@ import type {PoolClient} from "pg";
 import {SettlementError} from "@/lib/settlements/service";
 import {notifySettlement} from "@/lib/notifications/service";
 import {activeGroup,cycle,enabled,pairActive} from "@/lib/settlement-cycles/proposals";
+import {isolatedFinancialFixture,readEngineAccess,requireEngineAccess} from "@/lib/settlement-cycles/engine";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA=/^[0-9a-f]{64}$/;
@@ -13,14 +14,10 @@ const MAX_SOURCES=20000;
 const err=(status:400|403|404|409,message:string)=>
   new SettlementError(status,message);
 
-/** BN-006 financial writes are limited to a disposable PostgreSQL 17 CI
- * fixture. No production or staging env override, and no general release
- * activation. Existing confirmed cash and BN-004 noncash remain distinct.
- */
+/** Legacy fixture access never replaces operator and group authorization
+ * in deployed environments. Existing cash and noncash remain distinct. */
 export function isResidualCashTestWritable():boolean{
-  return process.env.CI==="true" &&
-    process.env.BN006_TEST_ONLY==="isolated-pg17" &&
-    process.env.DATABASE_URL==="postgresql://test:test@localhost:5432/group_expense";
+  return isolatedFinancialFixture("BN006_TEST_ONLY");
 }
 type Application={
   id:string;groupId:string;cycleId:string;
@@ -43,7 +40,7 @@ export type ResidualPreview={
   allocationCount:number;pendingCashMinor:string;
   remainingLowToHighMinor:string;remainingHighToLowMinor:string;
   fingerprint:string;status:CashStatus;blockedReason:string|null;
-  financialEngineEnabled:false;
+  financialEngineEnabled:boolean;
 };
 type Computed={preview:ResidualPreview;allocations:CashAllocation[]};
 export type CreateResidualInput={
@@ -205,9 +202,12 @@ export async function previewBilateralResidual(groupId:string,cycleId:string,
     const result=calculate(app,await originals(client,app,false));
     const attempts=await history(client,applicationId);
     const featureEnabled=await enabled(client,groupId);
+    const access=await readEngineAccess(client,groupId);
+    result.preview.financialEngineEnabled=access.bilateralEnabled;
     await client.query("COMMIT");
     return {preview:result.preview,history:attempts,
-      writable:isResidualCashTestWritable()&&featureEnabled};
+      financialEngineEnabled:access.bilateralEnabled,
+      writable:access.bilateralEnabled||(isResidualCashTestWritable()&&featureEnabled)};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
 }
@@ -243,10 +243,9 @@ export async function createBilateralResidual(groupId:string,cycleId:string,
           [previous.rows[0].id,applicationId,groupId,cycleId,digest]);
         if(!link.rowCount)throw err(409,"Yêu cầu cũ không thuộc chứng từ bù trừ.");
         return {id:previous.rows[0].id,alreadyCreated:true,cycleId,
-          applicationId};
+          applicationId,financialEngineEnabled:(await readEngineAccess(client,groupId)).bilateralEnabled};
       }
-      if(!isResidualCashTestWritable())
-        throw err(409,"BN-006 chưa được phát hành trong môi trường này.");
+      const access=await requireEngineAccess(client,groupId,"BN006_TEST_ONLY");
       if(!(await enabled(client,groupId)))
         throw err(409,"Nhóm chưa bật quyết toán và bù trừ hai chiều.");
       const c=await cycle(client,groupId,cycleId,true);
@@ -295,7 +294,8 @@ export async function createBilateralResidual(groupId:string,cycleId:string,
       return {id:sid,alreadyCreated:false,applicationId,cycleId,
         amountMinor:preview.amountMinor,allocationCount:allocations.length,
         debtorId:preview.debtorId,creditorId:preview.creditorId,
-        status:"pending" as const,cash:true,noncash:false};
+        status:"pending" as const,cash:true,noncash:false,
+        financialEngineEnabled:access.bilateralEnabled};
     });
   }catch(e){
     if(e instanceof SettlementError)throw e;

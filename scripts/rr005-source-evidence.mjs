@@ -18,11 +18,13 @@ for(const file of files){
   const data=readFileSync(file);
   hash.update(JSON.stringify([file,data.length])+"\n").update(data).update("\n");
 }
-const settings=readFileSync("lib/settlement-cycles/settings.ts","utf8");
-if(!/export const SETTLEMENT_CYCLE_ENGINE_READY = false as boolean;/.test(settings))
-  throw Error("Readiness source no longer has the reviewed hard-OFF gate");
+const policy=readFileSync("db/migrations/025_settlement_engine_rollout.sql","utf8");
+if(!/enabled boolean NOT NULL DEFAULT false/.test(policy)||
+  !/INSERT INTO settlement_cycle_engine_control\(id\) VALUES\(1\)/.test(policy)||
+  /INSERT INTO settlement_cycle_engine_cohort/.test(policy))
+  throw Error("Rollout migration must default OFF without enrolling a group");
 console.log(JSON.stringify({
-  format:"rr005-local-source-evidence-v1",capturedAt:new Date().toISOString(),
+  format:"rr005-local-source-evidence-v2",capturedAt:new Date().toISOString(),
   commit:git("rev-parse","HEAD").trim(),
   trackedTreeClean:git("status","--porcelain","--untracked-files=no").trim()==="",
   codeSha256:hash.digest("hex"),codeFiles:files.length,
@@ -30,6 +32,7 @@ console.log(JSON.stringify({
   migrations:readdirSync("db/migrations").filter(p=>p.endsWith(".sql")).sort()
     .map(filename=>({filename,sha256:createHash("sha256")
       .update(readFileSync("db/migrations/"+filename)).digest("hex")})),
-  financialEngineReady:false,releaseDecision:"NO-GO",
+  enginePolicy:"operator-controlled-group-cohort",defaultEngineEnabled:false,
+  runtimeStateVerified:false,releaseDecision:"NO-GO",
   independentApproval:false,managedRestoreCertified:false,
 },null,2));

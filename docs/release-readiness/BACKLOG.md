@@ -1,5 +1,11 @@
 # Release Readiness — gated verification backlog
 
+**Activation continuation in progress:** owner requested real financial paths and
+bounded group rollout. [SC025 implementation/verification](../settlement-cycles/SC-025-CONTROLLED-ACTIVATION.md)
+replaces the old constant-OFF architecture with operator-only, default-OFF database
+policy. No managed025 migration or real-group enrollment has occurred yet. The
+deployed application receipts below still describe the pre025 engine-OFF release.
+
 **Feature branch:** `feat/settlement-cycles-bilateral` → Draft PR #16 against `develop`.
 **Scope:** verification and operational assurance **after** SC-010, not new settlement features.
 **Application release:** deployed through PR16→develop/staging and PR17→main/production; live runtime/HTTP verification PASS. **Financial activation status: NO-GO**, `SETTLEMENT_CYCLE_ENGINE_READY=false`; missing independent/device/ops/recovery gates remain open. [Completed rollout receipts](RR-005-RELEASE-EXECUTION.md).
