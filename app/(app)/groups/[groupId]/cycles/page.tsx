@@ -33,13 +33,13 @@ export default async function GroupCyclesPage({params,searchParams}:{
       <p className="text-sm text-muted-foreground">{group.name} · VND</p>
     </header>
     <div role="note" className="space-y-1 rounded-2xl border bg-secondary/60 p-4 text-sm">
-      <p className="font-semibold">Chế độ xem trước — chưa phát hành</p>
+      <p className="font-semibold">{setting.effectiveEnabled?"Quyết toán đã mở cho nhóm":"Quyết toán chưa mở cho nhóm"}</p>
       <p className="text-muted-foreground">
-        Nhóm có thể chuẩn bị kỳ và đối soát dữ liệu. Không tự chuyển tiền,
-        xác nhận thanh toán hoặc bù trừ công nợ.
+        Mỗi bù trừ cần xác nhận của đúng hai bên; khoản tiền mặt vẫn cần người
+        còn lại xác nhận đã nhận. Hệ thống không tự chuyển tiền.
       </p>
       <p className="text-xs text-muted-foreground">
-        {setting.requestedEnabled?"Nhóm đã đăng ký dùng khi phát hành.":"Nhóm chưa đăng ký dùng chế độ quyết toán."}
+        {setting.requestedEnabled?"Nhóm đã đăng ký sử dụng.":"Nhóm chưa đăng ký dùng chế độ quyết toán."}
         {" "}{setting.requestedBilateralNetting?"Đã đăng ký bù trừ hai người.":"Chưa đăng ký bù trừ hai người."}
       </p>
     </div>

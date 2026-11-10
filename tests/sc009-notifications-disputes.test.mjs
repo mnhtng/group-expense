@@ -1,3 +1,4 @@
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -57,12 +58,14 @@ test("SC-009 client never accepts spoofed actor or confirmation, export is sourc
  assert.match(service,/SELECT \* FROM \(\$\{auditUnion\}\) events/);
  assert.ok(service.includes("FEFF"),"CSV must emit an Excel UTF-8 BOM");
 });
-test("SC-009 daily reminders are bounded, deduplicated and unconditionally OFF outside gated CI",()=>{
+test("SC-009 daily reminders require operator cohort permission, stay bounded and deduplicate",()=>{
  const reminder=read("lib/settlement-cycles/reminders.ts");
  const cron=read("app/api/internal/push-drain/route.ts");
  const runner=read("lib/settlement-cycles/ops-runner.ts");
  const workflow=read(".github/workflows/sprint1-integration.yml");
- assert.match(reminder,/SETTLEMENT_CYCLE_ENGINE_READY/);
+ assert.match(reminder,/readEngineRollout/);
+ assert.match(reminder,/readEngineAccess\(c,v.groupId\)/);
+ assert.match(reminder,/settlement_cycle_engine_cohort WHERE admitted/);
  assert.match(reminder,/process.env.CI==="true"/);
  assert.match(reminder,/process.env.SC009_TEST_ONLY==="isolated-pg17"/);
  assert.match(reminder,/postgresql:\/\/test:test@localhost:5432\/group_expense/);
@@ -71,8 +74,7 @@ test("SC-009 daily reminders are bounded, deduplicated and unconditionally OFF o
  assert.match(cron,/runDailySettlementOperations/);
  assert.match(runner,/issueCycleReminders\(OPS_LIMITS\.reminders\)/);
  assert.match(workflow,/SC009_TEST_ONLY: isolated-pg17/);
- assert.match(read("lib/settlement-cycles/settings.ts"),
-  /SETTLEMENT_CYCLE_ENGINE_READY = false/);
+ assertDefaultEngineDisabled();
 });
 test("SC-009 mobile UI: signed ledger, audit, 2-person dispute actions and offline-safe consent",()=>{
  const page=read("app/(app)/groups/[groupId]/cycles/[cycleId]/page.tsx");

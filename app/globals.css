@@ -145,6 +145,15 @@
 /* Shared native-feeling mobile layout. Safe area applies to installed PWAs.
    Do not add a second px-* / py-* class on .app-page instances. */
 @layer components {
+  .install-banner {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .install-banner-inner {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(4px, env(safe-area-inset-right, 0px));
+  }
+
   .app-shell {
     --app-tabbar-content-height: 76px;
     --app-tabbar-safe-bottom: max(12px, env(safe-area-inset-bottom, 0px));

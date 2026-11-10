@@ -1,3 +1,4 @@
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -65,9 +66,9 @@ const baseline=()=>({
 test("RR-003 complete immutable financial comparison passes only exact matches",()=>{
   const a=baseline(),b=structuredClone(a);
   b.branchId="br-rr003-demo-recovery";
-  assert.equal(FINANCIAL_CLASSES.length,52);
+  assert.equal(FINANCIAL_CLASSES.length,55);
   assert.deepEqual(compareDigests(a,b),
-    {checks:58,matched:true,releaseApproved:false});
+    {checks:CHECK_NAMES.length,matched:true,releaseApproved:false});
   b.checks.noncash_allocations.sha256="a".repeat(64);
   assert.throws(()=>compareDigests(a,b),
     /immutable conservation mismatch: noncash_allocations/);
@@ -92,8 +93,7 @@ test("RR-003 comparator has read-only transactions, bounded whitelisted scans, n
   assert.match(source,/flag:"wx",mode:0o600/);
   assert.match(source,/releaseApproved:false/);
   assert.match(readFileSync(".gitignore","utf8"),/\/rr003-artifacts\//);
-  assert.match(readFileSync("lib/settlement-cycles/settings.ts","utf8"),
-    /SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assertDefaultEngineDisabled();
 });
 
 test("RR-003 refuses comparing source to itself, shared branches or obsolete partial manifests",()=>{

@@ -22,6 +22,8 @@ export function classifyRoute(pathname: string): RouteKind {
 
   if (
     pathname === "/" ||
+    // Next.js generates this icon at /apple-icon?<hash>, without a .png suffix.
+    pathname === "/apple-icon" ||
     routeIs(pathname, "/sign-in") ||
     routeIs(pathname, "/sign-up") ||
     routeIs(pathname, "/invite")

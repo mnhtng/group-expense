@@ -2,13 +2,12 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/pool";
+import {readEngineAccess} from "@/lib/settlement-cycles/engine";
 
 /**
- * SC-001 only: PREPARE settings, do not activate money behavior.
- * A separate audited release must explicitly implement and unlock the engine.
- * Never infer a working financial engine from a stored opt-in preference.
+ * Group opt-in is distinct from operator-controlled financial rollout.
+ * A stored preference alone never authorizes a financial write.
  */
-export const SETTLEMENT_CYCLE_ENGINE_READY = false as boolean;
 
 export class SettlementSettingsError extends Error {
   constructor(
@@ -144,7 +143,7 @@ export async function getSettlementSettings(
     version: row.version ?? 0,
     requestedEnabled: row.requestedEnabled ?? false,
     requestedBilateralNetting: row.requestedBilateralNetting ?? false,
-    effectiveEnabled: SETTLEMENT_CYCLE_ENGINE_READY && (row.requestedEnabled ?? false),
+    effectiveEnabled: (await readEngineAccess(pool,groupId)).financialEngineEnabled,
     canManage: isOwner || row.delegated,
     canDelegate: isOwner,
     managerIds,
@@ -177,7 +176,8 @@ export async function updateSettlementSettings(
       old.requested_enabled === input.requestedEnabled &&
       old.requested_bilateral_netting === input.requestedBilateralNetting) {
       return { version, requestedEnabled: input.requestedEnabled,
-        requestedBilateralNetting: input.requestedBilateralNetting, effectiveEnabled: false };
+        requestedBilateralNetting: input.requestedBilateralNetting,
+        effectiveEnabled:(await readEngineAccess(client,groupId)).financialEngineEnabled };
     }
     const nextVersion = version + 1;
     if (old) {
@@ -202,7 +202,8 @@ export async function updateSettlementSettings(
         bilateral: input.requestedBilateralNetting, version: nextVersion },
     });
     return { version: nextVersion, requestedEnabled: input.requestedEnabled,
-      requestedBilateralNetting: input.requestedBilateralNetting, effectiveEnabled: false };
+      requestedBilateralNetting: input.requestedBilateralNetting,
+      effectiveEnabled:(await readEngineAccess(client,groupId)).financialEngineEnabled };
   });
 }
 

@@ -5,7 +5,7 @@ import {
 } from "../lib/security/route-policy.ts";
 
 test("public entry points, Better Auth and cron remain available", () => {
-  for (const path of ["/", "/sign-in", "/sign-up", "/invite/test-token"]) {
+  for (const path of ["/", "/sign-in", "/sign-up", "/invite/test-token", "/apple-icon"]) {
     assert.equal(classifyRoute(path), "public-page", path);
   }
   assert.equal(classifyRoute("/api/auth/get-session"), "auth-api");
@@ -16,7 +16,8 @@ test("public entry points, Better Auth and cron remain available", () => {
 });
 test("future private routes default to protection; segment boundaries matter", () => {
   for (const path of ["/groups", "/groups/aaa/expenses/new", "/debts",
-    "/activity", "/settings", "/unexpected-admin-page", "/sign-in-other"]) {
+    "/activity", "/settings", "/unexpected-admin-page", "/sign-in-other",
+    "/apple-icon-admin", "/apple-icon/private"]) {
     assert.equal(classifyRoute(path), "private-page", path);
   }
   for (const path of ["/api/groups/1/expenses", "/api/debts", "/api/notifications",

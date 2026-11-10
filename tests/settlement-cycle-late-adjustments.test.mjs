@@ -1,3 +1,4 @@
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -48,5 +49,5 @@ test("SC-006 cron waits for recurring catch-up, and member departure pauses impl
   assert.match(member,/creator_confirmation/);
   assert.match(member,/UPDATE recurring_expense_rules r SET status='paused'/);
   assert.match(read("lib/groups/service.ts"),/group_settlement_cycle_adjustments adj/);
-  assert.match(read("lib/settlement-cycles/settings.ts"),/SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assertDefaultEngineDisabled();
 });

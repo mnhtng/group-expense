@@ -1,6 +1,14 @@
 # Release Readiness — gated verification backlog
 
-**Feature branch:** `feat/settlement-cycles-bilateral` → Draft PR #16 against `develop`.
+**Activation continuation in progress:** owner requested real financial paths and
+bounded group rollout. [SC025 implementation/verification](../settlement-cycles/SC-025-CONTROLLED-ACTIVATION.md)
+replaces the old constant-OFF architecture with operator-only, default-OFF database
+policy. Owner-approved rehearsal025 and the hosted synthetic financial flow PASS;
+staging schema/role PASS, application rollout underway. No real-group enrollment.
+[Current managed receipts](SC-025-MANAGED-EVIDENCE.md) supersede the pre025
+application receipts below; staging/production remain OFF with empty cohorts.
+
+**Current feature branch:** `feat/settlement-cycle-activation` → [PR21](https://github.com/mnhtng/group-expense/pull/21) against `develop`.
 **Scope:** verification and operational assurance **after** SC-010, not new settlement features.
 **Application release:** deployed through PR16→develop/staging and PR17→main/production; live runtime/HTTP verification PASS. **Financial activation status: NO-GO**, `SETTLEMENT_CYCLE_ENGINE_READY=false`; missing independent/device/ops/recovery gates remain open. [Completed rollout receipts](RR-005-RELEASE-EXECUTION.md).
 **Latest owner instruction:** execute feature → develop/staging → main/production through PR review and merge; [execution record](RR-005-RELEASE-EXECUTION.md). This supersedes the historical no-deployment authorization statements, without certifying missing gates or activating the financial engine. Email remains deferred.
@@ -24,7 +32,7 @@ SC-001–SC-010 and BN-001–BN-006 are implemented on the feature branch. Postg
 
 1. **No changes to original obligation ledger, CASH/NONCASH allocations or immutable snapshots in readiness tooling.** No synthetic bank transfer.
 2. **No ORM.** Keep PostgreSQL through the existing `pg` driver and versioned SQL migrations.
-3. No automatic merge, staging or production deployment, shared-Neon schema change, feature flag activation or project-wide secret export.
+3. Publishing, provider changes and merge/deploy follow the exact owner-approved [SC025 package](SC-025-MANAGED-EXECUTION.md); real-group activation remains separate. No project-wide secret export.
 4. The SC-010 disposable PG17 restore script is **never** run on Neon.
 5. Financial data reads must be isolated and role-limited. Do not log credentials, member identities, invoice descriptions or payment amounts in operational telemetry.
 6. An isolated Neon schema write requires **separate explicit authorization naming the exact migration list and branch ID**; generic "continue" is not enough. Historical RR-001 approval covers only 011–023 on its original child, not 024 or the recovered child.

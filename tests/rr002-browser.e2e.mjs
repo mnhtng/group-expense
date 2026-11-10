@@ -284,9 +284,9 @@ async function scenario(engine,project,options,actors){
         expectedVersion:1,requestedEnabled:true,
         requestedBilateralNetting:true});
     await owner.page.goto(ORIGIN+"/groups/"+groupId+"/manage");
-    await owner.page.getByRole("heading",{name:"Chuẩn bị quyết toán theo kỳ"}).waitFor();
+    await owner.page.getByRole("heading",{name:"Quyết toán theo kỳ",exact:true}).waitFor();
     assert.equal(await owner.page.getByRole("checkbox",{
-      name:/Đăng ký sử dụng chế độ quyết toán theo kỳ/
+      name:/Đăng ký sử dụng quyết toán theo kỳ/
     }).isChecked(),true);
     assert.equal(await owner.page.getByRole("checkbox",{
       name:/Cho phép đề xuất bù trừ công nợ hai chiều/
@@ -295,7 +295,7 @@ async function scenario(engine,project,options,actors){
     await noHorizontalOverflow(owner.page,project+" manage");
     await admin.page.goto(ORIGIN+"/groups/"+groupId+"/manage");
     assert.equal(await admin.page.getByRole("heading",{
-      name:"Chuẩn bị quyết toán theo kỳ"}).count(),0,
+      name:"Quyết toán theo kỳ",exact:true}).count(),0,
       "Group admin cannot manage cycle rights without explicit delegation");
 
     // Backdated manual schedule is a synthetic CI-only fixture. The real
@@ -694,6 +694,64 @@ async function scenario(engine,project,options,actors){
       "SELECT count(*)::int AS n FROM group_settlement_bilateral_applications WHERE group_id=$1",
       [groupId]);
     assert.equal(noFinance.rows[0].n,0);
+
+    // Real gate, not a finance test flag: exercise the newly admitted group's
+    // consent controls with two independent browser sessions in every profile.
+    await pool.query('INSERT INTO settlement_cycle_engine_cohort(group_id) VALUES($1)',[groupId]);
+    try{
+      await pool.query('UPDATE settlement_cycle_engine_control SET enabled=true');
+      const openPair=async(user,counterparty)=>{
+        await user.page.goto(ORIGIN+detail);
+        await user.page.getByText('Quyết toán đã mở cho nhóm',{exact:true}).waitFor();
+        await user.page.getByLabel('Xem công nợ của tôi với').selectOption({label:counterparty.name});
+      };
+      const consentPost=async(user,label,path)=>{
+        await user.page.getByRole('button',{name:label,exact:true}).click();
+        const form=user.page.getByRole('group',{name:label,exact:true});
+        const commit=form.getByRole('button',{name:'Xác nhận thao tác',exact:true});
+        assert.equal(await commit.isDisabled(),true,'fresh explicit consent is required');
+        await form.getByRole('checkbox').check();
+        const result=await observeBrowserPost(user.page,path,()=>commit.click());
+        assert.equal(result.status(),201,label+' must commit through a real signed browser POST');
+        return result.json();
+      };
+      await openPair(owner,other);
+      const proposalPath=apiFor(groupId,cycleId)+'/bilateral-proposals';
+      let created=await consentPost(owner,'Gửi đề xuất bù trừ',proposalPath);
+      let decisionsPath=proposalPath+'/'+created.proposal.id+'/decisions';
+      await consentPost(owner,'Đồng ý bù trừ',decisionsPath);
+      await consentPost(owner,'Thu hồi đồng ý',decisionsPath);
+      created=await consentPost(owner,'Gửi đề xuất bù trừ',proposalPath);
+      assert.equal(created.proposal.version,2,'closed proposal requires a new immutable version');
+      decisionsPath=proposalPath+'/'+created.proposal.id+'/decisions';
+      await consentPost(owner,'Đồng ý bù trừ',decisionsPath);
+      await openPair(other,owner);
+      await consentPost(other,'Đồng ý bù trừ',decisionsPath);
+      await openPair(owner,other);
+      const applied=await consentPost(owner,'Ghi bù trừ phi tiền mặt',
+        proposalPath+'/'+created.proposal.id+'/applications');
+      await owner.page.getByRole('heading',{name:'Bút toán đã áp dụng · phi tiền mặt'}).waitFor();
+      const cash=await consentPost(owner,'Yêu cầu thanh toán phần chênh lệch',
+        apiFor(groupId,cycleId)+'/bilateral-applications/'+applied.application.id+'/residual');
+      assert.equal(cash.status,'pending','requesting CASH never confirms a transfer');
+      await other.page.goto(ORIGIN+'/groups/'+groupId+'/settlements/'+cash.id);
+      await other.page.getByRole('button',{name:'Xác nhận đã thanh toán',exact:true}).click();
+      const confirmed=other.page.waitForResponse(r=>r.request().method()==='PATCH'&&
+        new URL(r.url()).pathname==='/api/groups/'+groupId+'/settlements/'+cash.id);
+      await other.page.getByRole('button',{name:'Xác nhận',exact:true}).click();
+      assert.equal((await confirmed).status(),200,'the actual counterparty confirms synthetic CASH');
+      const remaining=await pool.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId]);
+      assert.ok(remaining.rows.every(r=>r.outstanding_minor==='0'&&r.pending_cash_minor==='0'));
+      const finished=await originalBalance(groupId);
+      assert.equal(finished.obligations,startingMoney.obligations);
+      assert.equal(finished.original,startingMoney.original);
+      assert.equal(finished.noncash_docs,1);
+      assert.equal(finished.cash_requests,1);
+      await noHorizontalOverflow(owner.page,project+' activated finance');
+    }finally{
+      await pool.query('UPDATE settlement_cycle_engine_control SET enabled=false');
+      await pool.query('UPDATE settlement_cycle_engine_cohort SET admitted=false WHERE group_id=$1',[groupId]);
+    }
     if(project.includes("phone")){
       const manifest=await owner.context.request.get(ORIGIN+"/manifest.webmanifest");
       assert.equal(manifest.status(),200);

@@ -1,3 +1,4 @@
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -165,8 +166,7 @@ test("RR-002 CI never points to Neon or enables financial engine",()=>{
   assert.match(y,/node --test --test-reporter=spec tests\/rr002-browser\.e2e\.mjs/);
   assert.match(y,/RR002_TEST_ONLY: isolated-pg17/);
   assert.doesNotMatch(y,/vercel deploy|DATABASE_URL_DIRECT|neon\.tech|git push|SETTLEMENT_CYCLE_ENGINE_READY=true/i);
-  assert.match(read("lib/settlement-cycles/settings.ts"),
-    /SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assertDefaultEngineDisabled();
 });
 test("RR-002 invoice source touch target is at least 44px",()=>{
   const s=read("components/groups/settlement-cycle-source-list.tsx");

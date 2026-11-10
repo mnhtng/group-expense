@@ -1,3 +1,4 @@
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -13,7 +14,8 @@ test("SC-008 has a member-visible mobile cycle list and contextual cycle detail"
   assert.match(list,/getSettlementSettings\(groupId,user\.id\)/);
   assert.match(list,/records\.cycles\.map/);
   assert.match(list,/min-h-24/);
-  assert.match(list,/chưa phát hành/i);
+  assert.match(list,/setting\.effectiveEnabled\?/);
+  assert.match(list,/Quyết toán chưa mở cho nhóm/);
   assert.match(detail,/getGroupDetails\(groupId,user\.id\)/);
   assert.match(detail,/listMembers\(groupId,user\.id\)/);
   assert.match(detail,/getSettlementSettings\(groupId,user\.id\)/);
@@ -70,8 +72,7 @@ test("SC-008 source list derives totals from ORIGINAL unpaginated BN-005 source,
 
 test("SC-008 never enables money through frontend opt-in, and requires real pairwise consent",()=>{
   const view=read("components/groups/settlement-cycle-finance-panel.tsx");
-  const settings=read("lib/settlement-cycles/settings.ts");
-  assert.match(settings,/SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assertDefaultEngineDisabled();
   assert.match(view,/const financeReady=financialEngineEnabled&&requestedEnabled/);
   assert.match(view,/bilateralEnabled&&counterparts\.length>0/);
   assert.match(view,/key=\{other\}/);

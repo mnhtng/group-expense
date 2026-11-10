@@ -43,6 +43,39 @@ reserve iOS standalone safe-area padding. It used the same small
    validates compile, routes and server-rendered mobile navigation but is
    not a substitute for an iOS/Android screenshot comparison.
 
+## Compact install banner
+- The root layout includes a single 44px row (45px including its border), in
+  normal document flow, with a download icon, Install button and Close button.
+- Chromium shows it when `beforeinstallprompt` confirms installation is
+  available. The button opens the browser's install confirmation; accepting or
+  declining consumes that prompt. A fresh browser event permits another try.
+- iPhone/iPad browser tabs show an expandable Safari Home Screen guide instead.
+  Safari 17+ on Mac shows Add to Dock instructions with the macOS Sonoma 14+
+  requirement. Firefox on Android shows its Install menu; Firefox 143+ on
+  Windows shows the address-bar web app button instructions, including the
+  Firefox 150+ requirement for Microsoft Store installations.
+- Recognized mobile embedded browsers (Facebook, Instagram, Zalo, LINE and
+  Android WebViews) explain how to open the page in Safari/Chrome first.
+  User-agent recognition is best effort; unknown embedded browsers may not
+  expose installation and must be checked on devices.
+- Manual-install browsers cannot reliably report an existing installation
+  from a regular tab, so a previously installed app may still see its guide
+  when visiting in the browser. Opening an installed standalone app hides it.
+- Installed display modes and `appinstalled` hide the banner. Closing it hides
+  it for the current tab session, including reloads and navigation. Other
+  browsers without a native prompt or a known manual flow hide the banner.
+- Manifest PNG icons at 192px and 512px reuse the existing SVG artwork.
+- `/apple-icon?<hash>` is explicitly public in the ingress policy. It returns
+  the 180px Apple PNG before login; similar paths remain protected.
+- Device QA: install with Android Chrome, launch from the new icon and verify
+  the banner is absent; repeat the manual Home Screen flow on iPhone/iPad.
+  Browser event simulation does not replace installation on physical devices.
+
+Installation instructions follow [Apple's iPhone guide](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios),
+[Safari on Mac](https://support.apple.com/en-gb/104996),
+[Firefox Android](https://support.mozilla.org/en-US/kb/use-web-apps-firefox-android)
+and [Firefox Windows](https://support.mozilla.org/en-US/kb/web-apps-firefox-windows).
+
 ## Rollout
 Feature branch → CI + PostgreSQL integration → `develop` Preview. The
 production `main` branch remains unchanged until a separate release.

@@ -1,4 +1,5 @@
 import {NextResponse} from "next/server";
+import {getGroupEngineAccess} from "@/lib/settlement-cycles/engine";
 import {getCurrentSession} from "@/lib/auth/session";
 import {settlementErrorResponse,settlementJson,settlementNoStore}
   from "@/lib/settlements/http";
@@ -25,8 +26,9 @@ export async function GET(request:Request,{params}:Context){
       throw new SettlementError(400,"Cần xác định đúng hai bên đề xuất.");
     const result=await previewBilateralProposal(groupId,cycleId,session.user.id,
       url.searchParams.get("partyAId")??"",url.searchParams.get("partyBId")??"");
-    return NextResponse.json({...result,approvalEnabled:false,
-      financialEngineEnabled:false},{headers:settlementNoStore});
+    const access=await getGroupEngineAccess(groupId);
+    return NextResponse.json({...result,approvalEnabled:access.bilateralEnabled,
+      financialEngineEnabled:access.bilateralEnabled},{headers:settlementNoStore});
   }catch(error){return settlementErrorResponse(error);}
 }
 export async function POST(request:Request,{params}:Context){
@@ -50,8 +52,9 @@ export async function POST(request:Request,{params}:Context){
       expectedFingerprint:fields.expectedFingerprint as string,
       requestKey:fields.requestKey as string,
     });
-    return NextResponse.json({...saved,approvalEnabled:false,
-      financialEngineEnabled:false},{
+    const access=await getGroupEngineAccess(groupId);
+    return NextResponse.json({...saved,approvalEnabled:access.bilateralEnabled,
+      financialEngineEnabled:access.bilateralEnabled},{
       status:saved.alreadyCreated?200:201,headers:settlementNoStore,
     });
   }catch(error){return settlementErrorResponse(error);}

@@ -1,4 +1,5 @@
 import "server-only";
+import {readEngineAccess} from "@/lib/settlement-cycles/engine";
 import {randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
 import type {PoolClient} from "pg";
@@ -87,8 +88,9 @@ export async function listCycleDisputes(groupId:string,cycleId:string,actorId:st
        ORDER BY d.created_at DESC,d.id DESC LIMIT 100`,
       [groupId,cycleId,actorId]);
     const disputes=await Promise.all(result.rows.map(r=>projection(c,r,actorId)));
+    const access=await readEngineAccess(c,groupId);
     await c.query("COMMIT");
-    return {disputes,limit:100,financialEngineEnabled:false};
+    return {disputes,limit:100,financialEngineEnabled:access.financialEngineEnabled};
   }catch(e){await c.query("ROLLBACK");throw e;}
   finally{c.release();}
 }

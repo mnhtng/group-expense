@@ -44,7 +44,7 @@ export async function POST(request:Request,{params}:Context){
         expectedFingerprint:fields.expectedFingerprint as string,
         requestKey:fields.requestKey as string,
       });
-    return NextResponse.json({...result,financialEngineEnabled:false},{
+    return NextResponse.json(result,{
       status:result.alreadyApplied?200:201,headers:settlementNoStore});
   }catch(e){return settlementErrorResponse(e);}
 }

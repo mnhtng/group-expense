@@ -1,3 +1,4 @@
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -109,8 +110,7 @@ test("SC-010 bearer-only operations are auditable, non-overlapping and never ena
   assert.match(sql,/completed operational run is immutable/);
   assert.match(sql,/operational run history cannot be deleted/);
   assert.doesNotMatch(route,/SETTLEMENT_CYCLE_ENGINE_READY\s*=\s*true/);
-  assert.match(read("lib/settlement-cycles/settings.ts"),
-    /SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assertDefaultEngineDisabled();
 });
 test("SC-010 recurring >200 and cycle >30 work are explicitly flagged instead of silently starved",()=>{
   const recurring=read("lib/recurring/service.ts");

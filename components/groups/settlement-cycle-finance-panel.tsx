@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import {useRouter} from "next/navigation";
 import {useEffect,useRef,useState} from "react";
 import type {BilateralProposalPreview} from "@/lib/settlement-cycles/proposals";
 import type {DecisionView} from "@/lib/settlement-cycles/decisions";
@@ -102,6 +103,7 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
   groupId:string;cycleId:string;me:string;other:string;
   people:Member[];enabled:boolean;
 }){
+  const router=useRouter();
   const pairUrl=`/api/groups/${groupId}/settlement-cycle/cycles/${cycleId}`;
   const proposalApi=`${pairUrl}/bilateral-proposals`;
   const [state,setState]=useState<PairState|null>(null);
@@ -189,6 +191,7 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
       keyRef.current=null;
       setInfo("Đã ghi nhận yêu cầu. Đang cập nhật dữ liệu mới nhất.");
       refresh();
+      if(intent==="apply"||intent==="residual")router.refresh();
     }catch(e){
       if(e&&typeof e==="object"&&"status" in e&&e.status===409){
         keyRef.current=null;refresh();
@@ -315,7 +318,8 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
           </Link>)}
         </div>}
       </div>}
-      {!doc&&live.calculation.hasOffset&&<DisabledAction kind="proposal"
+      {!app&&live.calculation.hasOffset&&(!doc||live.staleCurrent||
+        (decision&&["rejected","revoked","invalidated","expired","superseded"].includes(decision.status)))&&<DisabledAction kind="proposal"
         canUse={!!actionAllowed} onClick={()=>begin("proposal")}/>}
       {!live.calculation.hasOffset&&!doc&&<p className="rounded-xl bg-secondary p-3 text-sm">
         Hai chiều không có khoản nợ khả dụng để bù trừ. Có thể xem yêu cầu
@@ -336,6 +340,7 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
 function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
   groupId:string;cycleId:string;userId:string;people:Member[];enabled:boolean;
 }){
+  const router=useRouter();
   const url=`/api/groups/${groupId}/settlement-cycle/cycles/${cycleId}/repayments`;
   const [pairs,setPairs]=useState<BatchPairPreview[]>([]);
   const [loading,setLoading]=useState(true);
@@ -365,6 +370,7 @@ function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
         expectedFingerprint:selected.fingerprint});
       key.current=null;setSelected(null);setAccepted(false);
       setLoading(true);setRevision(x=>x+1);
+      router.refresh();
     }catch(e){
       if(e&&typeof e==="object"&&"status" in e&&e.status===409){
         key.current=null;setSelected(null);setLoading(true);setRevision(x=>x+1);
@@ -399,9 +405,8 @@ function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
   </section>;
 }
 
-/** The UI never enables actual money through a client-side opt-in or a
- * test-only server flag. Only a separate audited release may change
- * financialEngineEnabled in production; today it is permanently false.
+/** financialEngineEnabled is a server-derived, per-group rollout decision.
+ * The UI cannot grant financial authority through a client-side opt-in.
  */
 export function SettlementCycleFinancePanel({groupId,cycleId,
   currentUserId,currentUserName,counterparts,requestedEnabled,

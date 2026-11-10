@@ -1,4 +1,5 @@
 import "server-only";
+import {readEngineAccess} from "@/lib/settlement-cycles/engine";
 import {createHash,randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
 import type {PoolClient} from "pg";
@@ -31,8 +32,8 @@ type EventRow={
 export type DecisionView={
   proposalId:string;version:number;sourceFingerprint:string;
   status:DecisionStatus;isCurrent:boolean;expiresAt:string;
-  approvedBy:string[];approvalCount:number;readyForApplication:false;
-  financialEngineEnabled:false;canApprove:boolean;canReject:boolean;
+  approvedBy:string[];approvalCount:number;readyForApplication:boolean;
+  financialEngineEnabled:boolean;canApprove:boolean;canReject:boolean;
   canRevoke:boolean;liveMatches:boolean;events:{
     id:string;eventType:string;actorId:string|null;recordedAt:string;
   }[];
@@ -92,7 +93,7 @@ async function liveMatches(client:PoolClient,p:Proposal,lock:boolean){
   }
 }
 function project(p:Proposal,history:EventRow[],isLive:boolean,actorId:string,
-  now:Date):DecisionView{
+  now:Date,financialEngineEnabled:boolean):DecisionView{
   const approvedBy=history.filter(x=>x.eventType==="approve")
     .map(x=>x.actorId).filter((v):v is string=>v!==null);
   const terminal=history.find(x=>
@@ -117,7 +118,7 @@ function project(p:Proposal,history:EventRow[],isLive:boolean,actorId:string,
     proposalId:p.id,version:p.version,sourceFingerprint:p.sourceFingerprint,
     status,isCurrent,expiresAt:expiredAt.toISOString(),
     approvedBy,approvalCount:approvedBy.length,
-    readyForApplication:false,financialEngineEnabled:false,
+    readyForApplication:financialEngineEnabled&&status==="agreed",financialEngineEnabled,
     canApprove:open&&!approvedBy.includes(actorId),
     canReject:open,
     canRevoke:(open||status==="agreed")&&approvedBy.includes(actorId),
@@ -132,7 +133,8 @@ async function readModel(client:PoolClient,p:Proposal,actorId:string,lock:boolea
   const history=await events(client,p.id);
   const clock=await client.query<{now:Date}>("SELECT clock_timestamp() AS now");
   const live=await liveMatches(client,p,lock);
-  return {history,view:project(p,history,live,actorId,clock.rows[0].now)};
+  const access=await readEngineAccess(client,p.groupId);
+  return {history,view:project(p,history,live,actorId,clock.rows[0].now,access.bilateralEnabled)};
 }
 /** A read projects time-dependent expiry/staleness without mutating tables.
  * A subsequent action records expired/invalidated as an append-only event.

@@ -31,6 +31,7 @@ on:
       - 'components/expenses/**'
       - 'tests/*.integration.mjs'
       - 'tests/*.smoke.mjs'
+      - 'tests/helpers/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - '.github/workflows/sprint1-integration.yml'
@@ -63,6 +64,8 @@ on:
       - 'components/notifications/**'
       - 'components/expenses/**'
       - 'tests/*.integration.mjs'
+      - 'tests/*.smoke.mjs'
+      - 'tests/helpers/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - '.github/workflows/sprint1-integration.yml'
@@ -85,11 +88,12 @@ jobs:
       BETTER_AUTH_URL: http://localhost:3101
       # CI-only placeholder, never a production secret. Exercises Cron auth.
       CRON_SECRET: ci-cycle-metadata-throwaway-do-not-use-outside-tests
-      # Only with exact disposable localhost PG URL + CI=true can SC-005 requests run.
+      # Legacy fixture bypasses require this exact disposable localhost URL + CI.
+      # SC025's separate role/database test removes these flags and uses real policy.
       SC005_TEST_ONLY: isolated-pg17
-      # BN-004 noncash financial writes exist ONLY in disposable PG17 HTTP CI.
+      # BN-004 legacy fixtures (hosted writes require operator + group opt-ins).
       BN004_TEST_ONLY: isolated-pg17
-      # BN-006 residual cash available only in disposable PG17 integration.
+      # BN-006 legacy residual fixture bypass.
       BN006_TEST_ONLY: isolated-pg17
       # SC-007 reconciliation/concurrency tests may run ONLY in disposable PG17.
       SC007_TEST_ONLY: isolated-pg17

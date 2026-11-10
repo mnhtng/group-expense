@@ -1,3 +1,4 @@
+import {assertDefaultEngineDisabled} from './helpers/engine-release-policy.mjs';
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
@@ -100,6 +101,5 @@ test("RR-003 policy must not connect to Neon, restore or write money",()=>{
   const source=readFileSync("db/rr003-recovery-policy.mjs","utf8");
   assert.doesNotMatch(source,/from ["']pg["']|from ["']@neondatabase|fetch\(/);
   assert.doesNotMatch(source,/\b(?:INSERT|UPDATE|DELETE|CREATE|DROP|ALTER)\s+(?:TABLE|INTO|FROM|obligations)/i);
-  assert.match(readFileSync("lib/settlement-cycles/settings.ts","utf8"),
-    /SETTLEMENT_CYCLE_ENGINE_READY = false/);
+  assertDefaultEngineDisabled();
 });
