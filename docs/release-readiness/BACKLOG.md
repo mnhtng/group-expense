@@ -1,5 +1,7 @@
 # Release Readiness — gated verification backlog
 
+**Mobile redesign, 2026-11-11:** implemented locally on `feat/mobile-design-system`, inspired by Tricount: larger type, plain Vietnamese and separate task screens. [Design system](../design/MOBILE-DESIGN-SYSTEM.md); [verification](../design/MOBILE-REDESIGN-VERIFICATION.md). Production build,182 unit tests, HTTP, eight local finance audits and four browser profiles PASS. This UI branch has not been pushed/deployed; the managed receipts below describe the earlier deployed financial release.
+
 **SC025 implementation and approved deployment complete:** owner requested real financial paths and
 bounded group rollout. [SC025 implementation/verification](../settlement-cycles/SC-025-CONTROLLED-ACTIVATION.md)
 replaces the old constant-OFF architecture with operator-only, default-OFF database
@@ -12,7 +14,7 @@ application receipts below; staging/production remain OFF with empty cohorts.
 **Application PRs:** [PR21](https://github.com/mnhtng/group-expense/pull/21) feature→develop and [PR22](https://github.com/mnhtng/group-expense/pull/22) develop→main, merged.
 **Scope:** settlement implementation plus verification/operational assurance after SC-010; earlier dated entries remain historical.
 **Application release:** schema25/application/runtime verification PASS on staging and production. **Real-group financial activation: NO-GO**, database policy OFF, empty cohorts; independent/device/ops/recovery gates remain open. [Completed SC025 receipts](SC-025-MANAGED-EVIDENCE.md). [Earlier application-only release](RR-005-RELEASE-EXECUTION.md).
-**Latest owner instruction:** approved the entire [SC025 execution package](SC-025-MANAGED-EXECUTION.md), including isolated synthetic finance and subsequent staged deployment. It does not certify remaining gates or admit real groups. Email remains deferred.
+**Latest financial authorization:** approved the entire [SC025 execution package](SC-025-MANAGED-EXECUTION.md), including isolated synthetic finance and subsequent staged deployment. It does not certify remaining gates or admit real groups. Email remains deferred.
 **Protocol (owner request, 2026-11-09):** continue safely across RR-003–005 in one task; preserve separate approval boundaries for provider mutations, shared migrations, deployment, activation and independent signoff. Bind evidence to a clean commit or explicitly identified working-tree code digest.
 
 ## Existing implementation

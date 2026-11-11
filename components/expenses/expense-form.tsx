@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { InlineConfirmation } from "@/components/ui/inline-confirmation";
+import { OptionalNoteField } from "@/components/ui/optional-note-field";
 import { DateDMYInput } from "@/components/ui/date-dmy-input";
 import { todayVietnamISO } from "@/lib/date-format";
 
@@ -49,6 +50,7 @@ export function ExpenseForm({ groupId, members, expense, recurringMode=false, re
   const [rows, setRows] = useState<Row[]>(() => recurringRule
     ? recurringRule.items.map((item,index)=>fromStored({...item,id:`recurring-${index}`}))
     : expense?.items.map(fromStored) ?? [nextRow(members)]);
+  const [step,setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [removeRowKey,setRemoveRowKey] = useState<string|null>(null);
@@ -63,6 +65,8 @@ export function ExpenseForm({ groupId, members, expense, recurringMode=false, re
     event.preventDefault();
     if (saving) return;
     if (!occurredOn) { setError("Ngày chi tiêu không hợp lệ. Nhập theo d/m/yyyy."); return; }
+    if (!title.trim()) { setStep(0); setError("Nhập tên khoản chi."); return; }
+    if(step===0){setStep(1);window.scrollTo({top:0});return;}
     setSaving(true); setError("");
     const payload = {
       title, notes, occurredOn, payerId,
@@ -96,7 +100,7 @@ export function ExpenseForm({ groupId, members, expense, recurringMode=false, re
       });
       const result = await response.json();
       if (!response.ok) {
-        setError(result?.error ?? "Không thể lưu hóa đơn.");
+        setError(result?.error ?? "Không thể lưu khoản chi.");
         return;
       }
       router.push(recurring
@@ -109,8 +113,12 @@ export function ExpenseForm({ groupId, members, expense, recurringMode=false, re
   }
 
   return <form onSubmit={onSubmit} className="space-y-5 pb-8">
-    <div className="space-y-4 rounded-3xl border bg-card p-5">
-      <label className="block text-sm font-medium">Tên hóa đơn
+    <div className="app-segments" role="group" aria-label="Bước thêm khoản chi">
+      <button type="button" aria-current={step===0?"step":undefined} className={`app-segment ${step===0?"app-segment-active":""}`} onClick={()=>setStep(0)}>Thông tin</button>
+      <button type="button" aria-current={step===1?"step":undefined} className={`app-segment ${step===1?"app-segment-active":""}`} onClick={event=>{if(event.currentTarget.form?.reportValidity())setStep(1);}}>Chia tiền</button>
+    </div>
+    {step===0&&<div className="space-y-4 rounded-3xl border bg-card p-5">
+      <label className="block text-sm font-medium">Tên khoản chi
         <input required maxLength={160} value={title} onChange={e => setTitle(e.target.value)}
           placeholder="Ví dụ: Mua đồ ăn tối" className="mt-1 w-full rounded-xl border bg-background p-3"/>
       </label>
@@ -134,21 +142,16 @@ export function ExpenseForm({ groupId, members, expense, recurringMode=false, re
           </select>
         </label>
         <p className="text-xs text-muted-foreground">
-          Ngày 29–31 sẽ chuyển về ngày cuối tháng nếu tháng đó ngắn hơn.
-          Mẫu chỉ tự tạo hóa đơn đến hạn, không phát sinh trước ngày bắt đầu.
-          Công nợ vẫn cần được xác nhận bình thường.
+          Tháng ngắn sẽ dùng ngày cuối tháng.
         </p>
       </div>}
-      <label className="block text-sm font-medium">Ghi chú (không bắt buộc)
-        <textarea maxLength={1000} rows={2} value={notes} onChange={e => setNotes(e.target.value)}
-          className="mt-1 w-full rounded-xl border bg-background p-3"/>
-      </label>
-    </div>
-    <div className="space-y-3">
+      <OptionalNoteField value={notes} onChange={setNotes}/>
+    </div>}
+    {step===1&&    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Các món ({rows.length})</h2>
         <button type="button" disabled={rows.length >= 50} onClick={() => setRows(prev => [...prev, nextRow(members)])}
-          className="rounded-xl bg-secondary px-3 py-2 text-sm font-semibold">+ Thêm món</button>
+          className="min-h-11 rounded-xl bg-secondary px-3 py-2 text-sm font-semibold">+ Thêm món</button>
       </div>
       {rows.map((row, index) => {
         const amount = /^\d+$/.test(row.quantity) && /^\d+$/.test(row.unitPriceMinor)
@@ -190,7 +193,7 @@ export function ExpenseForm({ groupId, members, expense, recurringMode=false, re
             <div className="flex flex-wrap gap-2">
               {members.map(member => {
                 const active = row.participants.includes(member.id);
-                return <label key={member.id} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm ${active ? "bg-secondary" : "opacity-70"}`}>
+                return <label key={member.id} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm ${active ? "bg-secondary" : "opacity-70"}`}>
                   <input type="checkbox" checked={active} onChange={e => changeRow(row.key, {
                     participants: e.target.checked
                       ? [...row.participants, member.id]
@@ -201,12 +204,12 @@ export function ExpenseForm({ groupId, members, expense, recurringMode=false, re
               })}
             </div>
           </fieldset>
-          <div className="flex gap-3 text-sm">
-            <label className="flex items-center gap-2">
+          <div className="flex flex-wrap gap-3 text-sm">
+            <label className="flex min-h-11 items-center gap-2">
               <input type="radio" name={`mode-${row.key}`} checked={row.mode === "equal"}
                 onChange={() => changeRow(row.key, { mode: "equal" })}/> Chia đều
             </label>
-            <label className="flex items-center gap-2">
+            <label className="flex min-h-11 items-center gap-2">
               <input type="radio" name={`mode-${row.key}`} checked={row.mode === "manual"}
                 onChange={() => changeRow(row.key, { mode: "manual" })}/> Nhập số tiền
             </label>
@@ -224,17 +227,18 @@ export function ExpenseForm({ groupId, members, expense, recurringMode=false, re
         </section>;
       })}
     </div>
+    }
     {error && <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
     <div className="expense-save-footer sticky -mx-5 flex flex-wrap items-center justify-between gap-4 border-t bg-background/95 px-5 py-3 backdrop-blur"
       style={{bottom:"calc(var(--app-tabbar-content-height, 76px) + var(--app-tabbar-safe-bottom, 12px))"}}>
-      <div><p className="text-xs text-muted-foreground">Tổng hóa đơn</p>
+      {step===1&&<div><p className="text-xs text-muted-foreground">Tổng khoản chi</p>
         <p className="text-lg font-bold tabular-nums">{formatVnd(total)}</p>
-        {recurring&&<p className="text-xs text-muted-foreground">Mỗi tháng</p>}</div>
+        {recurring&&<p className="text-xs text-muted-foreground">Mỗi tháng</p>}</div>}
       <button type="submit" disabled={saving || !members.length}
         className="rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-50">
-        {saving?"Đang lưu...":recurring
+        {step===0?"Tiếp":saving?"Đang lưu...":recurring
           ? recurringRule?"Lưu mẫu định kỳ":"Tạo chi phí hằng tháng"
-          : expense?"Lưu thay đổi":"Tạo hóa đơn"}
+          : expense?"Lưu thay đổi":"Tạo khoản chi"}
       </button>
     </div>
   </form>;

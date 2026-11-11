@@ -23,7 +23,7 @@ test("RR-002 runs actual browser interactions, not static source contract tests"
   const s=read("tests/rr002-browser.e2e.mjs");
   for(const text of ["playwright.chromium","playwright.webkit",
     'devices["iPhone 13"]','devices["Pixel 7"]',
-    'getByRole("button"','getByLabel("Xem công nợ của tôi với")',
+    'getByRole("button"','getByLabel("Chọn người")',
     'getByRole("checkbox"','browser.newContext','context.request',
     'page.screenshot','waitForURL','page.reload','page.route',
     'assertTapTarget','noHorizontalOverflow']){
@@ -170,7 +170,7 @@ test("RR-002 CI never points to Neon or enables financial engine",()=>{
 });
 test("RR-002 invoice source touch target is at least 44px",()=>{
   const s=read("components/groups/settlement-cycle-source-list.tsx");
-  assert.match(s,/inline-flex min-h-11 items-center break-words/);
+  assert.match(s,/min-h-11[^"\n]*break-words/);
 });
 
 test("RR-002 expensive browser CI is opt-in on PR label, never every commit",()=>{

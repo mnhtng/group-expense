@@ -23,8 +23,8 @@ export function CreateGroupForm(){
     }catch(e){setError(e instanceof Error?e.message:"Không thể tạo nhóm.");}
     finally{setBusy(false);}
   }
-  return <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-    <label className="sr-only" htmlFor="new-group-name">Tên nhóm mới</label>
+  return <form onSubmit={submit} className="grid gap-4">
+    <label className="font-medium" htmlFor="new-group-name">Tên nhóm</label>
     <input id="new-group-name" name="name" minLength={2} maxLength={120}
       value={name} onChange={e=>{setName(e.target.value);setError("");}}
       autoComplete="off" required placeholder="Nhập tên nhóm..."
@@ -39,6 +39,6 @@ export function CreateGroupForm(){
         strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
       {busy?"Đang tạo...":"Tạo nhóm"}
     </button>
-    {error&&<p role="alert" className="text-sm text-destructive sm:col-span-2">{error}</p>}
+    {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
   </form>;
 }

@@ -5,10 +5,10 @@ import {readFileSync} from "node:fs";
 const read=(path)=>readFileSync(path,"utf8");
 
 test("SC-008 has a member-visible mobile cycle list and contextual cycle detail",()=>{
-  const group=read("app/(app)/groups/[groupId]/page.tsx");
+  const group=read("app/(app)/groups/[groupId]/manage/page.tsx");
   const list=read("app/(app)/groups/[groupId]/cycles/page.tsx");
   const detail=read("app/(app)/groups/[groupId]/cycles/[cycleId]/page.tsx");
-  assert.match(group,/href=\{`\/groups\/\$\{groupId\}\/cycles`\}/);
+  assert.match(group,/href=\{base\+"\/cycles"\}/);
   assert.match(list,/requireUser\(\)/);
   assert.match(list,/getGroupDetails\(groupId,user\.id\)/);
   assert.match(list,/getSettlementSettings\(groupId,user\.id\)/);
@@ -62,10 +62,10 @@ test("SC-008 source list derives totals from ORIGINAL unpaginated BN-005 source,
   assert.match(ui,/source\.lines\.map/);
   assert.match(ui,/line\.obligationId/);
   assert.match(ui,/\/expenses\/\$\{line\.expenseId\}/);
-  assert.match(ui,/Tiền mặt đã xác nhận/);
-  assert.match(ui,/Bù trừ phi tiền mặt/);
-  assert.match(ui,/Tiền mặt chờ xác nhận/);
-  assert.match(ui,/Hóa đơn nhập muộn/);
+  assert.match(ui,/Tiền đã xác nhận/);
+  assert.match(ui,/Đã bù nợ/);
+  assert.match(ui,/Chờ xác nhận/);
+  assert.match(ui,/Nhập muộn/);
   assert.match(ui,/aria-label="Phân trang nguồn công nợ"/);
   assert.doesNotMatch(ui,/source\.lines\.reduce|Number\(line\.outstandingMinor\)/);
 });
@@ -84,9 +84,9 @@ test("SC-008 never enables money through frontend opt-in, and requires real pair
   assert.match(view,/disabled=\{!canUse\}/);
   assert.match(view,/crypto\.randomUUID\(\)/);
   assert.match(view,/response\.status===409|e\.status===409/);
-  assert.match(view,/Đã bù trừ phi tiền mặt|Bút toán đã áp dụng · phi tiền mặt/);
-  assert.match(view,/Yêu cầu thanh toán phần chênh lệch/);
-  assert.match(view,/Tiền mặt đang chờ/);
+  assert.match(view,/Đã bù nợ/);
+  assert.match(view,/Yêu cầu trả phần còn lại/);
+  assert.match(view,/Tiền đang chờ/);
   assert.doesNotMatch(view,/<details|<summary|window\.confirm\(/i);
   assert.doesNotMatch(view,/financialEngineEnabled\s*=\s*true/);
 });
@@ -98,7 +98,7 @@ test("SC-008 audits original late source without duplicating debt, only authoriz
   assert.match(late,/selected\.expenseVersion/);
   assert.match(late,/expectedExpenseVersion/);
   assert.match(late,/requestKey:keyRef\.current/);
-  assert.match(late,/original|hóa đơn gốc|Hóa đơn nhập muộn/i);
+  assert.match(late,/original|hóa đơn gốc|Nhập muộn/i);
   assert.match(late,/!accepted\|\|busy/);
   assert.match(service,/withAuthorizedCycleManager\(groupId,actorId/);
   assert.doesNotMatch(late,/amountMinor:|status:"confirmed"/);

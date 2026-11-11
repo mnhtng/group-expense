@@ -26,19 +26,19 @@ const status:Record<string,string>={
   expired:"Đề xuất đã hết hạn",superseded:"Đã có phiên bản mới",
 };
 const commandName:Record<Command,string>={
-  proposal:"Gửi đề xuất bù trừ",approve:"Đồng ý bù trừ",
+  proposal:"Gửi đề xuất bù nợ",approve:"Đồng ý bù nợ",
   reject:"Từ chối đề xuất",revoke:"Thu hồi đồng ý",
-  apply:"Ghi bù trừ phi tiền mặt",residual:"Yêu cầu thanh toán phần chênh lệch",
-  batch:"Yêu cầu thanh toán gộp một chiều",
+  apply:"Bù nợ ngay",residual:"Yêu cầu trả phần còn lại",
+  batch:"Gộp tiền cần trả",
 };
 const explain:Record<Command,string>={
-  proposal:"Đây chỉ là đề xuất để hai bên rà soát, chưa giảm nợ.",
-  approve:"Bạn đồng ý với đúng số tiền và hai chiều công nợ đang hiển thị. Chưa trừ tiền.",
-  reject:"Đề xuất này sẽ bị từ chối; không có khoản nợ nào bị xóa.",
-  revoke:"Thu hồi sự đồng ý của chính bạn, không sửa lịch sử phi tiền mặt đã áp dụng.",
-  apply:"Sau khi cả hai đồng ý, bút toán phi tiền mặt sẽ giảm nợ gốc của đúng hai người. Không chuyển khoản ngân hàng.",
-  residual:"Chỉ tạo một yêu cầu tiền mặt đang chờ. Phía đối ứng cần xác nhận sau khi thực sự chuyển/nhận tiền.",
-  batch:"Yêu cầu gộp chỉ thuộc một chiều công nợ. Người gửi không thể tự xác nhận đã thanh toán.",
+  proposal:"Gửi cho người này để cùng xác nhận.",
+  approve:"Đồng ý đúng số tiền đang hiển thị.",
+  reject:"Từ chối đề xuất này.",
+  revoke:"Rút lại đồng ý của bạn.",
+  apply:"Giảm nợ hai chiều. Không chuyển tiền.",
+  residual:"Gửi yêu cầu, chờ người kia xác nhận.",
+  batch:"Gộp các khoản cùng người, cùng chiều.",
 };
 
 async function getJson<T>(url:string,signal?:AbortSignal):Promise<T>{
@@ -76,7 +76,7 @@ function Consent({kind,checked,onChange,onConfirm,onCancel,busy}:{
       <input type="checkbox" checked={checked} disabled={busy}
         onChange={e=>onChange(e.target.checked)}
         className="mt-1 size-5 shrink-0 accent-primary"/>
-      <span>Tôi đã kiểm tra đúng người, số tiền và trạng thái công nợ.</span>
+      <span>Tôi đã kiểm tra người và số tiền.</span>
     </label>
     <div className="flex flex-wrap gap-2">
       <button type="button" disabled={!checked||busy}
@@ -93,7 +93,7 @@ function DisabledAction({kind,canUse,onClick}:{
   kind:Command;canUse:boolean;onClick:()=>void;
 }){
   return <button type="button" disabled={!canUse} onClick={onClick}
-    aria-label={commandName[kind]} title={!canUse?"Chưa phát hành giao dịch tài chính":undefined}
+    aria-label={commandName[kind]} title={!canUse?"Nhóm chưa mở quyết toán":undefined}
     className="min-h-12 w-full rounded-xl border px-3 py-2 text-sm font-semibold text-left disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
     {commandName[kind]}
   </button>;
@@ -208,7 +208,7 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
     {info&&<p role="status" className="text-sm">{info}</p>}
     {live&&!busy&&<>
       {live.staleCurrent&&<p role="alert" className="rounded-xl border p-3 text-sm">
-        Công nợ đã thay đổi từ lúc lập đề xuất. Cần rà soát và lập phiên bản mới.
+        Công nợ đã thay đổi từ lúc lập đề xuất. Cần kiểm tra và lập phiên bản mới.
       </p>}
       <div className="grid grid-cols-2 gap-3">
         {[
@@ -222,18 +222,16 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
         </div>)}
       </div>
       <div className="rounded-2xl border p-4 space-y-1">
-        <p className="text-xs text-muted-foreground">Có thể bù trừ phi tiền mặt (mỗi chiều)</p>
+        <p className="text-xs text-muted-foreground">Có thể bù nợ (mỗi chiều)</p>
         <strong className="block break-all text-2xl tabular-nums">{money(live.calculation.offsetMinor)}</strong>
-        <p className="text-xs text-muted-foreground">
-          Đây là số tính thử từ nghĩa vụ gốc. Chưa phải giao dịch đã thực hiện.
-        </p>
+
       </div>
       <div className="rounded-2xl border p-3">
         <button type="button" aria-expanded={showSources}
           aria-controls="cycle-noncash-source-lines"
           onClick={()=>setShowSources(v=>!v)}
           className="min-h-11 w-full py-2 text-left text-sm font-semibold">
-          {showSources?"Ẩn nghĩa vụ gốc":"Xem nghĩa vụ gốc dùng để tính bù trừ"}
+          {showSources?"Ẩn khoản nợ gốc":"Xem các khoản bù nợ"}
         </button>
         {showSources&&<div id="cycle-noncash-source-lines" className="space-y-3 pt-3">
           {[
@@ -245,17 +243,17 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
               <p key={line.obligationId}
                 className="space-y-1 border-b py-2 text-xs">
                 <span className="block break-all"><code>{line.obligationId}</code></span>
-                <span className="block">{line.occurredOn} · Bù trừ dự kiến {money(line.setoffMinor)}</span>
+                <span className="block">{line.occurredOn} · Bù nợ dự kiến {money(line.setoffMinor)}</span>
                 <span className="block text-muted-foreground">Còn khả dụng: {money(line.availableAfterMinor)}</span>
               </p>)}
             {(items as typeof live.calculation.aOwesB.allocations).length===0&&
-              <p className="text-xs text-muted-foreground">Không có nghĩa vụ đủ điều kiện.</p>}
+              <p className="text-xs text-muted-foreground">Không có khoản nợ đủ điều kiện.</p>}
           </div>)}
         </div>}
       </div>
       {doc&&<div className="space-y-3 rounded-2xl border p-4">
         <h3 className="font-semibold">Đề xuất hiện tại · phiên bản {doc.version}</h3>
-        <p className="text-sm">Số tiền đề xuất: <strong className="tabular-nums">{money(doc.offsetMinor)}</strong> mỗi chiều</p>
+        <p className="text-sm">Bù nợ: <strong className="tabular-nums">{money(doc.offsetMinor)}</strong> mỗi chiều</p>
         <p className="text-xs text-muted-foreground">
           Lập lúc {when(doc.createdAt)} · {name(doc.createdBy)}
         </p>
@@ -283,10 +281,10 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
         </>}
       </div>}
       {app&&<div className="space-y-2 rounded-2xl border p-4">
-        <h3 className="font-semibold">Bút toán đã áp dụng · phi tiền mặt</h3>
+        <h3 className="font-semibold">Đã bù nợ</h3>
         <p className="text-xl font-semibold tabular-nums">{money(app.offsetMinor)} mỗi chiều</p>
         <p className="text-sm text-muted-foreground">
-          Hai bên đã đồng ý với chứng từ này. Tiền chuyển khoản thực tế:
+          Tiền đã chuyển:
           {" "}<strong>{money(app.cashTransferredMinor)}</strong>.
         </p>
         <p className="text-xs text-muted-foreground">
@@ -295,20 +293,20 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
         </p>
       </div>}
       {residual&&<div className="space-y-2 rounded-2xl border p-4">
-        <h3 className="font-semibold">Tiền mặt chênh lệch sau bù trừ</h3>
+        <h3 className="font-semibold">Còn phải trả</h3>
         <p className="text-xl font-semibold tabular-nums">{money(residual.preview.amountMinor)}</p>
         {residual.preview.debtorId&&residual.preview.creditorId&&
           <p className="text-sm">{name(residual.preview.debtorId)} cần trả
             {" "}{name(residual.preview.creditorId)}</p>}
         <p className="text-sm text-muted-foreground">
-          {residual.preview.status==="settled"?"Công nợ đã được xác nhận hoàn tất.":
-            residual.preview.blockedReason??"Chỉ được tạo yêu cầu chờ xác nhận, không tự báo đã chuyển tiền."}
+          {residual.preview.status==="settled"?"Hết nợ.":
+            residual.preview.blockedReason??"Chờ người kia xác nhận sau khi trả tiền."}
         </p>
         {residual.preview.status==="ready"&&<DisabledAction kind="residual"
           canUse={!!actionAllowed&&residual.writable}
           onClick={()=>begin("residual")}/>}
         {residual.history.length>0&&<div className="space-y-2 border-t pt-3">
-          <h4 className="text-sm font-medium">Lịch sử yêu cầu tiền mặt</h4>
+          <h4 className="text-sm font-medium">Lịch sử yêu cầu tiền</h4>
           {residual.history.map(h=><Link key={h.id}
             href={`/groups/${groupId}/settlements/${h.id}`}
             className="flex min-h-12 items-center justify-between gap-2 rounded-xl border p-3 text-sm">
@@ -322,16 +320,13 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
         (decision&&["rejected","revoked","invalidated","expired","superseded"].includes(decision.status)))&&<DisabledAction kind="proposal"
         canUse={!!actionAllowed} onClick={()=>begin("proposal")}/>}
       {!live.calculation.hasOffset&&!doc&&<p className="rounded-xl bg-secondary p-3 text-sm">
-        Hai chiều không có khoản nợ khả dụng để bù trừ. Có thể xem yêu cầu
-        thanh toán riêng từng chiều ở phía dưới.
+        Không có khoản nợ hai chiều để bù.
       </p>}
       {intent&&<Consent kind={intent} checked={accepted} onChange={setAccepted}
         busy={sending} onConfirm={()=>void submit()}
         onCancel={()=>{setIntent(null);setAccepted(false);}}/>}
       {!enabled&&<p role="note" className="text-xs text-muted-foreground">
-        Các thao tác bù trừ và thanh toán ở trên đang khóa cho tới khi
-        hệ thống tài chính được phát hành. Quyền chủ nhóm không thay thế
-        sự đồng ý của hai thành viên.
+        Quyết toán chưa mở cho nhóm.
       </p>}
     </>}
   </div>;
@@ -380,10 +375,7 @@ function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
   }
   return <section className="space-y-3 rounded-3xl border bg-card p-4 sm:p-5">
     <h3 className="text-base font-semibold">Gộp thanh toán một chiều</h3>
-    <p className="text-sm text-muted-foreground">
-      Chỉ hiển thị những khoản bạn phải trả hoặc được nhận. Một yêu cầu
-      tiền mặt luôn cần người đối ứng xác nhận.
-    </p>
+
     {loading&&<p role="status" className="text-sm">Đang tải thanh toán một chiều…</p>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
     {!loading&&pairs.length===0&&<p className="text-sm text-muted-foreground">
@@ -394,7 +386,7 @@ function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
       <p className="text-sm font-medium">{name(p.debtorId)} → {name(p.creditorId)}</p>
       <strong className="block text-lg tabular-nums">{money(p.availableMinor)}</strong>
       <p className="text-xs text-muted-foreground">
-        {p.allocationCount} nghĩa vụ nguồn · Tiền mặt đang chờ: {money(p.pendingMinor)}
+        {p.allocationCount} khoản nợ nguồn · Tiền đang chờ: {money(p.pendingMinor)}
       </p>
       <DisabledAction kind="batch" canUse={enabled}
         onClick={()=>{key.current=null;setAccepted(false);setSelected(p);}}/>
@@ -410,10 +402,10 @@ function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
  */
 export function SettlementCycleFinancePanel({groupId,cycleId,
   currentUserId,currentUserName,counterparts,requestedEnabled,
-  bilateralEnabled,financialEngineEnabled}:{
+  bilateralEnabled,financialEngineEnabled,mode="bilateral"}:{
   groupId:string;cycleId:string;currentUserId:string;currentUserName:string;
   counterparts:Member[];requestedEnabled:boolean;bilateralEnabled:boolean;
-  financialEngineEnabled:boolean;
+  financialEngineEnabled:boolean;mode?:"bilateral"|"cash";
 }){
   const [other,setOther]=useState(counterparts[0]?.id??"");
   const people=[{id:currentUserId,name:currentUserName},...counterparts];
@@ -422,22 +414,19 @@ export function SettlementCycleFinancePanel({groupId,cycleId,
     className="space-y-4 rounded-3xl border bg-card p-4 sm:p-5">
     <header className="space-y-2">
       <h2 id="bilateral-cycle-heading" className="text-lg font-semibold">
-        Quyết toán giữa hai người
+        {mode==="cash"?"Trả tiền":"Bù nợ hai người"}
       </h2>
-      <p className="text-sm text-muted-foreground">
-        Bù trừ chỉ giữa bạn và đúng một thành viên khác trong nhóm.
-        Số tiền trừ nợ bằng phi tiền mặt không phải tiền đã chuyển.
-      </p>
+
     </header>
     {!requestedEnabled&&<p className="rounded-xl bg-secondary p-3 text-sm">
-      Nhóm chưa đăng ký quyết toán theo kỳ. Bạn có thể xem nguồn gốc ở trên.
+      Nhóm chưa bật quyết toán.
     </p>}
-    {!bilateralEnabled&&<p className="rounded-xl bg-secondary p-3 text-sm">
-      Nhóm chưa đăng ký chế độ bù trừ hai người.
+    {mode==="bilateral"&&!bilateralEnabled&&<p className="rounded-xl bg-secondary p-3 text-sm">
+      Nhóm chưa bật bù nợ.
     </p>}
-    {bilateralEnabled&&counterparts.length>0&&<>
+    {mode==="bilateral"&&bilateralEnabled&&counterparts.length>0&&<>
       <label className="block space-y-2 text-sm font-semibold" htmlFor="cycle-pair-member">
-        Xem công nợ của tôi với
+        Chọn người
       </label>
       {/* WebKit/iOS was 25px in RR-002; enforce a 48px touch target
           even if utility styles load late or a native select style wins. */}
@@ -452,11 +441,11 @@ export function SettlementCycleFinancePanel({groupId,cycleId,
         cycleId={cycleId} me={currentUserId} other={other}
         people={people} enabled={financeReady&&bilateralEnabled}/>}
     </>}
-    {bilateralEnabled&&counterparts.length===0&&
+    {mode==="bilateral"&&bilateralEnabled&&counterparts.length===0&&
       <p className="text-sm text-muted-foreground">
         Cần thêm một thành viên khác để xem công nợ hai chiều.
       </p>}
-    {requestedEnabled&&<BatchCashPanel groupId={groupId} cycleId={cycleId}
+    {mode==="cash"&&requestedEnabled&&<BatchCashPanel groupId={groupId} cycleId={cycleId}
       userId={currentUserId} people={people} enabled={financeReady}/>}
   </section>;
 }

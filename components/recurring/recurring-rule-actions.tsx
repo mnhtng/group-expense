@@ -34,7 +34,7 @@ export function RecurringRuleActions({groupId,ruleId,version,status}:{
           ? Number((data as {paused:unknown}).paused):0;
         setMessage(paused>0
           ?"Mẫu đã tự tạm dừng vì danh sách người chia hoặc người trả tiền cần cập nhật."
-          : generated>0 ? `Đã tạo ${generated} hóa đơn kỳ đến hạn.`
+          : generated>0 ? `Đã tạo ${generated} khoản chi kỳ đến hạn.`
           :"Chưa có kỳ nào đến hạn hoặc kỳ hiện tại đã được tạo.");
       } else setAction(null);
       router.refresh();
@@ -58,7 +58,7 @@ export function RecurringRuleActions({groupId,ruleId,version,status}:{
     {action&&<InlineConfirmation
       title={action==="pause"?"Tạm dừng chi phí định kỳ?":"Tiếp tục chi phí định kỳ?"}
       description={action==="pause"
-        ?"Hệ thống sẽ không tạo thêm hóa đơn mới. Hóa đơn các tháng cũ không thay đổi."
+        ?"Hệ thống sẽ không tạo thêm khoản chi mới. Khoản chi các tháng cũ không thay đổi."
         :"Chỉ tạo các kỳ đến hạn từ hôm nay trở đi, không tự tạo bù các kỳ đã tạm dừng."}
       confirmLabel={action==="pause"?"Tạm dừng":"Tiếp tục"}
       busy={busy} onConfirm={()=>void submit(action)}

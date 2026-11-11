@@ -1,5 +1,11 @@
 # Delivery ledger — implementation and readiness evidence
 
+## 2026-11-11 — Mobile redesign (local review)
+
+Implemented Tricount-inspired grouped rows, larger system type and short Vietnamese labels. Group management, debt/payment details and settlement-cycle tools are split into focused screens. Expense entry has two steps and retains its draft when switching steps. Financial APIs, SQL, permissions, calculations and rollout policy are unchanged.
+
+[Design system](../design/MOBILE-DESIGN-SYSTEM.md); [final verification](../design/MOBILE-REDESIGN-VERIFICATION.md). Production build/lint/182 unit/HTTP/eight audits/four browser profiles PASS on disposable local PG17 with a separate non-owner runtime role. Managed environments have not received this UI branch. Physical-device acceptance remains separate.
+
 ## 2026-11-10 — SC-025 activation continuation
 
 Current branch `feat/settlement-cycle-activation` starts from main PR20 and

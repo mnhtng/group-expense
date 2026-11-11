@@ -1,4 +1,5 @@
 import Link from "next/link";
+import {PageHeader} from "@/components/ui/app-screen";
 import { formatDateTimeDMY } from "@/lib/date-format";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
@@ -17,10 +18,7 @@ export default async function SettlementsPage({ params }: { params: Promise<{ gr
   ]);
   if (!group || !settlements) notFound();
   return <main className="app-page space-y-4">
-    <Link href={`/groups/${groupId}/debts`} className="text-sm text-muted-foreground">
-      ← Sổ công nợ {group.name}
-    </Link>
-    <h1 className="text-2xl font-semibold">Lịch sử thanh toán</h1>
+    <PageHeader title="Lịch sử trả tiền" context={group.name} backHref={`/groups/${groupId}/debts`} backLabel="Công nợ"/>
     <p className="text-sm text-muted-foreground">{settlements.length} giao dịch</p>
     {settlements.length === 0 &&
       <p className="rounded-xl border p-5 text-sm text-muted-foreground">Chưa có giao dịch.</p>}
@@ -41,10 +39,7 @@ export default async function SettlementsPage({ params }: { params: Promise<{ gr
           </strong>
         </div>
         {x.note && <p className="line-clamp-2 text-xs text-muted-foreground">{x.note}</p>}
-        <p className="text-xs text-muted-foreground">
-          {x.status === "pending" ? "Chưa trừ công nợ" :
-            x.status === "confirmed" ? "Đã tính vào công nợ" : "Không tính vào công nợ"}
-        </p>
+
       </Link>;
     })}
   </main>;

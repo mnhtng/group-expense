@@ -72,11 +72,11 @@ export function GroupMembershipManager({groupId,userId,role,members,eligibility}
   }
 
   const reasons:Record<ExitEligibility["reason"],string>={
-    ready:"Đã tất toán. Bạn có thể rời nhóm.",
+    ready:"Hết nợ. Bạn có thể rời nhóm.",
     owner:"Hãy chuyển quyền chủ nhóm trước.",
     pending:"Còn giao dịch chờ xác nhận.",
     unsettled:"Cần tất toán công nợ trước khi rời.",
-    creator_confirmation:"Còn hóa đơn thuộc kỳ quyết toán cần người tạo xác nhận hoàn thành.",
+    creator_confirmation:"Còn khoản chi thuộc kỳ quyết toán cần người tạo xác nhận hoàn thành.",
   };
   return <div className="space-y-4">
     <div className="space-y-2">
