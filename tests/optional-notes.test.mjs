@@ -23,7 +23,7 @@ test("all supported invoice and payment forms provide an optional note", () => {
     "components/settlements/settlement-request-form.tsx",
     "components/settlements/batch-settlement-form.tsx",
   ]) {
-    assert.match(read(path), /Ghi chú \(không bắt buộc\)/, path);
+    assert.match(read(path), /Ghi chú \(không bắt buộc\)|OptionalNoteField/, path);
   }
   for (const path of [
     "components/expenses/delete-expense-button.tsx",

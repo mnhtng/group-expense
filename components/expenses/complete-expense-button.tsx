@@ -31,7 +31,7 @@ export function CompleteExpenseButton({groupId,expenseId,version,compact=false}:
         const message=data&&typeof data==="object"&&"error" in data &&
           typeof (data as {error?:unknown}).error==="string"
           ? (data as {error:string}).error
-          : "Không thể hoàn thành hóa đơn.";
+          : "Không thể hoàn thành khoản chi.";
         throw Error(message);
       }
       setConfirming(false);
@@ -46,11 +46,11 @@ export function CompleteExpenseButton({groupId,expenseId,version,compact=false}:
       <button type="button" disabled={busy}
         onClick={()=>{setConfirming(true);setError("");}}
         className={`min-h-12 rounded-xl bg-money-in px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 ${compact?"w-full sm:w-auto":""}`}>
-        {compact?"✓ Xác nhận hoàn thành":"Xác nhận hoàn thành hóa đơn"}
+        {compact?"✓ Xác nhận hoàn thành":"Xác nhận hoàn thành khoản chi"}
       </button>}
     {confirming&&<InlineConfirmation
-      title="Chốt hoàn thành hóa đơn?"
-      description="Tất cả công nợ đã được xác nhận. Sau khi chốt, hóa đơn sẽ chuyển vào mục Đã hoàn thành và không thể sửa hoặc xóa. Lịch sử vẫn được giữ nguyên."
+      title="Chốt hoàn thành khoản chi?"
+      description="Tất cả công nợ đã được xác nhận. Sau khi chốt, khoản chi sẽ chuyển vào mục Đã hoàn thành và không thể sửa hoặc xóa. Lịch sử vẫn được giữ nguyên."
       confirmLabel="Xác nhận hoàn thành"
       note={note} onNoteChange={setNote}
       busy={busy} onConfirm={()=>void complete()}

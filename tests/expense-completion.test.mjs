@@ -3,15 +3,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const read = name => readFileSync(name, "utf8");
 
-test("creator-visible completion action is inside invoice list card, not inside its navigation link",()=>{
-  const page=read("app/(app)/groups/[groupId]/page.tsx");
-  assert.match(page,/const ready = !invoice\.completedAt/);
-  assert.match(page,/BigInt\(invoice\.remainingMinor\)===0n && BigInt\(invoice\.pendingMinor\)===0n/);
-  assert.match(page,/const creatorCanClose = ready && invoice\.createdBy===user\.id/);
-  assert.match(page,/<CompleteExpenseButton groupId=\{groupId\} expenseId=\{invoice\.id\}/);
-  assert.match(page,/<\/Link>\s*\{creatorCanClose && <div/);
-  assert.match(page,/Đang xử lý/);
-  assert.match(page,/Đã hoàn thành/);
+test("completion is creator-only in detail while the list stays a navigation surface",()=>{
+  const list=read("app/(app)/groups/[groupId]/page.tsx");
+  const detail=read("app/(app)/groups/[groupId]/expenses/[expenseId]/page.tsx");
+  assert.doesNotMatch(list,/<CompleteExpenseButton/);
+  assert.match(detail,/allSettled=remaining===0n&&pending===0n&&expense.invalidCount===0/);
+  assert.match(detail,/!completed&&allSettled&&canEdit&&<CompleteExpenseButton/);
+  assert.match(detail,/expenseId=\{expenseId\} version=\{expense.version\}/);
+  assert.match(list,/invoices=completed/);
 });
 
 test("eligible invoices must rank before unsettled invoices in SQL, including above the 100-row limit",()=>{

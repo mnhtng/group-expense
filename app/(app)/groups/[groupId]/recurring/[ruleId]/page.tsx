@@ -46,7 +46,7 @@ export default async function RecurringDetail({params}:{
         version={rule.version} status={rule.status}/>
     </div>}
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold">Hóa đơn đã tạo ({history.length})</h2>
+      <h2 className="text-lg font-semibold">Khoản chi đã tạo ({history.length})</h2>
       {history.length===0&&<p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
         Chưa có kỳ nào đến hạn. Nếu hôm nay đến ngày lặp lại, người tạo có thể nhấn “Tạo kỳ đến hạn”.
       </p>}

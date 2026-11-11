@@ -1,4 +1,5 @@
 import Link from "next/link";
+import {PageHeader,SegmentedNav} from "@/components/ui/app-screen";
 import { formatDateDMY, formatDateTimeDMY } from "@/lib/date-format";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
@@ -11,10 +12,14 @@ const statusLabel = {
   rejected: "Đã từ chối", cancelled: "Đã hủy",
 } as const;
 
-export default async function DebtDetailPage({ params }: {
-  params: Promise<{ groupId: string; debtId: string }>
+export default async function DebtDetailPage({ params, searchParams }: {
+  params: Promise<{ groupId: string; debtId: string }>;
+  searchParams: Promise<{view?:string}>
 }) {
   const { groupId, debtId } = await params;
+  const q=await searchParams;
+  const view=q.view==="details"||q.view==="history"?q.view:"pay";
+  const base=`/groups/${groupId}/debts/${debtId}`;
   const user = await requireUser();
   const detail = await getDebtDetails(groupId, debtId, user.id);
   if (!detail) notFound();
@@ -26,27 +31,17 @@ export default async function DebtDetailPage({ params }: {
   const outstanding = BigInt(debt.outstandingMinor);
   const paid = BigInt(debt.confirmedMinor);
   const pending = BigInt(debt.pendingMinor);
-  const progress = BigInt(debt.amountMinor) > 0n
-    ? Number(paid * 100n / BigInt(debt.amountMinor)) : 0;
-  const status = outstanding === 0n ? "Đã tất toán"
+  const status = outstanding === 0n ? "Hết nợ"
     : pending > 0n ? "Đang chờ xác nhận"
     : paid > 0n ? "Đã xử lý một phần" : "Chưa thanh toán";
   return <main className="app-page space-y-5">
-    <Link href={`/groups/${groupId}/debts`} className="text-sm text-muted-foreground">
-      ← Sổ công nợ {debt.groupName}
-    </Link>
+    <PageHeader title={`${debt.debtorName} trả ${debt.creditorName}`} context={debt.expenseTitle} backHref={`/groups/${groupId}/debts`} backLabel="Công nợ"/>
     <header className="space-y-4 rounded-2xl border bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm text-muted-foreground">
           {debt.groupName} · {formatDateDMY(debt.occurredOn)}
         </span>
         <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">{status}</span>
-      </div>
-      <div>
-        <h1 className="text-xl font-semibold">{debt.debtorName} cần trả {debt.creditorName}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Hóa đơn: {debt.expenseTitle} · {sources.length} món liên quan
-        </p>
       </div>
       <div>
         <p className="text-xs text-muted-foreground">
@@ -56,12 +51,17 @@ export default async function DebtDetailPage({ params }: {
           {prefix}{vnd(debt.outstandingMinor)}
         </strong>
       </div>
-      <div>
-        <div className="h-2.5 overflow-hidden rounded-full bg-secondary">
-          <div className="h-full rounded-full bg-money-in" style={{ width: `${progress}%` }} />
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">{progress}% công nợ đã được xác nhận (gồm chuyển tiền và cấn trừ)</p>
-      </div>
+    </header>
+    <SegmentedNav label="Chi tiết công nợ" items={[
+      {href:base,label:"Trả tiền",active:view==="pay"},
+      {href:base+"?view=details",label:"Chi tiết",active:view==="details"},
+      {href:base+"?view=history",label:"Lịch sử",active:view==="history"},
+    ]}/>
+    {view==="pay"&&[debt.debtorId,debt.creditorId].includes(user.id)&&
+      <SettlementRequestForm groupId={groupId} debtId={debt.id}
+        availableMinor={debt.availableMinor} direction={isDebtor?"debtor":"creditor"}/>}
+    {view==="details"&&<>
+    <section className="app-panel">
       <dl className="grid grid-cols-2 gap-3 border-t pt-4 text-sm">
         <div><dt className="text-xs text-muted-foreground">Nợ gốc</dt>
           <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.amountMinor)}</dd></div>
@@ -69,7 +69,7 @@ export default async function DebtDetailPage({ params }: {
           <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.confirmedMinor)}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Đã chuyển tiền</dt>
           <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.confirmedCashMinor)}</dd></div>
-        <div><dt className="text-xs text-muted-foreground">Đã cấn trừ (không chuyển tiền)</dt>
+        <div><dt className="text-xs text-muted-foreground">Đã bù nợ</dt>
           <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.confirmedSetoffMinor)}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Chờ xác nhận</dt>
           <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.pendingMinor)}</dd></div>
@@ -77,9 +77,9 @@ export default async function DebtDetailPage({ params }: {
           <dd className="mt-1 font-semibold tabular-nums">{vnd(debt.availableMinor)}</dd></div>
       </dl>
       <p className="border-t pt-3 text-xs text-muted-foreground">
-        Tổng hóa đơn: {vnd(debt.expenseTotalMinor)} · Hóa đơn phiên bản {debt.expenseVersion}
+        Tổng khoản chi: {vnd(debt.expenseTotalMinor)} · Khoản chi phiên bản {debt.expenseVersion}
       </p>
-    </header>
+    </section>
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">Chi tiết các món ({sources.length})</h2>
@@ -93,25 +93,27 @@ export default async function DebtDetailPage({ params }: {
         <strong className="shrink-0 tabular-nums">{vnd(source.amountMinor)}</strong>
       </div>)}
       <p className="text-xs text-muted-foreground">
-        Đây là phần chi phí của {debt.debtorName} trong hóa đơn do {debt.creditorName} thanh toán.
+        Phần chia của {debt.debtorName}.
       </p>
     </section>
+    </>}
+    {view==="history"&&<>
     {setoffs.length>0 && <section className="space-y-3">
-      <h2 className="text-lg font-semibold">Chứng từ bù trừ ({setoffs.length})</h2>
+      <h2 className="text-lg font-semibold">Chứng từ bù nợ ({setoffs.length})</h2>
       {setoffs.map(entry=><div key={entry.applicationId}
         className="space-y-1 rounded-xl border bg-card p-4 text-sm">
-        <p className="font-semibold">Cấn trừ phi tiền mặt · {vnd(entry.amountMinor)}</p>
+        <p className="font-semibold">Đã bù nợ · {vnd(entry.amountMinor)}</p>
         <p className="text-xs text-muted-foreground">
           {formatDateTimeDMY(entry.appliedAt)} · Ghi nhận vào công nợ gốc
         </p>
-        <p className="text-xs text-muted-foreground">Không phải chuyển khoản ngân hàng.</p>
+        <p className="text-xs text-muted-foreground">Không chuyển tiền.</p>
       </div>)}
     </section>}
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold">Lịch sử hoàn trả ({payments.length})</h2>
+      <h2 className="text-lg font-semibold">Lịch sử trả tiền ({payments.length})</h2>
       {payments.length === 0 &&
         <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-          Chưa có lần hoàn trả nào được ghi nhận.
+          Chưa có lần trả tiền.
         </p>}
       {payments.map(payment => <Link key={payment.id}
         href={`/groups/${groupId}/settlements/${payment.id}`}
@@ -138,13 +140,10 @@ export default async function DebtDetailPage({ params }: {
         </p>
       </Link>)}
     </section>
-    {[debt.debtorId, debt.creditorId].includes(user.id) &&
-      <SettlementRequestForm groupId={groupId} debtId={debt.id}
-        availableMinor={debt.availableMinor}
-        direction={isDebtor ? "debtor" : "creditor"}/>}
+    </>}
     <Link href={`/groups/${groupId}/expenses/${debt.expenseId}`}
       className="block rounded-xl bg-secondary p-4 text-center text-sm font-medium">
-      Xem hóa đơn gốc
+      Xem khoản chi gốc
     </Link>
   </main>;
 }

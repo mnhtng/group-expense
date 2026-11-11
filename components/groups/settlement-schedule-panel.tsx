@@ -82,7 +82,7 @@ export function SettlementSchedulePanel({groupId,initial}:{
       </h2>
       <p className="text-sm text-muted-foreground">
         Thay đổi lịch chỉ có hiệu lực từ ngày bắt đầu đã chọn.
-        Lưu lịch không tự xác nhận thanh toán hay bù trừ.
+        Lưu lịch không tự xác nhận thanh toán hay bù nợ.
       </p>
     </div>
     {initial.current&&<div className="rounded-xl bg-secondary p-3 text-sm">
@@ -110,7 +110,7 @@ export function SettlementSchedulePanel({groupId,initial}:{
         </select>
       </label>
       <label className="block space-y-1.5 text-sm font-medium">
-        Múi giờ IANA của nhóm
+        Múi giờ
         <input type="text" list="settlement-zone-options" value={timeZone}
           onChange={e=>setTimeZone(e.target.value)} disabled={busy}
           spellCheck={false} autoComplete="off"
@@ -120,22 +120,12 @@ export function SettlementSchedulePanel({groupId,initial}:{
         </datalist>
       </label>
       <DateDMYInput value={anchorDate} onChange={setAnchorDate}
-        label="Ngày bắt đầu kỳ đầu tiên / ngày áp dụng lịch mới"/>
-      <div className="space-y-1 rounded-xl bg-secondary/60 p-3 text-xs text-muted-foreground">
-        {frequency==="manual"
-          ? <p>Kỳ thủ công không có ranh giới tự động. Phạm vi từng kỳ sẽ do bước nghiệp vụ riêng quản lý.</p>
-          : preview
-            ? <p>Ví dụ kỳ đầu: từ {formatDateDMY(preview.start)} đến trước {formatDateDMY(preview.end)}.</p>
-            : <p>Nhập ngày bắt đầu hợp lệ để xem ranh giới kỳ.</p>}
-        <p>Ngày bắt đầu phải là một ngày tương lai. Nếu đã có lịch đang chạy,
-          thay đổi phải ở đúng đầu kỳ cũ, không được cắt ngang kỳ.</p>
-        <p>Ngày 29–31 sẽ dùng ngày cuối tháng với những tháng ngắn hơn.
-          Đổi múi giờ không được làm lệch thời điểm khóa kỳ.</p>
-      </div>
+        label="Bắt đầu từ"/>
+      {preview&&<p className="app-caption">Kỳ đầu: {formatDateDMY(preview.start)} – trước {formatDateDMY(preview.end)}</p>}
       <button type="button" disabled={busy||!anchorDate||!timeZone}
         onClick={()=>void save()}
         className="min-h-12 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-        {busy?"Đang lưu...":"Lưu lịch quyết toán dự kiến"}
+        {busy?"Đang lưu...":"Lưu lịch"}
       </button>
     </div>}
     {message&&<p role="status" className="text-sm text-muted-foreground">{message}</p>}

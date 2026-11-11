@@ -72,7 +72,7 @@ export function SettlementSnapshotPanel({groupId,cycleId,version,canManage,
       }
       setData((result as {snapshot:LockedSnapshot}).snapshot);
       setAccepted(false);requestKey.current=null;
-      setMessage("Đã khóa snapshot. Đây KHÔNG phải xác nhận đã nhận tiền.");
+      setMessage("Đã chốt số liệu.");
       router.refresh();
     }catch(cause){setError(cause instanceof Error?cause.message:"Lỗi kết nối.");}
     finally{setBusy(false);}
@@ -81,40 +81,36 @@ export function SettlementSnapshotPanel({groupId,cycleId,version,canManage,
   return <div className="space-y-3 border-t pt-3 text-sm">
     <button type="button" disabled={busy} onClick={()=>void getPreview()}
       className="min-h-11 rounded-xl border px-3 py-2 font-medium disabled:opacity-50">
-      {busy?"Đang xử lý...":locked?"Xem snapshot đã khóa":"Xem trước số liệu để đối soát"}
+      {busy?"Đang xử lý...":locked?"Xem số liệu":"Kiểm tra số liệu"}
     </button>
     {data&&<div className="space-y-3 rounded-xl bg-secondary/60 p-3">
       <p className="font-semibold">
-        {data.state==="locked"?"Snapshot cố định":"Bản xem trước — chưa khóa"}
+        {data.state==="locked"?"Số liệu đã chốt":"Chưa chốt"}
       </p>
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <p>Hóa đơn: <strong>{data.expenseCount}</strong></p>
-        <p>Nghĩa vụ: <strong>{data.obligationCount}</strong></p>
+        <p>Khoản chi: <strong>{data.expenseCount}</strong></p>
+        <p>Khoản nợ: <strong>{data.obligationCount}</strong></p>
         <p>Nợ gốc: <strong>{asVnd(data.originalMinor)}</strong></p>
         <p>Đã xác nhận tiền: <strong>{asVnd(data.confirmedCashMinor)}</strong></p>
         <p>Đang chờ xác nhận: <strong>{asVnd(data.pendingCashMinor)}</strong></p>
         <p>Còn phải trả: <strong>{asVnd(data.outstandingMinor)}</strong></p>
         <p>Khả dụng: <strong>{asVnd(data.availableMinor)}</strong></p>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Công nợ chưa giảm bởi giao dịch đang chờ. Bản snapshot chỉ ghi nhận
-        số liệu tại thời điểm khóa, không chuyển tiền và không hoàn thành hóa đơn.
-      </p>
+
       {data.state==="locked"&&
-        <p className="text-xs">Hóa đơn xuất hiện sau khóa cần điều chỉnh: <strong>{lateCount}</strong></p>}
+        <p className="text-xs">Khoản chi xuất hiện sau khóa cần điều chỉnh: <strong>{lateCount}</strong></p>}
       {data.state==="review"&&canManage&&
         <>
           <label className="flex items-start gap-2 text-xs">
             <input type="checkbox" checked={accepted}
               onChange={e=>setAccepted(e.target.checked)}
               className="mt-0.5 size-4"/>
-            <span>Tôi đã kiểm tra số liệu này và hiểu rằng khóa snapshot
-              không xác nhận các khoản thanh toán.</span>
+            <span>Tôi đã kiểm tra số liệu. Chốt sổ không xác nhận trả tiền.</span>
           </label>
           <button type="button" disabled={!accepted||busy}
             onClick={()=>void lock()}
             className="min-h-11 rounded-xl bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-50">
-            {busy?"Đang khóa...":"Xác nhận khóa bản đối soát"}
+            {busy?"Đang khóa...":"Chốt số liệu"}
           </button>
         </>}
     </div>}

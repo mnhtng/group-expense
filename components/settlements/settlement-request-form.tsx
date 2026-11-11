@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useState, type FormEvent } from "react";
+import {OptionalNoteField} from "@/components/ui/optional-note-field";
 import { useRouter } from "next/navigation";
 export function SettlementRequestForm({groupId,debtId,availableMinor,direction}:{
   groupId:string;debtId:string;availableMinor:string;direction:"debtor"|"creditor";
@@ -28,9 +29,7 @@ export function SettlementRequestForm({groupId,debtId,availableMinor,direction}:
     }catch{setError("Mất kết nối. Thử lại để kiểm tra trạng thái.");}
     finally{setSaving(false)}
   }
-  if(BigInt(availableMinor)===0n)return <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">
-    Khoản này đã thanh toán hoặc đang chờ xác nhận.
-  </p>;
+  if(BigInt(availableMinor)===0n)return null;
   return <form onSubmit={submit} className="space-y-3 rounded-2xl border bg-card p-4">
     <h2 className="font-semibold">{direction==="debtor"?"Thông báo đã trả":"Thông báo đã nhận tiền"}</h2>
     <p className="text-xs text-muted-foreground">Công nợ chỉ giảm sau khi bên kia xác nhận.</p>
@@ -39,10 +38,7 @@ export function SettlementRequestForm({groupId,debtId,availableMinor,direction}:
         onChange={e=>{setAmount(e.target.value.trim());requestKey.current=null;}}
         className="mt-1 w-full rounded-xl border bg-background p-3 text-base"/>
     </label>
-    <label className="block text-sm">Ghi chú (không bắt buộc)
-      <textarea maxLength={500} value={note} onChange={e=>{setNote(e.target.value);requestKey.current=null;}}
-        className="mt-1 w-full rounded-xl border bg-background p-3" rows={2}/>
-    </label>
+    <OptionalNoteField value={note} onChange={value=>{setNote(value);requestKey.current=null;}} maxLength={500}/>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <button disabled={saving} className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50">
       {saving?"Đang gửi...":"Gửi yêu cầu"}

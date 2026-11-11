@@ -1,4 +1,4 @@
-import Link from "next/link";
+import {PageHeader} from "@/components/ui/app-screen";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getGroupDetails,listMembers } from "@/lib/groups/service";
@@ -13,15 +13,7 @@ export default async function NewRecurringPage({params}:{
   if(!group)notFound();
   const members=await listMembers(groupId,user.id);
   return <main className="app-page space-y-5">
-    <Link href={`/groups/${groupId}/recurring`} className="text-sm text-muted-foreground">
-      ← Chi phí hằng tháng
-    </Link>
-    <div>
-      <h1 className="text-2xl font-semibold">Thêm chi phí cố định</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Thiết lập một lần; hóa đơn mới sẽ phát sinh hằng tháng theo lịch.
-      </p>
-    </div>
+    <PageHeader title="Thêm chi cố định" backHref={`/groups/${groupId}/recurring`} backLabel="Chi cố định"/>
     <ExpenseForm groupId={groupId} members={members} recurringMode/>
   </main>;
 }

@@ -6,7 +6,7 @@ import {getSettlementSettings} from "@/lib/settlement-cycles/settings";
 import {listSettlementCycleHistoryPage} from "@/lib/settlement-cycles/lifecycle";
 import {formatDateDMY} from "@/lib/date-format";
 
-const stateText={open:"Đang mở",review:"Chờ rà soát",locked:"Đã khóa sổ"};
+const stateText={open:"Đang mở",review:"Chờ kiểm tra",locked:"Đã khóa sổ"};
 export default async function GroupCyclesPage({params,searchParams}:{
   params:Promise<{groupId:string}>;
   searchParams:Promise<{page?:string}>;
@@ -29,25 +29,15 @@ export default async function GroupCyclesPage({params,searchParams}:{
       <span aria-hidden="true" className="mr-2">←</span> Về nhóm
     </Link>
     <header className="space-y-1">
-      <h1 className="text-2xl font-semibold">Quyết toán theo kỳ</h1>
+      <h1 className="text-2xl font-semibold">Quyết toán</h1>
       <p className="text-sm text-muted-foreground">{group.name} · VND</p>
     </header>
-    <div role="note" className="space-y-1 rounded-2xl border bg-secondary/60 p-4 text-sm">
-      <p className="font-semibold">{setting.effectiveEnabled?"Quyết toán đã mở cho nhóm":"Quyết toán chưa mở cho nhóm"}</p>
-      <p className="text-muted-foreground">
-        Mỗi bù trừ cần xác nhận của đúng hai bên; khoản tiền mặt vẫn cần người
-        còn lại xác nhận đã nhận. Hệ thống không tự chuyển tiền.
-      </p>
-      <p className="text-xs text-muted-foreground">
-        {setting.requestedEnabled?"Nhóm đã đăng ký sử dụng.":"Nhóm chưa đăng ký dùng chế độ quyết toán."}
-        {" "}{setting.requestedBilateralNetting?"Đã đăng ký bù trừ hai người.":"Chưa đăng ký bù trừ hai người."}
-      </p>
-    </div>
+    <p className="app-caption">{setting.effectiveEnabled?"Quyết toán đã mở cho nhóm":"Quyết toán chưa mở cho nhóm"}</p>
     <section aria-labelledby="cycle-list" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="cycle-list" className="text-lg font-semibold">Các kỳ đã ghi nhận</h2>
+        <h2 id="cycle-list" className="text-lg font-semibold">Các kỳ</h2>
         {setting.canManage&&<Link
-          href={`/groups/${groupId}/manage`}
+          href={`/groups/${groupId}/manage?section=periods`}
           className="inline-flex min-h-11 items-center rounded-xl border px-4 text-sm font-medium">
           Quản lý kỳ
         </Link>}

@@ -38,7 +38,7 @@ export function SettlementLateInvoicePanel({groupId,originCycleId,canManage,
         const body:unknown=await r.json().catch(()=>null);
         if(!r.ok)throw Error(body&&typeof body==="object"&&"error" in body
           ? String((body as {error:unknown}).error)
-          :`Không đọc được hóa đơn muộn (HTTP ${r.status}).`);
+          :`Không đọc được khoản chi muộn (HTTP ${r.status}).`);
         if(!abort.signal.aborted){setData(body as LateView);setError("");}
       })
       .catch(e=>{if(!abort.signal.aborted)setError(e instanceof Error?e.message:"Lỗi kết nối.");})
@@ -57,7 +57,7 @@ export function SettlementLateInvoicePanel({groupId,originCycleId,canManage,
           targetCycleId:data.eligibleTarget.id,
           expectedExpenseVersion:selected.expenseVersion,
           requestKey:keyRef.current,
-          note:"Ghi nhận hóa đơn nhập muộn vào kỳ rà soát kế tiếp"}),
+          note:"Ghi nhận khoản chi nhập muộn vào kỳ kiểm tra kế tiếp"}),
       });
       const body:unknown=await r.json().catch(()=>null);
       if(!r.ok)throw Object.assign(Error(
@@ -65,38 +65,38 @@ export function SettlementLateInvoicePanel({groupId,originCycleId,canManage,
           ? String((body as {error:unknown}).error)
           :`Không thể gán kỳ (HTTP ${r.status}).`),{status:r.status});
       keyRef.current=null;setSelected(null);setAccepted(false);
-      setLoading(true);setMessage("Đã gắn chứng từ hóa đơn gốc vào kỳ rà soát kế tiếp.");
+      setLoading(true);setMessage("Đã gắn chứng từ khoản chi gốc vào kỳ kiểm tra kế tiếp.");
       setRevision(x=>x+1);
     }catch(e){
       if(e&&typeof e==="object"&&"status" in e&&e.status===409){
         keyRef.current=null;setSelected(null);setLoading(true);
         setRevision(x=>x+1);
       }
-      setError(e instanceof Error?e.message:"Lỗi cập nhật hóa đơn.");
+      setError(e instanceof Error?e.message:"Lỗi cập nhật khoản chi.");
     }finally{setBusy(false);}
   }
   return <section aria-labelledby="cycle-late-heading"
     className="space-y-4 rounded-3xl border bg-card p-4 sm:p-5">
-    <h2 id="cycle-late-heading" className="text-lg font-semibold">Hóa đơn nhập muộn</h2>
+    <h2 id="cycle-late-heading" className="text-lg font-semibold">Khoản chi nhập muộn</h2>
     <p className="text-sm text-muted-foreground">
-      Kỳ này đã khóa. Hóa đơn nhập sau thời điểm khóa không thể thêm vào
+      Kỳ này đã khóa. Khoản chi nhập sau thời điểm khóa không thể thêm vào
       snapshot cũ. Chủ nhóm/người được ủy quyền có thể gán chứng từ
-      hóa đơn gốc sang kỳ sớm nhất đang rà soát; không tạo hóa đơn mới.
+      khoản chi gốc sang kỳ sớm nhất đang kiểm tra; không tạo khoản chi mới.
     </p>
     {!requestedEnabled&&<p className="rounded-xl bg-secondary p-3 text-sm">
       Nhóm chưa đăng ký chế độ quyết toán; không gán kỳ.
     </p>}
-    {requestedEnabled&&loading&&<p role="status" className="text-sm">Đang tải hóa đơn nhập muộn…</p>}
+    {requestedEnabled&&loading&&<p role="status" className="text-sm">Đang tải khoản chi nhập muộn…</p>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
     {message&&<p role="status" className="text-sm">{message}</p>}
     {data&&!loading&&<>
-      <p className="text-sm">Có <strong>{data.total}</strong> hóa đơn gốc phát sinh muộn.</p>
+      <p className="text-sm">Có <strong>{data.total}</strong> khoản chi gốc phát sinh muộn.</p>
       {data.waitingForReview&&<p className="rounded-xl bg-secondary p-3 text-sm">
-        Kỳ tiếp theo đang mở; cần chuyển sang rà soát trước khi gán.
+        Kỳ tiếp theo đang mở; cần chuyển sang kiểm tra trước khi gán.
       </p>}
       {!data.eligibleTarget&&data.total>0&&!data.waitingForReview&&
         <p className="rounded-xl bg-secondary p-3 text-sm">
-          Chưa có kỳ tiếp theo đang rà soát để tiếp nhận hóa đơn.
+          Chưa có kỳ tiếp theo đang kiểm tra để tiếp nhận khoản chi.
         </p>}
       {data.eligibleTarget&&<p className="rounded-xl bg-secondary p-3 text-sm">
         Kỳ có thể tiếp nhận: {formatDateDMY(data.eligibleTarget.startDate)}
@@ -116,7 +116,7 @@ export function SettlementLateInvoicePanel({groupId,originCycleId,canManage,
                 {" · "}{cash(bill.totalMinor)}
               </p>
               {bill.recurringRuleId&&<p className="text-xs text-muted-foreground">
-                Chi phí định kỳ · không tạo hóa đơn lần hai
+                Chi phí định kỳ · không tạo khoản chi lần hai
               </p>}
             </div>
           </div>
@@ -126,27 +126,27 @@ export function SettlementLateInvoicePanel({groupId,originCycleId,canManage,
               <button type="button" disabled={busy} onClick={()=>{
                 setSelected(bill);setAccepted(false);keyRef.current=null;
               }} className="min-h-12 w-full rounded-xl border px-4 text-sm font-medium sm:w-auto">
-                Gán vào kỳ đang rà soát
+                Gán vào kỳ đang kiểm tra
               </button>}
         </li>)}
       </ol>
       {data.total>100&&<p className="text-xs text-muted-foreground">
-        Hiển thị 100 hóa đơn đầu. Dữ liệu gốc còn lại được giữ nguyên;
-        không áp dụng bù trừ tự động.
+        Hiển thị 100 khoản chi đầu. Dữ liệu gốc còn lại được giữ nguyên;
+        không áp dụng bù nợ tự động.
       </p>}
       {selected&&data.eligibleTarget&&<div role="group"
-        aria-label="Xác nhận gán hóa đơn muộn"
+        aria-label="Xác nhận gán khoản chi muộn"
         className="space-y-3 rounded-2xl bg-secondary/60 p-4">
-        <h3 className="font-semibold">Gán hóa đơn: {selected.title}</h3>
+        <h3 className="font-semibold">Gán khoản chi: {selected.title}</h3>
         <p className="text-sm">
-          Hóa đơn vẫn có ngày gốc {formatDateDMY(selected.occurredOn)}.
+          Khoản chi vẫn có ngày gốc {formatDateDMY(selected.occurredOn)}.
           Thao tác chỉ tạo chứng từ gán kỳ mới, không xác nhận đã trả tiền.
         </p>
         <label className="flex min-h-11 items-start gap-2 text-sm">
           <input type="checkbox" checked={accepted} disabled={busy}
             onChange={e=>setAccepted(e.target.checked)}
             className="mt-1 size-5 accent-primary"/>
-          <span>Tôi đã kiểm tra hóa đơn gốc và kỳ sẽ tiếp nhận.</span>
+          <span>Tôi đã kiểm tra khoản chi gốc và kỳ sẽ tiếp nhận.</span>
         </label>
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={!accepted||busy} onClick={()=>void assign()}
