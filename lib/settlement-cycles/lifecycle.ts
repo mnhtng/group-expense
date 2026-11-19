@@ -249,6 +249,12 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
     );
     if(existing.rows[0]){
       const old=existing.rows[0];
+      const wasCancelled=await client.query<{cancelled:boolean}>(
+        "SELECT cancelled_at IS NOT NULL AS cancelled FROM group_settlement_cycles WHERE id=$1",
+        [old.id],
+      );
+      if(wasCancelled.rows[0]?.cancelled)
+        throw error(409,"Mã yêu cầu đã thuộc về một kỳ bị hủy. Hãy tạo yêu cầu mới.");
       if(old.source==="manual"&&old.createdBy===actorId &&
          old.periodStart===input.startDate&&old.periodEnd===input.endDate)
         return publicCycle(old);
