@@ -66,6 +66,9 @@ $sc026$;
 CREATE TRIGGER sc026_draft_events_immutable BEFORE UPDATE OR DELETE
   ON group_settlement_cycle_draft_events
   FOR EACH ROW EXECUTE FUNCTION sc026_guard_draft_audit();
+CREATE TRIGGER sc026_draft_events_no_truncate BEFORE TRUNCATE
+  ON group_settlement_cycle_draft_events
+  FOR EACH STATEMENT EXECUTE FUNCTION sc026_guard_draft_audit();
 
 -- Preserve the final SC-006/SC-004 snapshot-integrity guard verbatim,
 -- adding only narrowly-scoped, audited OPEN manual draft transitions.
