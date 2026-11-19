@@ -274,6 +274,136 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
       input.startDate,input.endDate,actorId,input.requestKey));
   });
 }
+type ManualDraftInput={
+  expectedVersion:number;expectedDraftRevision:number;
+  startDate:string;endDate:string;
+};
+type ManualCancelInput={expectedVersion:number;expectedDraftRevision:number};
+
+function validateDraftVersion(input:ManualCancelInput) {
+  if(!input||input.expectedVersion!==1||
+     !Number.isSafeInteger(input.expectedDraftRevision)||input.expectedDraftRevision<0)
+    throw error(400,"Phiên bản bản nháp không hợp lệ.");
+}
+function assertEditableManual(c:RawCycle,input:ManualCancelInput) {
+  if(c.source!=="manual"||c.state!=="open")
+    throw error(409,"Chỉ sửa hoặc xóa được kỳ thủ công còn Đang mở.");
+  if(c.version!==input.expectedVersion||
+     c.draftRevision!==input.expectedDraftRevision)
+    throw error(409,"Khoảng kỳ đã thay đổi. Vui lòng tải lại.");
+}
+async function draftAudit(client:PoolClient,cycle:RawCycle,actorId:string,
+  type:"period_updated"|"period_cancelled",old:RawCycle) {
+  await client.query(
+    `INSERT INTO group_settlement_cycle_draft_events
+       (id,group_id,cycle_id,draft_revision,actor_id,event_type,
+        old_period_start,old_period_end,new_period_start,new_period_end)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [randomUUID(),cycle.groupId,cycle.id,cycle.draftRevision,actorId,type,
+     old.periodStart,old.periodEnd,
+     type==="period_updated"?cycle.periodStart:null,
+     type==="period_updated"?cycle.periodEnd:null],
+  );
+}
+
+/** Only modifies calendar metadata, preserving original money and history. */
+export async function updateManualSettlementCycle(
+  groupId:string,cycleId:string,actorId:string,input:ManualDraftInput,
+):Promise<CycleRecord> {
+  assertUuid(groupId);assertUuid(cycleId);validateDraftVersion(input);
+  try{validLocalDate(input.startDate);validLocalDate(input.endDate);}
+  catch{throw error(400,"Ngày bắt đầu hoặc kết thúc không hợp lệ.");}
+  if(input.startDate>=input.endDate)
+    throw error(400,"Ngày kết thúc phải sau ngày bắt đầu.");
+  if((Date.parse(input.endDate)-Date.parse(input.startDate))/86_400_000>370)
+    throw error(400,"Kỳ thủ công không được dài quá 370 ngày.");
+  return withAuthorizedCycleManager(groupId,actorId,async client=>{
+    const found=await client.query<RawCycle>(
+      `${qCycle} WHERE group_id=$1 AND id=$2 AND cancelled_at IS NULL FOR UPDATE`,
+      [groupId,cycleId]);
+    const old=found.rows[0];
+    if(!old)throw error(404,"Không tìm thấy kỳ đang hoạt động.");
+    assertEditableManual(old,input);
+    if(old.periodStart===input.startDate&&old.periodEnd===input.endDate)
+      return publicCycle(old);
+    const rules=await client.query<Rule>(
+      `SELECT id,version,frequency,time_zone AS "timeZone",
+        anchor_date::text AS "anchorDate",effective_at AS "effectiveAt"
+       FROM group_settlement_schedule_revisions
+       WHERE group_id=$1 AND id=$2`,[groupId,old.scheduleRevisionId]);
+    const rule=rules.rows[0];
+    if(!rule||rule.frequency!=="manual"||input.startDate<rule.anchorDate)
+      throw error(409,"Ngày bắt đầu nằm trước lịch thủ công đã chọn.");
+    const startAt=localMidnightInstant(input.startDate,rule.timeZone);
+    const endAt=localMidnightInstant(input.endDate,rule.timeZone);
+    if(Date.parse(startAt)>Date.now())
+      throw error(409,"Ngày bắt đầu kỳ không được ở tương lai.");
+    const cutover=await client.query<{start:Date|null}>(
+      `SELECT min(effective_at) AS start FROM group_settlement_schedule_revisions
+       WHERE group_id=$1 AND superseded_at IS NULL
+         AND effective_at>$2::timestamptz`,
+      [groupId,rule.effectiveAt]);
+    if(cutover.rows[0]?.start&&Date.parse(endAt)>cutover.rows[0].start.getTime())
+      throw error(409,"Khoảng kỳ cắt qua một lần đổi lịch.");
+    const overlap=await client.query(
+      `SELECT 1 FROM group_settlement_cycles
+       WHERE group_id=$1 AND id<>$2 AND cancelled_at IS NULL
+         AND tstzrange(start_at,end_at,'[)')
+             && tstzrange($3::timestamptz,$4::timestamptz,'[)')
+       LIMIT 1`,[groupId,cycleId,startAt,endAt]);
+    if(overlap.rowCount)throw error(409,"Khoảng kỳ chồng lấn kỳ đã tạo.");
+    const updated=await client.query<RawCycle>(
+      `UPDATE group_settlement_cycles
+       SET period_start=$3::date,period_end=$4::date,
+           start_at=$5::timestamptz,end_at=$6::timestamptz,
+           draft_revision=draft_revision+1,updated_at=clock_timestamp()
+       WHERE group_id=$1 AND id=$2 AND state='open' AND source='manual'
+         AND cancelled_at IS NULL AND version=$7 AND draft_revision=$8
+       RETURNING id,group_id AS "groupId",
+         schedule_revision_id AS "scheduleRevisionId",source,
+         period_start::text AS "periodStart",period_end::text AS "periodEnd",
+         time_zone AS "timeZone",start_at AS "startAt",end_at AS "endAt",
+         state,version,draft_revision AS "draftRevision",
+         reviewed_at AS "reviewedAt",created_by AS "createdBy"`,
+      [groupId,cycleId,input.startDate,input.endDate,startAt,endAt,
+        input.expectedVersion,input.expectedDraftRevision]);
+    if(updated.rowCount!==1)throw error(409,"Kỳ đã bị thay đổi.");
+    await draftAudit(client,updated.rows[0],actorId,"period_updated",old);
+    return publicCycle(updated.rows[0]);
+  });
+}
+
+/** Cancelling is a reversible-calendar (not historical) soft deletion. */
+export async function cancelManualSettlementCycle(
+  groupId:string,cycleId:string,actorId:string,input:ManualCancelInput,
+):Promise<{cancelled:true;cycleId:string}>{
+  assertUuid(groupId);assertUuid(cycleId);validateDraftVersion(input);
+  return withAuthorizedCycleManager(groupId,actorId,async client=>{
+    const found=await client.query<RawCycle>(
+      `${qCycle} WHERE group_id=$1 AND id=$2 AND cancelled_at IS NULL FOR UPDATE`,
+      [groupId,cycleId]);
+    const old=found.rows[0];
+    if(!old)throw error(404,"Kỳ đã hủy hoặc không tồn tại.");
+    assertEditableManual(old,input);
+    const updated=await client.query<RawCycle>(
+      `UPDATE group_settlement_cycles
+       SET cancelled_at=clock_timestamp(),cancelled_by=$3,
+           draft_revision=draft_revision+1,updated_at=clock_timestamp()
+       WHERE group_id=$1 AND id=$2 AND state='open' AND source='manual'
+         AND cancelled_at IS NULL AND version=$4 AND draft_revision=$5
+       RETURNING id,group_id AS "groupId",
+         schedule_revision_id AS "scheduleRevisionId",source,
+         period_start::text AS "periodStart",period_end::text AS "periodEnd",
+         time_zone AS "timeZone",start_at AS "startAt",end_at AS "endAt",
+         state,version,draft_revision AS "draftRevision",
+         reviewed_at AS "reviewedAt",created_by AS "createdBy"`,
+      [groupId,cycleId,actorId,input.expectedVersion,input.expectedDraftRevision]);
+    if(updated.rowCount!==1)throw error(409,"Kỳ đã bị thay đổi hoặc kiểm tra.");
+    await draftAudit(client,updated.rows[0],actorId,"period_cancelled",old);
+    return {cancelled:true,cycleId};
+  });
+}
+
 export async function submitSettlementCycleReview(groupId:string,cycleId:string,
   actorId:string,expectedVersion:number,expectedDraftRevision=0):Promise<CycleRecord>{
   assertUuid(groupId);assertUuid(cycleId);
