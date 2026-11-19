@@ -106,7 +106,7 @@ async function groupGate(client:PoolClient,groupId:string,actorId:string){
 async function cycleGate(client:PoolClient,groupId:string,cycleId:string,lock:boolean){
   const r=await client.query<Cycle>(
     `SELECT id,state,version FROM group_settlement_cycles
-       WHERE id=$1 AND group_id=$2 ${lock?"FOR UPDATE":""}`,
+       WHERE id=$1 AND group_id=$2 AND cancelled_at IS NULL ${lock?"FOR UPDATE":""}`,
     [cycleId,groupId]);
   if(!r.rows[0])throw err(404,"Không tìm thấy kỳ quyết toán.");
   if(r.rows[0].state!=="locked"||r.rows[0].version!==3)
