@@ -220,3 +220,60 @@ BEGIN
   RAISE EXCEPTION 'Invalid cycle state transition or incomplete financial snapshot';
 END;
 $sc004$;
+
+
+-- A cancelled OPEN manual draft is no longer a candidate blocking a late
+-- adjustment into the earliest remaining REVIEW cycle. Do not loosen any
+-- original late-expense, creator, balance or snapshot checks.
+CREATE OR REPLACE FUNCTION sc006_guard_adjustment() RETURNS trigger LANGUAGE plpgsql AS $sc006$
+DECLARE orig record;target record;bill record; old_cutoff timestamptz;
+BEGIN
+  IF TG_OP<>'INSERT' THEN
+    RAISE EXCEPTION 'SC-006 adjustment audit is immutable';
+  END IF;
+  PERFORM 1 FROM groups WHERE id=NEW.group_id AND archived_at IS NULL FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'SC-006 group inactive'; END IF;
+  IF NOT EXISTS(
+    SELECT 1 FROM group_settlement_settings
+    WHERE group_id=NEW.group_id AND requested_enabled=true)
+  THEN RAISE EXCEPTION 'SC-006 feature not opted in'; END IF;
+  IF NOT EXISTS(
+    SELECT 1 FROM group_members WHERE group_id=NEW.group_id
+      AND user_id=NEW.actor_id AND status='active')
+    OR NOT EXISTS(
+      SELECT 1 FROM groups g WHERE g.id=NEW.group_id AND g.owner_id=NEW.actor_id
+      UNION ALL
+      SELECT 1 FROM group_settlement_manager_grants gr
+      WHERE gr.group_id=NEW.group_id AND gr.user_id=NEW.actor_id
+        AND gr.revoked_at IS NULL)
+  THEN RAISE EXCEPTION 'SC-006 requires owner or authorized manager'; END IF;
+
+  SELECT * INTO orig FROM group_settlement_cycles
+    WHERE id=NEW.origin_cycle_id AND group_id=NEW.group_id;
+  SELECT * INTO target FROM group_settlement_cycles
+    WHERE id=NEW.target_cycle_id AND group_id=NEW.group_id FOR UPDATE;
+  IF orig.id IS NULL OR target.id IS NULL OR
+     orig.state<>'locked' OR target.state<>'review' OR target.version<>2 OR
+     orig.period_end>target.period_start
+  THEN RAISE EXCEPTION 'SC-006 requires historical LOCKED and next REVIEW cycle'; END IF;
+  -- Cannot skip an earlier not-yet-locked future cycle.
+  IF EXISTS(SELECT 1 FROM group_settlement_cycles c
+      WHERE c.group_id=NEW.group_id AND
+        c.period_start>=orig.period_end
+        AND c.period_start<target.period_start AND c.state IN('open','review')
+         AND c.cancelled_at IS NULL)
+  THEN RAISE EXCEPTION 'SC-006 must target earliest future unlocked cycle'; END IF;
+  SELECT cutoff_at INTO old_cutoff FROM group_settlement_cycle_snapshots
+    WHERE cycle_id=NEW.origin_cycle_id AND group_id=NEW.group_id;
+  IF old_cutoff IS NULL THEN RAISE EXCEPTION 'SC-006 origin snapshot missing'; END IF;
+  SELECT * INTO bill FROM expenses
+    WHERE id=NEW.expense_id AND group_id=NEW.group_id FOR UPDATE;
+  IF bill.id IS NULL OR bill.deleted_at IS NOT NULL OR
+     bill.version<>NEW.expense_version OR
+     bill.occurred_on<orig.period_start OR bill.occurred_on>=orig.period_end OR
+     (bill.created_at<=old_cutoff AND bill.updated_at<=old_cutoff) OR
+     EXISTS(SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
+       WHERE se.expense_id=NEW.expense_id)
+  THEN RAISE EXCEPTION 'SC-006 invoice not an unrecorded historical late source'; END IF;
+  RETURN NEW;
+END;$sc006$;
