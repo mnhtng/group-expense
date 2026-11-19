@@ -74,7 +74,7 @@ export async function archiveGroup(groupId: string, ownerId: string, confirmatio
        -- frozen original invoice may be lost by archiving its group.
        AND NOT EXISTS(
          SELECT 1 FROM group_settlement_cycles c
-         WHERE c.group_id=g.id AND (
+         WHERE c.group_id=g.id AND c.cancelled_at IS NULL AND (
            c.state IN ('open','review')
            OR EXISTS(
              SELECT 1 FROM group_settlement_cycle_snapshot_expenses se
