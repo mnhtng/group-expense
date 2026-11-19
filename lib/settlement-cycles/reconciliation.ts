@@ -86,7 +86,7 @@ async function withRead<T>(groupId:string,cycleId:string,actorId:string,
       JOIN groups g ON g.id=cy.group_id AND g.archived_at IS NULL
       JOIN group_members m ON m.group_id=cy.group_id
         AND m.user_id=$3 AND m.status='active'
-      WHERE cy.group_id=$1 AND cy.id=$2`,[groupId,cycleId,actorId]);
+      WHERE cy.group_id=$1 AND cy.id=$2 AND cy.cancelled_at IS NULL`,[groupId,cycleId,actorId]);
     if(!r.rows[0])throw fail(404,"Không tìm thấy kỳ hoặc bạn không thuộc nhóm.");
     const value=await work(c,r.rows[0].state);
     await c.query("COMMIT");return value;
