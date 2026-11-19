@@ -23,6 +23,13 @@ ALTER TABLE group_settlement_cycles ADD CONSTRAINT cycle_group_no_overlap
 CREATE INDEX sc026_active_cycles ON group_settlement_cycles
   (group_id,start_at DESC,id DESC) WHERE cancelled_at IS NULL;
 
+-- Previous period-start uniqueness would continue reserving a cancelled
+-- draft's first day and prevent its replacement even after overlap release.
+ALTER TABLE group_settlement_cycles DROP CONSTRAINT cycle_revision_start;
+CREATE UNIQUE INDEX sc026_live_cycle_revision_start
+  ON group_settlement_cycles(schedule_revision_id,period_start)
+  WHERE cancelled_at IS NULL;
+
 -- Separate draft revisions from the frozen state-machine version 1/2/3:
 -- edits never change the meaning of review/lock event versioning.
 CREATE TABLE group_settlement_cycle_draft_events (
