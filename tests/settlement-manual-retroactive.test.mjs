@@ -68,3 +68,30 @@ test("Cancelled draft cycles vanish from both public list and direct lookup",()=
   assert.match(source,/cancelled_at=clock_timestamp\(\)/);
   assert.match(source,/period_cancelled/);
 });
+
+test("Cancelled manual periods do not block archive, future invoices or reconciliation",()=>{
+  const schema=read("db/migrations/026_manual_cycle_drafts.sql");
+  const archive=read("lib/groups/service.ts");
+  const adjustments=read("lib/settlement-cycles/adjustments.ts");
+  const snapshot=read("lib/settlement-cycles/snapshot.ts");
+  const reconciliation=read("lib/settlement-cycles/reconciliation.ts");
+  const repayment=read("lib/settlement-cycles/repayments.ts");
+  assert.match(schema,/CREATE OR REPLACE FUNCTION sc006_guard_adjustment/);
+  assert.match(schema,/c\.cancelled_at IS NULL/);
+  assert.match(archive,/c\.cancelled_at IS NULL/);
+  assert.match(adjustments,/WHERE group_id=\$1 AND cancelled_at IS NULL AND period_start/);
+  assert.match(snapshot,/c\.cancelled_at IS NULL/);
+  assert.match(reconciliation,/cy\.cancelled_at IS NULL/);
+  assert.match(repayment,/id=\$1 AND group_id=\$2 AND cancelled_at IS NULL/);
+});
+test("Append-only draft audit receives constrained runtime grants and recovery digests",()=>{
+  const policy=read("db/rr004-runtime-policy.mjs");
+  const inventory=read("db/financial-inventory.mjs");
+  const sql=read("db/migrations/026_manual_cycle_drafts.sql");
+  assert.match(policy,/group_settlement_cycle_draft_events/);
+  assert.match(policy,/sc026_draft_events_immutable/);
+  assert.match(policy,/sc026_draft_events_no_truncate/);
+  assert.match(inventory,/cycle_draft_history/);
+  assert.match(sql,/BEFORE UPDATE OR DELETE/);
+  assert.match(sql,/BEFORE TRUNCATE/);
+});
