@@ -147,7 +147,7 @@ export async function updateSettlementSchedule(
     // including a cycle created by another delegated manager.
     const intersects=await client.query(
       `SELECT 1 FROM group_settlement_cycles
-       WHERE group_id=$1 AND start_at<$2::timestamptz
+       WHERE group_id=$1 AND cancelled_at IS NULL AND start_at<$2::timestamptz
          AND end_at>$2::timestamptz LIMIT 1`,
       [groupId,effectiveAt],
     );
