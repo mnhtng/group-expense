@@ -21,7 +21,7 @@ export type CycleRecord={
   id:string;groupId:string;scheduleRevisionId:string;
   source:CycleSource;periodStart:string;periodEnd:string;
   timeZone:string;startAt:string;endAt:string;state:CycleState;
-  version:number;reviewedAt:string|null;createdBy:string|null;
+  version:number;draftRevision:number;reviewedAt:string|null;createdBy:string|null;
 };
 type RawCycle=Omit<CycleRecord,"startAt"|"endAt"|"reviewedAt"> & {
   startAt:Date;endAt:Date;reviewedAt:Date|null;
@@ -42,7 +42,8 @@ const qCycle=`SELECT id,group_id AS "groupId",
   schedule_revision_id AS "scheduleRevisionId",
   source,period_start::text AS "periodStart",period_end::text AS "periodEnd",
   time_zone AS "timeZone",start_at AS "startAt",end_at AS "endAt",
-  state,version,reviewed_at AS "reviewedAt",created_by AS "createdBy"
+  state,version,draft_revision AS "draftRevision",
+       reviewed_at AS "reviewedAt",created_by AS "createdBy"
   FROM group_settlement_cycles`;
 function publicCycle(c:RawCycle):CycleRecord {
   return {...c,startAt:c.startAt.toISOString(),endAt:c.endAt.toISOString(),
@@ -121,7 +122,8 @@ async function addCycle(
     throw error(400,"Ranh giới kỳ không hợp lệ.");
   const overlap=await client.query(
     `SELECT 1 FROM group_settlement_cycles
-       WHERE group_id=$1 AND tstzrange(start_at,end_at,'[)')
+       WHERE group_id=$1 AND cancelled_at IS NULL
+         AND tstzrange(start_at,end_at,'[)')
           && tstzrange($2::timestamptz,$3::timestamptz,'[)')
        LIMIT 1`,[groupId,startAt,endAt]);
   if(overlap.rowCount)throw error(409,"Kỳ quyết toán giao nhau với một kỳ đã tồn tại.");
@@ -134,7 +136,8 @@ async function addCycle(
       RETURNING id,group_id AS "groupId",schedule_revision_id AS "scheduleRevisionId",
         source,period_start::text AS "periodStart",period_end::text AS "periodEnd",
         time_zone AS "timeZone",start_at AS "startAt",end_at AS "endAt",
-        state,version,reviewed_at AS "reviewedAt",created_by AS "createdBy"`,
+        state,version,draft_revision AS "draftRevision",
+       reviewed_at AS "reviewedAt",created_by AS "createdBy"`,
     [id,groupId,rule.id,source,startDate,endDate,rule.timeZone,
       startAt,endAt,actorId,requestKey],
   );
@@ -145,19 +148,21 @@ async function addCycle(
   return cycle;
 }
 async function requestReview(client:PoolClient,cycle:RawCycle,actorId:string|null,
-  initiator:"member"|"cron"):Promise<RawCycle>{
+  initiator:"member"|"cron",expectedDraftRevision=cycle.draftRevision):Promise<RawCycle>{
   if(cycle.state!=="open")throw error(409,"Kỳ không còn ở trạng thái Đang mở.");
   const result=await client.query<RawCycle>(
     `UPDATE group_settlement_cycles
      SET state='review',version=version+1,
        reviewed_at=clock_timestamp(),updated_at=clock_timestamp()
      WHERE id=$1 AND group_id=$2 AND state='open'
+       AND cancelled_at IS NULL AND draft_revision=$4
        AND end_at<=clock_timestamp() AND version=$3
      RETURNING id,group_id AS "groupId",schedule_revision_id AS "scheduleRevisionId",
        source,period_start::text AS "periodStart",period_end::text AS "periodEnd",
        time_zone AS "timeZone",start_at AS "startAt",end_at AS "endAt",
-       state,version,reviewed_at AS "reviewedAt",created_by AS "createdBy"`,
-    [cycle.id,cycle.groupId,cycle.version],
+       state,version,draft_revision AS "draftRevision",
+       reviewed_at AS "reviewedAt",created_by AS "createdBy"`,
+    [cycle.id,cycle.groupId,cycle.version,expectedDraftRevision],
   );
   if(!result.rows[0])throw error(409,"Kỳ chưa kết thúc hoặc đã thay đổi.");
   const updated=result.rows[0];
@@ -175,7 +180,7 @@ export async function listSettlementCycles(groupId:string,actorId:string,
     throw error(400,"Giới hạn danh sách không hợp lệ.");
   const permissions=await getSettlementSettings(groupId,actorId);
   const rows=await pool.query<RawCycle>(
-    `${qCycle} WHERE group_id=$1 ORDER BY start_at DESC,id DESC LIMIT $2`,
+    `${qCycle} WHERE group_id=$1 AND cancelled_at IS NULL ORDER BY start_at DESC,id DESC LIMIT $2`,
     [groupId,limit],
   );
   return {cycles:rows.rows.map(publicCycle),canManage:permissions.canManage,
@@ -194,10 +199,10 @@ export async function listSettlementCycleHistoryPage(
   await getSettlementSettings(groupId,actorId);
   const [rows,count]=await Promise.all([
     pool.query<RawCycle>(
-      `${qCycle} WHERE group_id=$1 ORDER BY start_at DESC,id DESC
+      `${qCycle} WHERE group_id=$1 AND cancelled_at IS NULL ORDER BY start_at DESC,id DESC
        LIMIT 50 OFFSET $2`,[groupId,(page-1)*50]),
     pool.query<{n:number}>(
-      "SELECT count(*)::int AS n FROM group_settlement_cycles WHERE group_id=$1",
+      "SELECT count(*)::int AS n FROM group_settlement_cycles WHERE group_id=$1 AND cancelled_at IS NULL",
       [groupId]),
   ]);
   const total=count.rows[0]?.n??0;
@@ -215,7 +220,7 @@ export async function getSettlementCycleById(
   assertUuid(groupId);assertUuid(cycleId);
   await getSettlementSettings(groupId,actorId);
   const r=await pool.query<RawCycle>(
-    `${qCycle} WHERE group_id=$1 AND id=$2 LIMIT 1`,
+    `${qCycle} WHERE group_id=$1 AND id=$2 AND cancelled_at IS NULL LIMIT 1`,
     [groupId,cycleId],
   );
   return r.rows[0]?publicCycle(r.rows[0]):null;
@@ -260,11 +265,9 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
       throw error(409,"Ngày bắt đầu nằm trước lịch hiện hành.");
     const startAt=localMidnightInstant(input.startDate,active.timeZone);
     const endAt=localMidnightInstant(input.endDate,active.timeZone);
-    if(Date.parse(startAt)<await activationEpoch(client,groupId))
-      throw error(409,
-        "Không thể tạo kỳ bắt đầu trước lần kích hoạt hiện tại của nhóm.");
-    if(Date.parse(startAt)<active.effectiveAt.getTime()||Date.parse(startAt)>now)
-      throw error(409,"Kỳ phải bắt đầu trong thời gian lịch đã có hiệu lực.");
+    // Explicit manual backfill can predate opt-in. Cron stays epoch-bound.
+    if(Date.parse(startAt)>now)
+      throw error(409,"Kỳ thủ công không được bắt đầu trong tương lai.");
     if(next&&Date.parse(endAt)>next.effectiveAt.getTime())
       throw error(409,"Kỳ thủ công không được cắt qua lần đổi lịch tiếp theo.");
     return publicCycle(await addCycle(client,groupId,active,"manual",
@@ -272,9 +275,10 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
   });
 }
 export async function submitSettlementCycleReview(groupId:string,cycleId:string,
-  actorId:string,expectedVersion:number):Promise<CycleRecord>{
+  actorId:string,expectedVersion:number,expectedDraftRevision=0):Promise<CycleRecord>{
   assertUuid(groupId);assertUuid(cycleId);
-  if(!Number.isSafeInteger(expectedVersion)||expectedVersion<1)
+  if(!Number.isSafeInteger(expectedVersion)||expectedVersion<1||
+     !Number.isSafeInteger(expectedDraftRevision)||expectedDraftRevision<0)
     throw error(400,"Phiên bản kỳ không hợp lệ.");
   return withAuthorizedCycleManager(groupId,actorId,async client=>{
     assertActiveOptIn(await isEnabled(client,groupId));
@@ -284,11 +288,11 @@ export async function submitSettlementCycleReview(groupId:string,cycleId:string,
     );
     const c=result.rows[0];
     if(!c)throw error(404,"Không tìm thấy kỳ quyết toán.");
-    if(c.version!==expectedVersion)
-      throw error(409,"Kỳ đã thay đổi. Tải lại trước khi xác nhận.");
+    if(c.version!==expectedVersion||c.draftRevision!==expectedDraftRevision)
+      throw error(409,"Khoảng kỳ đã thay đổi. Tải lại trước khi kiểm tra.");
     if(c.endAt.getTime()>Date.now())
       throw error(409,"Chưa kết thúc khoảng thời gian của kỳ.");
-    return publicCycle(await requestReview(client,c,actorId,"member"));
+    return publicCycle(await requestReview(client,c,actorId,"member",expectedDraftRevision));
   });
 }
 
