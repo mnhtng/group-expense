@@ -94,7 +94,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
       setEditing(null);setConfirmCancel(null);
       setMessage(action==="edit"
         ?"Đã cập nhật ngày của kỳ chưa kiểm tra. Không thay đổi công nợ."
-        :"Đã hủy kỳ chưa kiểm tra và lưu lịch sử thao tác.");
+        :"Đã xóa kỳ chưa kiểm tra khỏi danh sách và lưu lịch sử thao tác.");
       router.refresh();
     }catch(cause){
       setError(cause instanceof Error?cause.message:"Lỗi kết nối.");
@@ -167,7 +167,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
                 className="min-h-11 rounded-xl border px-3 text-sm font-medium">Sửa kỳ</button>
               <button type="button" disabled={busy}
                 onClick={()=>{setConfirmCancel(cycle.id);setEditing(null);}}
-                className="min-h-11 rounded-xl border border-destructive px-3 text-sm text-destructive">Hủy kỳ</button>
+                className="min-h-11 rounded-xl border border-destructive px-3 text-sm text-destructive">Xóa kỳ</button>
             </div>
             {editing?.id===cycle.id&&<div className="space-y-3">
               <p className="text-xs text-muted-foreground">
@@ -187,15 +187,15 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
                   className="min-h-11 rounded-xl border px-4 text-sm">Đóng</button>
               </div>
             </div>}
-            {confirmCancel===cycle.id&&<div role="group" aria-label="Xác nhận hủy kỳ thủ công"
+            {confirmCancel===cycle.id&&<div role="group" aria-label="Xác nhận xóa kỳ thủ công"
               className="space-y-2">
-              <p className="text-sm">Hủy kỳ và giải phóng khoảng ngày? Không thể hoàn tác.
+              <p className="text-sm">Xóa kỳ khỏi danh sách và giải phóng khoảng ngày? Không thể hoàn tác.
                 Lịch sử tạo và hủy vẫn được giữ để kiểm toán.</p>
               <div className="flex flex-wrap gap-2">
                 <button type="button" disabled={busy}
                   onClick={()=>void changeDraft(cycle,"cancel")}
                   className="min-h-11 rounded-xl bg-destructive px-4 text-sm font-semibold text-destructive-foreground">
-                  Xác nhận hủy kỳ
+                  Xác nhận xóa kỳ
                 </button>
                 <button type="button" disabled={busy} onClick={()=>setConfirmCancel(null)}
                   className="min-h-11 rounded-xl border px-4 text-sm">Giữ kỳ</button>
