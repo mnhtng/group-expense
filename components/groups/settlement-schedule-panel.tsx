@@ -81,8 +81,9 @@ export function SettlementSchedulePanel({groupId,initial}:{
         Chu kỳ quyết toán dự kiến
       </h2>
       <p className="text-sm text-muted-foreground">
-        Thay đổi lịch chỉ có hiệu lực từ ngày bắt đầu đã chọn.
-        Lưu lịch không tự xác nhận thanh toán hay bù nợ.
+        Lần đầu chọn Thủ công có thể lấy ngày bắt đầu trong quá khứ để quyết toán
+        các hóa đơn cũ. Nếu lịch đã hoạt động, đổi lịch vẫn phải theo ranh giới
+        tương lai. Lưu lịch không tạo kỳ hoặc xác nhận thanh toán.
       </p>
     </div>
     {initial.current&&<div className="rounded-xl bg-secondary p-3 text-sm">
@@ -121,6 +122,11 @@ export function SettlementSchedulePanel({groupId,initial}:{
       </label>
       <DateDMYInput value={anchorDate} onChange={setAnchorDate}
         label="Bắt đầu từ"/>
+      {frequency==="manual"&&<p className="text-xs text-muted-foreground">
+        Ngày này là mốc sớm nhất được chọn cho kỳ thủ công.
+        Chỉ việc thiết lập lịch lần đầu được phép dùng ngày quá khứ.
+        Sau khi lưu, vào Tạo kỳ để chọn khoảng ngày cụ thể.
+      </p>}
       {preview&&<p className="app-caption">Kỳ đầu: {formatDateDMY(preview.start)} – trước {formatDateDMY(preview.end)}</p>}
       <button type="button" disabled={busy||!anchorDate||!timeZone}
         onClick={()=>void save()}

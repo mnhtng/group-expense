@@ -89,7 +89,8 @@ const selectCycle=`SELECT c.id,c.group_id AS "groupId",
   c.state,c.version,c.period_start::text AS "startDate",
   c.period_end::text AS "endDate",c.end_at AS "endAt",
   c.locked_at AS "lockedAt"
-  FROM group_settlement_cycles c WHERE c.group_id=$1 AND c.id=$2`;
+  FROM group_settlement_cycles c WHERE c.group_id=$1 AND c.id=$2
+     AND c.cancelled_at IS NULL`;
 const zero=()=>({expenseCount:0,obligationCount:0,
   originalMinor:"0",confirmedCashMinor:"0",pendingCashMinor:"0",
   outstandingMinor:"0",availableMinor:"0"});
