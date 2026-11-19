@@ -9,6 +9,7 @@ export const APPEND_ONLY_TABLES=Object.freeze([
   'group_membership_events','group_note_events','group_settlement_config_events',
   'obligation_sources','settlement_allocations','recurring_expense_occurrences',
   'group_settlement_schedule_events','group_settlement_cycle_events',
+  'group_settlement_cycle_draft_events',
   'group_settlement_cycle_snapshot_expenses','group_settlement_cycle_snapshot_obligations',
   'group_settlement_cycle_snapshots','group_settlement_cycle_repayments',
   'group_settlement_bilateral_proposals','group_settlement_bilateral_sources',
@@ -41,6 +42,12 @@ const guardNames=['sc004_manifest_immutable','bn002_proposal_immutable',
   'sc009_dispute_guard','sc009_dispute_event_guard'];
 const guards=Object.entries(LOCK_COLUMNS).map(([table],i)=>({table_name:table,
   trigger_name:guardNames[i],operations:16}));
+guards.push(
+  {table_name:'group_settlement_cycle_draft_events',
+    trigger_name:'sc026_draft_events_immutable',operations:24},
+  {table_name:'group_settlement_cycle_draft_events',
+    trigger_name:'sc026_draft_events_no_truncate',operations:32},
+);
 guards.push({table_name:'settlement_cycle_engine_events',trigger_name:'sc025_events_immutable',operations:24},
   {table_name:'settlement_cycle_engine_events',trigger_name:'sc025_events_no_truncate',operations:32});
 for(const [table,prefix,guardOps,auditOps] of [
