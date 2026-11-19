@@ -39,6 +39,10 @@ test("Manual edits/deletion require owner/delegate, OPEN state, real draft versi
   assert.match(schema,/A cancelled cycle is immutable/);
   assert.match(schema,/old\.state='review'|OLD\.state='review'/);
   assert.match(schema,/Cycle draft history is append-only/);
+  assert.match(schema,/sc026_draft_events_no_truncate/);
+  assert.match(schema,/DROP CONSTRAINT cycle_revision_start/);
+  assert.match(read("db/financial-inventory.mjs"),/cycle_draft_history/);
+  assert.match(read("db/rr004-runtime-policy.mjs"),/sc026_draft_events_immutable/);
   assert.match(schema,/WHERE \(cancelled_at IS NULL\)/);
   assert.doesNotMatch(schema,/DROP TABLE (expenses|obligations|settlements)/);
 });
@@ -52,7 +56,7 @@ test("Review rejects stale draft edits without changing old 1->2->3 lifecycle mo
   assert.match(review,/expectedDraftRevision===undefined\?0/);
   assert.match(ui,/expectedDraftRevision:cycle\.draftRevision/);
   assert.match(ui,/cycle\.state==="open"&&cycle\.source==="manual"/);
-  assert.match(ui,/Xác nhận hủy kỳ/);
+  assert.match(ui,/Xác nhận xóa kỳ/);
   assert.match(ui,/Chuyển sang chờ kiểm tra/);
   assert.match(read("lib/settlement-cycles/snapshot.ts"),/cycle\.version|c\.version/);
   assert.doesNotMatch(lifecycle,/UPDATE (expenses|obligations|settlements|settlement_allocations)/i);
