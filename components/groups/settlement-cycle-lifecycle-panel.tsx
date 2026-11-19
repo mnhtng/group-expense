@@ -109,8 +109,9 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
         Kỳ quyết toán (chế độ chuẩn bị)
       </h2>
       <p className="text-sm text-muted-foreground">
-        Chỉ quản lý khoảng thời gian và trạng thái “Đang mở / Chờ kiểm tra”.
-        Chưa khóa sổ, chụp công nợ, thu tiền hoặc bù nợ.
+        Kỳ thủ công còn Đang mở được sửa hoặc xóa trước khi chuyển sang
+        Chờ kiểm tra. Sau khi khóa sổ, số liệu được giữ nguyên; tạo kỳ không
+        tự chuyển tiền hoặc bù nợ.
       </p>
     </div>
     {!requestedEnabled
