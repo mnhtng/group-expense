@@ -11,9 +11,10 @@ import {
   type CycleFrequency,
 } from "@/lib/settlement-cycles/calendar";
 
-/** SC-003 stores calendar metadata ONLY. No financial ledger is read or written.
- * OPEN -> REVIEW is the only transition; locking/reconciliation belongs to
- * SC-004 and later. Never infer actual engine readiness from a saved opt-in.
+/** SC-003/026 calendar lifecycle: ordinary changes are metadata-only.
+ * MANUAL OPEN cycles may be edited/cancelled with audited draft revisions;
+ * OPEN -> REVIEW -> LOCKED remains the immutable financial lifecycle.
+ * Never infer financial-engine permission from a group opt-in.
  */
 export type CycleState="open"|"review"|"locked";
 export type CycleSource="scheduled"|"manual";
@@ -63,9 +64,9 @@ async function isEnabled(client:PoolClient,groupId:string):Promise<boolean>{
   return r.rows[0]?.requested_enabled===true;
 }
 /**
- * Latest OFF -> ON audit event is the only authority for the current opt-in
- * window. Manual or scheduled cycles must NOT begin before that instant.
- * This prevents retroactive import after disabling and later re-enabling.
+ * Latest OFF -> ON event protects automatic cycle catch-up from
+ * silently importing disabled periods. Explicit MANUAL backfill is allowed
+ * before activation only through a manager's selected historic window.
  */
 async function activationEpoch(client:PoolClient,groupId:string):Promise<number>{
   const activated=await client.query<{recorded_at:Date}>(
