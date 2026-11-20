@@ -3,6 +3,8 @@
 -- advisory lock, but FOR SHARE is sufficient to block concurrent owner
 -- transfers and does not require granting UPDATE on the groups table.
 -- This changes no cohort, control, financial, or audit rows.
+-- Explicit owner opt-out may leave global enabled with an empty cohort;
+-- readEngineAccess continues to require BOTH enabled and admitted.
 -- Existing global operator kill switch and 1/5/25 cohort caps remain.
 CREATE OR REPLACE FUNCTION sc025_cohort_guard() RETURNS trigger LANGUAGE plpgsql AS $sc025$
 DECLARE capacity integer; admitted_count integer; rollout_enabled boolean;
@@ -23,9 +25,9 @@ BEGIN
   IF NEW.admitted AND admitted_count>=capacity THEN
     RAISE EXCEPTION 'Rollout cohort capacity exceeded';
   END IF;
-  IF NOT NEW.admitted AND admitted_count=0 AND rollout_enabled THEN
-    RAISE EXCEPTION 'Pause rollout before removing the final group';
-  END IF;
+  -- Owner can revoke the last group's admission even when global control
+  -- remains enabled. Zero admitted groups implies zero eligible money writes.
+  -- The operator-only control remains an independent emergency stop.
   NEW.updated_at:=clock_timestamp();
   RETURN NEW;
 END $sc025$;
