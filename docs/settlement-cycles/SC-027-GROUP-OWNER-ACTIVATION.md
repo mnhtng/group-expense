@@ -18,11 +18,11 @@ Status: **feature implementation; staging/production rollout not authorized by t
 - **No administrator dashboard.** A group-owned panel appears in the existing settlement settings.
 - A signed Better Auth session is required. The mutation independently locks the group, checks that `groups.owner_id` matches the authenticated actor and the active group membership, then checks cohort state and the operator policy revision.
 - App runtime `DATABASE_URL` retains **SELECT only** on `settlement_cycle_engine_control`, `settlement_cycle_engine_cohort` and its immutable event history. Do not grant it cohort mutations.
-- Only `SETTLEMENT_OWNER_ACTIVATION_DATABASE_URL` is used for owner admission changes; this secret must reference a **separate non-owner/non-admin limited PostgreSQL login**. Server refuses a missing URL, a URL equal to `DATABASE_URL`, a superuser/admin role, a role able to update global control, or a role able to modify groups/users or insert payments.
-- Role permits only SELECT on relevant authorization/configuration tables, INSERT/UPDATE on the cohort and INSERT on the existing immutable audit tables.
-- A single SQL transaction owns authorization, changes and an immutable `group_settlement_config_events` record containing authenticated `actor_id`, old/new state and operator revision. The existing `settlement_cycle_engine_events` trigger independently logs the actual DB role and cohort before/after values.
+- The separate secret `SETTLEMENT_OWNER_ACTIVATION_DATABASE_URL` must point to a non-admin LOGIN with **only EXECUTE on one approved function**, not to the regular app runtime or the Neon database owner. The API checks its role profile and fails closed without that credential.
+- Scoped role must not receive DML on **any table**. It gets CONNECT, schema USAGE and EXECUTE on `public.sc027_owner_cohort_change(uuid,text,boolean,boolean,integer)`. The function has a fixed search path and PUBLIC EXECUTE revoked in the same migration.
+- The function atomically locks the group, verifies authenticated owner + membership, checks stale versions, enforces the cohort cap via existing trigger, and appends `group_settlement_config_events` with actor ID. The existing `settlement_cycle_engine_events` records the function-owner database role and before/after values; the separate group audit preserves the authenticated human actor.
 - Request body allows only `enabled`, `expectedAdmitted`, `expectedControlRevision`. Server uses parameterized SQL, group locks and SQL capacity guards.
-- Migration `027_owner_cohort_lock_scope.sql` changes the SC-025 cohort trigger's group lock from `FOR UPDATE` to `FOR SHARE`. The lock still conflicts with concurrent group updates/ownership transfers but avoids giving this dedicated role write privileges on `groups`. It also permits revoking the last admitted group while global control stays ON; with zero admitted groups all money writers remain denied. Operator global enable still refuses an empty cohort, and the operator global kill switch continues to work at any time.
+- Migration `027_owner_cohort_lock_scope.sql` preserves the original `FOR UPDATE` row lock inside the SC-025 trigger, but executes this through a tightly scoped SECURITY DEFINER function under a privileged DB-owned function. It allows revoking the final group without changing the operator global switch; zero admitted groups means zero authorized financial writes.
 
 ## One-time staging operator configuration (requires separate approval)
 
@@ -35,8 +35,8 @@ CREATE ROLE group_expense_owner_activation LOGIN
   PASSWORD '<GENERATE-UNIQUE-SECRET>';
 GRANT CONNECT ON DATABASE group_expense TO group_expense_owner_activation;
 GRANT USAGE ON SCHEMA public TO group_expense_owner_activation;
-GRANT SELECT ON groups, group_members, group_settlement_settings,
-  settlement_cycle_engine_control, settlement_cycle_engine_cohort
+GRANT EXECUTE ON FUNCTION
+  public.sc027_owner_cohort_change(uuid,text,boolean,boolean,integer)
   TO group_expense_owner_activation;
 GRANT INSERT, UPDATE ON settlement_cycle_engine_cohort
   TO group_expense_owner_activation;
@@ -44,7 +44,7 @@ GRANT INSERT ON settlement_cycle_engine_events,
   group_settlement_config_events TO group_expense_owner_activation;
 ```
 
-   Restrict role ownership, memberships, schema/database CREATE/TEMP, inherited privileges and future default grants. Verify no access to mutate `settlement_cycle_engine_control`, `groups`, `"user"`, `settlements`, or financial tables. Do not grant rights on other groups through API. In a PostgreSQL 17 rehearsal, test this role directly.
+   Restrict ownership, memberships, schema CREATE/TEMP, inherited privileges and future grants. Verify no DML to cohort, global control, groups, users or financial tables and no other executable SECURITY DEFINER functions. Never grant this function to regular runtime.
 
 3. Configure **only Vercel Preview staging** environment variable `SETTLEMENT_OWNER_ACTIVATION_DATABASE_URL` with that role's SSL-protected PostgreSQL URL; do not change `DATABASE_URL`. Never log or commit it.
 4. Merge/deploy source only after schema, role, build and signed HTTP/authorization integration tests pass. Keep global control OFF during initial deployment.
