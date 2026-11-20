@@ -102,7 +102,7 @@ export async function setOwnerEngineActivation(
         'public.settlement_cycle_engine_cohort','UPDATE') AS "cohortWrite",
       has_table_privilege(current_user,'public.settlements','INSERT') AS "moneyWrite",
       has_table_privilege(current_user,'public.groups','UPDATE') AS "groupWrite",
-      has_table_privilege(current_user,'public.user','UPDATE') AS "userWrite"
+      has_table_privilege(current_user,'public."user"','UPDATE') AS "userWrite"
       FROM pg_roles r WHERE r.rolname=current_user`);
     const op=profile.rows[0];
     if(!op||op.superuser||op.createRole||op.createDb||
@@ -110,7 +110,7 @@ export async function setOwnerEngineActivation(
       throw new SettlementSettingsError(409,
         "Tài khoản kích hoạt nhóm chưa đáp ứng chính sách quyền tối thiểu.");
     const gr=await client.query<{owner_id:string}>(`SELECT owner_id FROM groups
-      WHERE id=$1 AND archived_at IS NULL FOR UPDATE`,[groupId]);
+      WHERE id=$1 AND archived_at IS NULL FOR SHARE`,[groupId]);
     if(!gr.rows[0])throw new SettlementSettingsError(404,"Nhóm không tồn tại hoặc đã lưu trữ.");
     const membership=await client.query(`SELECT 1 FROM group_members
       WHERE group_id=$1 AND user_id=$2 AND status='active'`,[groupId,actorId]);
