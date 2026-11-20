@@ -16,10 +16,9 @@ export function SettlementOwnerEnginePanel({groupId,initial,requestedEnabled}:{
   const [info,setInfo]=useState("");
 
   const effective=view.globalEnabled&&view.admitted&&requestedEnabled;
-  const canEnable=view.globalEnabled&&view.operatorConfigured&&requestedEnabled&&
+  const canEnable=view.operatorConfigured&&requestedEnabled&&
     (view.admitted||view.admittedGroups<view.cohortLimit);
-  const canDisable=view.operatorConfigured&&view.admitted&&
-    (!view.globalEnabled||view.admittedGroups>1);
+  const canDisable=view.operatorConfigured&&view.admitted;
   async function change(enabled:boolean){
     if(busy)return;
     setBusy(true);setError("");setInfo("");
@@ -38,7 +37,7 @@ export function SettlementOwnerEnginePanel({groupId,initial,requestedEnabled}:{
         ?(data as {error:string}).error:"Không thay đổi được quyền thanh toán.");
       setView(data as OwnerEngineActivationView);
       setIntent(null);
-      setInfo(enabled?"Đã cho phép nhóm sử dụng thanh toán theo kỳ.":"Đã thu hồi quyền của nhóm.");
+      setInfo(enabled?(view.globalEnabled?"Đã mở thanh toán cho nhóm.":"Đã đăng ký quyền cho nhóm. Hệ thống hiện đang tạm dừng."):"Đã thu hồi quyền của nhóm.");
       router.refresh();
     }catch(cause){
       setError(cause instanceof Error?cause.message:"Lỗi kết nối.");
@@ -58,10 +57,10 @@ export function SettlementOwnerEnginePanel({groupId,initial,requestedEnabled}:{
     </div>
     <div className="rounded-xl bg-secondary p-3 text-sm">
       <p className="font-medium">{effective?"Đã mở cho nhóm":view.admitted?
-        "Nhóm đã được cấp quyền, hệ thống đang tạm dừng":"Chưa mở cho nhóm"}</p>
+        "Nhóm đã đăng ký, đang chờ hệ thống mở":"Chưa mở cho nhóm"}</p>
       {!view.globalEnabled&&<p className="mt-1 text-muted-foreground">
-        Công tắc dừng của toàn hệ thống đang tắt. Chủ nhóm không thể tự bật
-        Financial Engine toàn cục.
+        Financial Engine toàn hệ thống đang tạm dừng. Chủ nhóm có thể đăng ký
+        hoặc thu hồi quyền nhóm; giao dịch chỉ thực hiện khi hệ thống mở lại.
       </p>}
       {view.globalEnabled&&!view.admitted&&view.admittedGroups>=view.cohortLimit&&
         <p className="mt-1 text-muted-foreground">
@@ -83,17 +82,12 @@ export function SettlementOwnerEnginePanel({groupId,initial,requestedEnabled}:{
       :<button type="button" disabled={busy||!canEnable}
         onClick={()=>setIntent(true)}
         className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-        Mở thanh toán cho nhóm
+        {view.globalEnabled?"Mở thanh toán cho nhóm":"Đăng ký thanh toán cho nhóm"}
       </button>}
-    {view.admitted&&view.globalEnabled&&view.admittedGroups===1&&
-      <p className="text-xs text-muted-foreground">
-        Để dừng thanh toán ngay, bỏ chọn “Bật quyết toán” phía trên và Lưu.
-        Việc rút nhóm cuối khỏi danh sách rollout cần operator tạm dừng engine.
-      </p>}
     {intent!==null&&<div role="group" aria-label="Xác nhận thay đổi quyền thanh toán"
       className="space-y-2 rounded-xl border p-3">
       <p className="text-sm">
-        {intent?"Mở các thao tác ghi tài chính cho nhóm này? Các yêu cầu bù nợ vẫn cần hai bên xác nhận.":"Thu hồi quyền nhóm? Lịch sử tiền đã xác nhận vẫn được giữ nguyên."}
+        {intent?"Đăng ký quyền xử lý thanh toán cho nhóm này? Nếu hệ thống đang tạm dừng, nhóm sẽ chưa thể ghi giao dịch. Mọi đề xuất bù nợ vẫn cần hai bên xác nhận.":"Thu hồi quyền nhóm? Lịch sử tiền đã xác nhận vẫn được giữ nguyên."}
       </p>
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy}
