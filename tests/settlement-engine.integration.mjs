@@ -88,7 +88,7 @@ test('SC025 operator-only bounded cohort, immutable audit and pause serialize wi
   }
 });
 
-test('SC027 scoped owner admission role can join/revoke last cohort without global control access',
+test('SC027 scoped role uses audited owner function without any table DML privileges',
   {timeout:30000},async()=>{
   assert.equal(process.env.CI,'true');assert.equal(process.env.DATABASE_URL,base);
   const suffix=randomUUID().replaceAll('-','');
@@ -96,7 +96,9 @@ test('SC027 scoped owner admission role can join/revoke last cohort without glob
   const admin=new pg.Pool({connectionString:base,max:1});
   const owner=new pg.Pool({connectionString:base.replace(/group_expense$/,db),max:1});
   const scoped=new pg.Pool({connectionString:`postgresql://${role}:local-only@localhost:5432/${db}`,max:1});
-  const member=randomUUID(),g=randomUUID();
+  const actor=randomUUID(),outsider=randomUUID(),g=randomUUID();
+  const sql=`SELECT public.sc027_owner_cohort_change(
+    $1::uuid,$2::text,$3::boolean,$4::boolean,$5::integer) AS admitted`;
   try{
     await admin.query('CREATE DATABASE "'+db+'"');
     const migration=spawnSync(process.execPath,['db/migrate.mjs'],{
@@ -104,46 +106,40 @@ test('SC027 scoped owner admission role can join/revoke last cohort without glob
         DATABASE_URL_DIRECT:''},encoding:'utf8',timeout:30000});
     assert.equal(migration.status,0,migration.stderr);
     await owner.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)',
-      [member,'SC027 owner','sc027-'+member+'@example.test']);
-    await owner.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'Owner rollout test')",[g,member]);
-    await owner.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",[g,member]);
-    await owner.query("INSERT INTO group_settlement_settings(group_id,requested_enabled,requested_bilateral_netting,updated_by) VALUES($1,true,true,$2)",[g,member]);
+      [actor,'SC027 owner','sc027-'+actor+'@example.test']);
+    await owner.query("INSERT INTO groups(id,owner_id,name) VALUES($1,$2,'Owner rollout test')",[g,actor]);
+    await owner.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",[g,actor]);
+    await owner.query("INSERT INTO group_settlement_settings(group_id,requested_enabled,requested_bilateral_netting,updated_by) VALUES($1,true,true,$2)",[g,actor]);
     await owner.query('CREATE ROLE "'+role+'" LOGIN PASSWORD \'local-only\' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS');
     await owner.query('GRANT CONNECT ON DATABASE "'+db+'" TO "'+role+'"');
     await owner.query('GRANT USAGE ON SCHEMA public TO "'+role+'"');
-    await owner.query('GRANT SELECT ON groups,group_members,group_settlement_settings,settlement_cycle_engine_control,settlement_cycle_engine_cohort TO "'+role+'"');
-    await owner.query('GRANT INSERT, UPDATE ON settlement_cycle_engine_cohort TO "'+role+'"');
-    await owner.query('GRANT INSERT ON settlement_cycle_engine_events,group_settlement_config_events TO "'+role+'"');
+    await owner.query('GRANT EXECUTE ON FUNCTION public.sc027_owner_cohort_change(uuid,text,boolean,boolean,integer) TO "'+role+'"');
     const permissions=await scoped.query(`SELECT
-       has_table_privilege(current_user,'public.groups','UPDATE') AS "groupsWrite",
-       has_table_privilege(current_user,'public.settlements','INSERT') AS "moneyWrite",
-       has_table_privilege(current_user,'public.settlement_cycle_engine_control','UPDATE') AS "globalWrite",
-       has_table_privilege(current_user,'public.settlement_cycle_engine_cohort','INSERT') AS "cohortWrite"`);
+      has_table_privilege(current_user,'public.groups','UPDATE') AS "groupsWrite",
+      has_table_privilege(current_user,'public.settlements','INSERT') AS "moneyWrite",
+      has_table_privilege(current_user,'public.settlement_cycle_engine_control','UPDATE') AS "globalWrite",
+      has_table_privilege(current_user,'public.settlement_cycle_engine_cohort','INSERT') AS "cohortWrite",
+      has_function_privilege(current_user,'public.sc027_owner_cohort_change(uuid,text,boolean,boolean,integer)','EXECUTE') AS "canExecute"`);
     assert.deepEqual(permissions.rows[0],{
-      groupsWrite:false,moneyWrite:false,globalWrite:false,cohortWrite:true});
-    await scoped.query('BEGIN');
-    await scoped.query('SELECT owner_id FROM groups WHERE id=$1 FOR SHARE',[g]);
-    await scoped.query('INSERT INTO settlement_cycle_engine_cohort(group_id,admitted) VALUES($1,true)',[g]);
-    await scoped.query(`INSERT INTO group_settlement_config_events
-      (id,group_id,actor_id,event_type,details) VALUES($1,$2,$3,'settings_changed',$4::jsonb)`,
-      [randomUUID(),g,member,JSON.stringify({subject:'owner_financial_activation',after:true})]);
-    await scoped.query('COMMIT');
-    assert.equal((await owner.query('SELECT admitted FROM settlement_cycle_engine_cohort WHERE group_id=$1',[g])).rows[0].admitted,true);
-    assert.equal((await owner.query('SELECT enabled FROM settlement_cycle_engine_control WHERE id=1')).rows[0].enabled,false,
-      'owner admission must not bypass global pause');
+      groupsWrite:false,moneyWrite:false,globalWrite:false,cohortWrite:false,canExecute:true});
+    await assert.rejects(scoped.query('INSERT INTO settlement_cycle_engine_cohort(group_id) VALUES($1)',[g]),
+      e=>e.code==='42501');
+    await assert.rejects(scoped.query(sql,[g,outsider,true,false,1]),e=>e.code==='42501');
+    assert.equal((await scoped.query(sql,[g,actor,true,false,1])).rows[0].admitted,true);
+    await assert.rejects(scoped.query(sql,[g,actor,false,false,1]),e=>e.code==='40001');
+    assert.equal((await owner.query('SELECT enabled FROM settlement_cycle_engine_control WHERE id=1')).rows[0].enabled,false);
     await assert.rejects(scoped.query('UPDATE settlement_cycle_engine_control SET enabled=true'),
       e=>e.code==='42501');
-    await assert.rejects(scoped.query('UPDATE groups SET name=name WHERE id=$1',[g]),
-      e=>e.code==='42501');
     await owner.query('UPDATE settlement_cycle_engine_control SET enabled=true');
-    await scoped.query('UPDATE settlement_cycle_engine_cohort SET admitted=false WHERE group_id=$1',[g]);
+    assert.equal((await scoped.query(sql,[g,actor,false,true,2])).rows[0].admitted,false);
     assert.equal((await owner.query('SELECT count(*)::int AS n FROM settlement_cycle_engine_cohort WHERE admitted')).rows[0].n,0);
-    assert.equal((await owner.query('SELECT enabled FROM settlement_cycle_engine_control WHERE id=1')).rows[0].enabled,true);
+    assert.equal((await owner.query('SELECT enabled FROM settlement_cycle_engine_control WHERE id=1')).rows[0].enabled,true,
+      'group revoke must never turn off or on the operator kill switch');
     const audit=await owner.query('SELECT count(*)::int AS n FROM settlement_cycle_engine_events WHERE group_id=$1',[g]);
     assert.equal(audit.rows[0].n,2);
-    const actor=await owner.query(`SELECT count(*)::int AS n FROM group_settlement_config_events
-      WHERE group_id=$1 AND actor_id=$2 AND details->>'subject'='owner_financial_activation'`,[g,member]);
-    assert.equal(actor.rows[0].n,1);
+    const actorHistory=await owner.query(`SELECT count(*)::int AS n FROM group_settlement_config_events
+      WHERE group_id=$1 AND actor_id=$2 AND details->>'subject'='owner_financial_activation'`,[g,actor]);
+    assert.equal(actorHistory.rows[0].n,2);
   }finally{
     await scoped.end();await owner.end();
     await admin.query('DROP DATABASE IF EXISTS "'+db+'"');
