@@ -19,7 +19,7 @@ test("signed API revalidates actual active membership and owner on server",()=>{
   assert.match(route(),/withAuthenticatedApi/);
   assert.match(route(),/settlementBody\(request,\[/);
   assert.match(route(),/expectedControlRevision/);
-  assert.match(service(),/WHERE id=\$1 AND archived_at IS NULL FOR UPDATE/);
+  assert.match(service(),/WHERE id=\$1 AND archived_at IS NULL FOR SHARE/);
   assert.match(service(),/gr\.rows\[0\]\.owner_id!==actorId\|\|!membership\.rowCount/);
   assert.match(service(),/throw new SettlementSettingsError\(403/);
 });
@@ -43,6 +43,7 @@ test("activation preserves operator kill switch, group opt-in, and cohort limit"
   assert.match(service(),/ctl\.revision!==input\.expectedControlRevision/);
   assert.match(read("lib/settlement-cycles/engine.ts"),/!row\?\.enabled\?"paused":!row\.admitted\?"not-enrolled"/);
   assert.match(read("db/migrations/025_settlement_engine_rollout.sql"),/Rollout cohort capacity exceeded/);
+  assert.match(read("db/migrations/027_owner_cohort_lock_scope.sql"),/FOR SHARE/);
 });
 
 test("no history rewriting: audit owner attribution and atomically cancel on failure",()=>{
@@ -51,10 +52,10 @@ test("no history rewriting: audit owner attribution and atomically cancel on fai
   assert.match(service(),/await client\.query\("ROLLBACK"\)/);
   assert.match(service(),/group_settlement_config_events/);
   assert.match(service(),/subject:"owner_financial_activation"/);
-  assert.match(service(),/operator_role text NOT NULL DEFAULT current_user/);
+  assert.match(read("db/migrations/025_settlement_engine_rollout.sql"),/operator_role text NOT NULL DEFAULT current_user/);
   assert.match(ui(),/aria-label="Xác nhận thay đổi quyền thanh toán"/);
   assert.match(ui(),/router\.refresh\(\)/);
-  assert.match(ui(),/globalEnabled&&view\.admitted&&requestedEnabled/);
+  assert.match(ui(),/view\.globalEnabled&&view\.admitted&&requestedEnabled/);
   assert.doesNotMatch(service(),/UPDATE settlements|DELETE FROM settlements|INSERT INTO obligations/);
 });
 
