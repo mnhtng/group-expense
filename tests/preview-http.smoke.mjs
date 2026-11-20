@@ -1451,9 +1451,20 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     const currentOptInBase=`${origin}/api/groups/${currentOptInGroup}/settlement-cycle`;
     assert.equal((await expenseRequest("PATCH",currentOptInBase+"/settings",
       config(0,true,false),jar)).response.status,200);
-    assert.equal((await expenseRequest("POST",currentOptInBase+"/cycles",sc003Init(randomUUID()),jar))
-      .response.status,409,
-      "manual periods before the opt-in instant cannot be imported retroactively");
+    const historicalManual=await expenseRequest("POST",
+      currentOptInBase+"/cycles",sc003Init(randomUUID()),jar);
+    assert.equal(historicalManual.response.status,201,JSON.stringify(historicalManual.body));
+    assert.equal(historicalManual.body.cycle.state,"open");
+    assert.equal(historicalManual.body.cycle.source,"manual");
+    assert.equal(historicalManual.body.cycle.periodStart,sc003Date(-3));
+    assert.equal(historicalManual.body.cycle.periodEnd,sc003Date(-1));
+    assert.equal(historicalManual.body.cycle.version,1,
+      "explicit manual backfill does not skip the draft lifecycle");
+    const historicalSnapshot=await pool.query(
+      "SELECT count(*)::int AS count FROM group_settlement_cycle_snapshot_obligations WHERE group_id=$1",
+      [currentOptInGroup]);
+    assert.equal(historicalSnapshot.rows[0].count,0,
+      "backfilling manual calendar metadata never creates a financial snapshot");
     await seedHistoricalCycleSettings(pool,sc003Group,registered.user.id,
       sc003Date(-7)+"T00:00:00Z");
     assert.equal((await expenseRequest("POST",sc003Api,sc003Init(randomUUID()),thirdJar))
