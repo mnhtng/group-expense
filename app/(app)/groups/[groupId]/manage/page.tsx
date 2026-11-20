@@ -56,7 +56,7 @@ export default async function ManageGroupPage({params,searchParams}:{
       <GroupedList><NavigationRow href={manage+"?section=schedule"} title="Lịch quyết toán"/>
         <NavigationRow href={manage+"?section=periods"} title="Tạo kỳ"/></GroupedList>
     </>}
-    {section==="schedule"&&schedule&&<SettlementSchedulePanel key={schedule.version} groupId={groupId} initial={schedule}/>}
+    {section==="schedule"&&schedule&&<SettlementSchedulePanel key={schedule.version} groupId={groupId} initial={schedule} requestedEnabled={settings.requestedEnabled}/>}
     {section==="periods"&&schedule&&cycles&&<SettlementCycleLifecyclePanel groupId={groupId} requestedEnabled={settings.requestedEnabled} schedule={schedule} cycles={cycles.cycles} renderedAt={new Date().toISOString()}/>}
     {section==="archive"&&<section className="app-panel"><GroupArchiveForm groupId={groupId} groupName={group.name}/></section>}
   </main>;
