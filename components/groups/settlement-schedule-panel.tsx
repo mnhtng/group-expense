@@ -159,7 +159,8 @@ export function SettlementSchedulePanel({groupId,initial,requestedEnabled}:{
       {frequency==="manual"&&<p className="text-xs text-muted-foreground">
         Ngày này là mốc sớm nhất được chọn cho kỳ thủ công.
         Chỉ việc thiết lập lịch lần đầu được phép dùng ngày quá khứ.
-        Sau khi lưu, vào Tạo kỳ để chọn khoảng ngày cụ thể.
+        Sau khi lưu và lịch có hiệu lực, dùng nút Tạo kỳ thủ công
+        để chọn khoảng ngày cụ thể.
       </p>}
       {preview&&<p className="app-caption">Kỳ đầu: {formatDateDMY(preview.start)} – trước {formatDateDMY(preview.end)}</p>}
       <button type="button" disabled={busy||!anchorDate||!timeZone}
