@@ -1,6 +1,7 @@
 "use client";
 
 import {useState} from "react";
+import Link from "next/link";
 import {useRouter} from "next/navigation";
 import {DateDMYInput} from "@/components/ui/date-dmy-input";
 import {formatDateDMY} from "@/lib/date-format";
@@ -24,8 +25,8 @@ const tomorrow=(zone:string)=>{
   try{return addCalendarDays(currentLocalDate(zone),1);}
   catch{return "";}
 };
-export function SettlementSchedulePanel({groupId,initial}:{
-  groupId:string;initial:ScheduleView;
+export function SettlementSchedulePanel({groupId,initial,requestedEnabled}:{
+  groupId:string;initial:ScheduleView;requestedEnabled:boolean;
 }) {
   const router=useRouter();
   const seed=initial.pending??initial.current;
@@ -46,6 +47,8 @@ export function SettlementSchedulePanel({groupId,initial}:{
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const [message,setMessage]=useState("");
+  const activeManual=initial.current?.frequency==="manual";
+  const pendingManual=initial.pending?.frequency==="manual";
   const preview=(()=>{
     try {
       if(!anchorDate||frequency==="manual")return null;
@@ -87,13 +90,44 @@ export function SettlementSchedulePanel({groupId,initial}:{
       </p>
     </div>
     {initial.current&&<div className="rounded-xl bg-secondary p-3 text-sm">
-      <p className="font-medium">{initial.effectiveEnabled?"Lịch quyết toán đang hoạt động":"Lịch đã đến ngày bắt đầu; quyết toán chưa mở cho nhóm"}</p>
+      <p className="font-medium">Lịch quyết toán đã có hiệu lực</p>
       <p className="text-muted-foreground">
         {choices.find(c=>c.value===initial.current?.frequency)?.label}
         {" · "}{initial.current.timeZone}
         {" · "}Từ {formatDateDMY(initial.current.anchorDate)}
       </p>
+      {!initial.effectiveEnabled&&<p className="mt-2 text-xs text-muted-foreground">
+        Bù nợ và thanh toán theo kỳ chưa được hệ thống mở cho nhóm.
+        Điều này không ngăn tạo kỳ thủ công khi nhóm đã bật quyết toán.
+      </p>}
     </div>}
+    {initial.canManage&&activeManual&&<div className="space-y-3 rounded-xl border p-3">
+      <div className="space-y-1">
+        <p className="font-medium">Quản lý kỳ thủ công</p>
+        <p className="text-sm text-muted-foreground">
+          Tạo kỳ với ngày bắt đầu và kết thúc riêng. Bạn có thể sửa hoặc xóa
+          khi kỳ vẫn đang mở, trước bước kiểm tra.
+        </p>
+      </div>
+      {requestedEnabled
+        ? <Link href={`/groups/${groupId}/manage?section=periods#manual-cycle-form`}
+          className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">
+          Tạo kỳ thủ công
+        </Link>
+        : <div className="space-y-2 text-sm">
+          <p className="text-muted-foreground">
+            Nhóm chưa bật quyết toán. Bật trong Cài đặt quyết toán trước khi tạo kỳ.
+          </p>
+          <Link href={`/groups/${groupId}/manage?section=cycle`}
+            className="inline-flex min-h-11 items-center rounded-xl border px-4 font-medium">
+            Đến cài đặt quyết toán
+          </Link>
+        </div>}
+    </div>}
+    {initial.canManage&&!activeManual&&pendingManual&&
+      <p className="rounded-xl border p-3 text-sm text-muted-foreground">
+        Lịch Thủ công đang chờ đến ngày bắt đầu. Có thể tạo kỳ khi lịch này có hiệu lực.
+      </p>}
     {initial.pending&&<div className="rounded-xl border p-3 text-sm">
       <p className="font-medium">Lịch thay đổi đang chờ hiệu lực</p>
       <p className="text-muted-foreground">
@@ -125,7 +159,8 @@ export function SettlementSchedulePanel({groupId,initial}:{
       {frequency==="manual"&&<p className="text-xs text-muted-foreground">
         Ngày này là mốc sớm nhất được chọn cho kỳ thủ công.
         Chỉ việc thiết lập lịch lần đầu được phép dùng ngày quá khứ.
-        Sau khi lưu, vào Tạo kỳ để chọn khoảng ngày cụ thể.
+        Sau khi lưu và lịch có hiệu lực, dùng nút Tạo kỳ thủ công
+        để chọn khoảng ngày cụ thể.
       </p>}
       {preview&&<p className="app-caption">Kỳ đầu: {formatDateDMY(preview.start)} – trước {formatDateDMY(preview.end)}</p>}
       <button type="button" disabled={busy||!anchorDate||!timeZone}
