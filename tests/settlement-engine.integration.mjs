@@ -66,7 +66,14 @@ test('SC025 operator-only bounded cohort, immutable audit and pause serialize wi
     await owner.query('UPDATE settlement_cycle_engine_control SET cohort_limit=5');
     await owner.query('UPDATE settlement_cycle_engine_control SET enabled=true');
     await owner.query('UPDATE settlement_cycle_engine_cohort SET admitted=false WHERE group_id<>$1',[winner]);
-    await assert.rejects(owner.query('UPDATE settlement_cycle_engine_cohort SET admitted=false WHERE group_id=$1',[winner]),/Pause rollout/);
+    await owner.query('UPDATE settlement_cycle_engine_cohort SET admitted=false WHERE group_id=$1',[winner]);
+    assert.equal((await owner.query("SELECT count(*)::int AS n FROM settlement_cycle_engine_cohort WHERE admitted")).rows[0].n,0,
+      "revoking the last admitted group must leave no authorized writers");
+    assert.equal((await owner.query("SELECT enabled FROM settlement_cycle_engine_control WHERE id=1")).rows[0].enabled,true,
+      "the global kill switch remains an independent operator-only control");
+    await assert.rejects(owner.query("UPDATE settlement_cycle_engine_control SET cohort_limit=25"),/empty rollout/,
+      "operators cannot modify the enabled control while the cohort is empty");
+    await owner.query("UPDATE settlement_cycle_engine_control SET enabled=false");
     for(const statement of ['UPDATE settlement_cycle_engine_events SET operator_role=operator_role',
       'DELETE FROM settlement_cycle_engine_events','TRUNCATE settlement_cycle_engine_events',
       'DELETE FROM settlement_cycle_engine_cohort','TRUNCATE settlement_cycle_engine_cohort',
