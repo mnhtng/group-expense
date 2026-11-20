@@ -89,6 +89,26 @@ export async function setOwnerEngineActivation(
     await client.query("BEGIN");
     await client.query("SET LOCAL lock_timeout='5s'");
     await client.query("SET LOCAL statement_timeout='15s'");
+    const profile=await client.query<{
+      superuser:boolean;createRole:boolean;createDb:boolean;
+      globalWrite:boolean;cohortWrite:boolean;moneyWrite:boolean;
+      groupWrite:boolean;userWrite:boolean;
+    }>(`SELECT r.rolsuper AS superuser,r.rolcreaterole AS "createRole",
+      r.rolcreatedb AS "createDb",
+      has_table_privilege(current_user,'public.settlement_cycle_engine_control',
+        'UPDATE') AS "globalWrite",
+      has_table_privilege(current_user,'public.settlement_cycle_engine_cohort',
+        'INSERT') AND has_table_privilege(current_user,
+        'public.settlement_cycle_engine_cohort','UPDATE') AS "cohortWrite",
+      has_table_privilege(current_user,'public.settlements','INSERT') AS "moneyWrite",
+      has_table_privilege(current_user,'public.groups','UPDATE') AS "groupWrite",
+      has_table_privilege(current_user,'public.user','UPDATE') AS "userWrite"
+      FROM pg_roles r WHERE r.rolname=current_user`);
+    const op=profile.rows[0];
+    if(!op||op.superuser||op.createRole||op.createDb||
+      op.globalWrite||!op.cohortWrite||op.moneyWrite||op.groupWrite||op.userWrite)
+      throw new SettlementSettingsError(409,
+        "Tài khoản kích hoạt nhóm chưa đáp ứng chính sách quyền tối thiểu.");
     const gr=await client.query<{owner_id:string}>(`SELECT owner_id FROM groups
       WHERE id=$1 AND archived_at IS NULL FOR UPDATE`,[groupId]);
     if(!gr.rows[0])throw new SettlementSettingsError(404,"Nhóm không tồn tại hoặc đã lưu trữ.");
