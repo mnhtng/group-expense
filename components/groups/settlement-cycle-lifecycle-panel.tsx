@@ -123,7 +123,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
             Chưa có lịch đã tới ngày bắt đầu. Không thể tạo kỳ trước thời điểm hiệu lực.
           </p>
         : <div className="space-y-4">
-          {manualActive&&<div className="space-y-3 rounded-2xl border p-3">
+          {manualActive&&<div id="manual-cycle-form" className="scroll-mt-20 space-y-3 rounded-2xl border p-3">
             <p className="text-sm font-medium">Tạo kỳ thủ công</p>
             <DateDMYInput value={start} onChange={editStart} label="Bắt đầu kỳ"/>
             <DateDMYInput value={end} onChange={editEnd} label="Kết thúc kỳ (không bao gồm ngày này)"/>
