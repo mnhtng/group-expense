@@ -36,7 +36,8 @@ test("fails closed without independent scoped credential and rejects owner/globa
 });
 
 test("activation preserves operator kill switch, group opt-in, and cohort limit",()=>{
-  assert.match(service(),/if\(!ctl\.enabled\)throw new SettlementSettingsError/);
+  assert.match(service(),/Joining while globally paused is a pending group admission only/);
+  assert.match(read("db/migrations/027_owner_cohort_lock_scope.sql"),/Zero admitted groups implies zero eligible money writes/);
   assert.match(service(),/settings\.rows\[0\]\?\.requested_enabled/);
   assert.match(service(),/cohort_limit AS "cohortLimit"/);
   assert.match(service(),/expectedAdmitted/);
@@ -60,7 +61,8 @@ test("no history rewriting: audit owner attribution and atomically cancel on fai
 });
 
 test("operator globally paused or unavailable never appears enabled in UI",()=>{
-  assert.match(ui(),/view\.globalEnabled&&view\.operatorConfigured&&requestedEnabled/);
+  assert.match(ui(),/canEnable=view\.operatorConfigured&&requestedEnabled/);
+  assert.match(ui(),/canDisable=view\.operatorConfigured&&view\.admitted/);
   assert.match(ui(),/!view\.globalEnabled&&<p/);
   assert.match(ui(),/Máy chủ chưa cấu hình quyền kích hoạt có giới hạn/);
   assert.match(ui(),/!requestedEnabled&&<p/);
