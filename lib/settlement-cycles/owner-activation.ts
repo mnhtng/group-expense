@@ -134,19 +134,13 @@ export async function setOwnerEngineActivation(
       return getOwnerEngineActivation(groupId,actorId);
     }
     if(input.enabled){
-      if(!ctl.enabled)throw new SettlementSettingsError(409,
-        "Hệ thống đang tạm dừng Financial Engine. Chủ nhóm không thể tự bật công tắc toàn hệ thống.");
+      // Joining while globally paused is a pending group admission only.
+      // It never overrides the operator emergency stop (readEngineAccess).
       const settings=await client.query<{requested_enabled:boolean}>(`SELECT requested_enabled
         FROM group_settlement_settings WHERE group_id=$1`,[groupId]);
       if(!settings.rows[0]?.requested_enabled)
         throw new SettlementSettingsError(409,
           "Hãy bật và lưu cấu hình quyết toán của nhóm trước.");
-    } else if(ctl.enabled) {
-      const count=await client.query<{n:number}>(`SELECT count(*)::int AS n
-        FROM settlement_cycle_engine_cohort WHERE admitted`);
-      if(count.rows[0]?.n===1)
-        throw new SettlementSettingsError(409,
-          "Để dừng thanh toán ngay, tắt 'Bật quyết toán' của nhóm. Việc rời cohort cuối cùng yêu cầu operator tạm dừng engine.");
     }
     if(current.rows.length){
       await client.query(`UPDATE settlement_cycle_engine_cohort
@@ -171,9 +165,6 @@ export async function setOwnerEngineActivation(
     if(error.code==="P0001"&&/capacity|limit|cohort/i.test(error.message??""))
       throw new SettlementSettingsError(409,
         "Đã đạt giới hạn số nhóm được kích hoạt. Vui lòng liên hệ người vận hành.");
-    if(error.code==="P0001"&&/Pause rollout|final group/i.test(error.message??""))
-      throw new SettlementSettingsError(409,
-        "Không thể rời cohort cuối khi engine vẫn đang chạy.");
     throw cause;
   }finally{client.release();}
 }
