@@ -56,7 +56,7 @@ export default async function GroupCyclesPage({params,searchParams}:{
             {cycle.source==="manual"?"Kỳ thủ công":"Theo lịch"} · {cycle.timeZone}
           </p>
           <span className="inline-flex rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">
-            {stateText[cycle.state]}
+            {cycle.settlementCompletedAt?"Hoàn tất":stateText[cycle.state]}
           </span>
         </div>
         <span aria-hidden="true" className="text-muted-foreground">→</span>
