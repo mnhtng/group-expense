@@ -600,15 +600,16 @@ async function scenario(engine,project,options,actors){
     await page2.getByRole("link",{name:"Trước"}).click();
     await owner.page.waitForURL(url=>url.searchParams.get("page")==="1");
 
-    // Single-tap agreement remains server-disabled while the finance engine is off.
+    // Signed sent/received controls remain truly disabled until the
+    // group owner enables Financial Engine, without showing approval UI.
     await owner.page.goto(ORIGIN+detail+"?view=settle");
     const selector=owner.page.getByLabel("Chọn người");
     await selector.selectOption({label:other.name});
     await assertTapTarget(selector,"counterparty selector");
-    const agree=owner.page.getByRole("button",{name:"Đồng ý bù nợ",exact:true});
-    await agree.waitFor();
-    assert.equal(await agree.isDisabled(),true);
-    await assertTapTarget(agree,"disabled bilateral agreement");
+    const sent=owner.page.getByRole("button",{name:"Đã nhận tiền",exact:true});
+    await sent.waitFor();
+    assert.equal(await sent.isDisabled(),true);
+    await assertTapTarget(sent,"disabled cash attestation");
     const originals=owner.page.getByRole("link",{name:"Xem hóa đơn trong kỳ"});
     await originals.focus();
     await owner.page.keyboard.press("Enter");
@@ -792,44 +793,49 @@ async function scenario(engine,project,options,actors){
         assert.equal((await must(user,'GET','/api/groups/'+groupId+'/settlement-cycle/settings')).effectiveEnabled,true);
         await user.page.getByLabel('Chọn người').selectOption({label:counterparty.name});
       };
-      const quickPath=apiFor(groupId,cycleId)+'/quick-setoff';
-      const oneTap=async(user)=>{
-        const button=user.page.getByRole('button',{name:'Đồng ý bù nợ',exact:true});
+      const pairCashPath=apiFor(groupId,cycleId)+'/pair-cash';
+      const cashTap=async(user,label)=>{
+        const button=user.page.getByRole('button',{name:label,exact:true});
         await button.waitFor();
-        const response=await observeBrowserPost(user.page,quickPath,()=>button.click());
-        assert.equal(response.status(),200,'one user agreement must POST under real signed session');
+        const response=await observeBrowserPost(user.page,pairCashPath,()=>button.click());
+        assert.equal(response.status(),200,'signed money attestation must POST exactly once');
         return response.json();
       };
       await openPair(owner,other);
-      const first=await oneTap(owner);
-      assert.equal(first.state,'awaiting_other','one vote alone never discharges debt');
-      const beforeSecond=await pool.query(
-        'SELECT count(*)::int AS n FROM group_settlement_bilateral_applications WHERE group_id=$1',
+      const first=await cashTap(owner,'Đã nhận tiền');
+      assert.equal(first.state,'pending','one side cannot discharge either debt');
+      assert.ok(BigInt(first.amountMinor)>0n,'the cycle has an actual cash difference');
+      const beforeSecond=await originalBalance(groupId);
+      assert.equal(beforeSecond.noncash_docs,0);
+      assert.equal(beforeSecond.cash_requests,0);
+      const pending=await pool.query(
+        'SELECT count(*)::int AS n FROM group_settlement_bilateral_cash_intents WHERE group_id=$1 AND status=\'pending\'',
         [groupId]);
-      assert.equal(beforeSecond.rows[0].n,0);
+      assert.equal(pending.rows[0].n,1);
       await openPair(other,owner);
-      const second=await oneTap(other);
-      assert.equal(second.state,'applied','second vote applies authenticated noncash ledger');
-      await openPair(owner,other);
-      await owner.page.getByLabel('Đã bù nợ').waitFor();
-      await owner.page.getByText('Chưa ghi nhận tiền trả',{exact:true}).first().waitFor();
-      const residualPath=apiFor(groupId,cycleId)+'/bilateral-applications/'+
-        second.applicationId+'/residual';
-      const payment=owner.page.getByRole('button',{name:/Đã chuyển tiền|Đã nhận tiền/});
-      const cashResponse=await observeBrowserPost(owner.page,residualPath,()=>payment.click());
-      assert.equal(cashResponse.status(),201);
-      const cash=await cashResponse.json();
-      assert.equal(cash.status,'pending','first cash step does not discharge debt');
-      await other.page.goto(ORIGIN+'/groups/'+groupId+'/settlements/'+cash.id);
-      const confirmed=other.page.waitForResponse(r=>r.request().method()==='PATCH'&&
-        new URL(r.url()).pathname==='/api/groups/'+groupId+'/settlements/'+cash.id);
-      await other.page.getByRole('button',{name:/Xác nhận đã nhận|Xác nhận đã trả/}).click();
-      assert.equal((await confirmed).status(),200,'counterparty accepts cash in one tap');
+      const second=await cashTap(other,'Đã chuyển tiền');
+      assert.equal(second.state,'confirmed',
+        'second actor attestation applies exact bilateral setoff and real cash atomically');
+      assert.equal(second.amountMinor,first.amountMinor,
+        'confirmed cash must equal the precise transfer the first actor saw');
+      const intentResult=await pool.query(
+        'SELECT status,application_id,settlement_id FROM group_settlement_bilateral_cash_intents WHERE group_id=$1',
+        [groupId]);
+      assert.equal(intentResult.rows[0].status,'confirmed');
+      assert.equal(intentResult.rows[0].application_id,second.applicationId);
+      assert.equal(intentResult.rows[0].settlement_id,second.settlementId);
+      const settled=await pool.query(
+        'SELECT status,initiated_by,resolved_by,amount_minor::text FROM settlements WHERE id=$1',
+        [second.settlementId]);
+      assert.equal(settled.rows[0].status,'confirmed');
+      assert.equal(settled.rows[0].initiated_by,owner.id);
+      assert.equal(settled.rows[0].resolved_by,other.id);
+      assert.equal(settled.rows[0].amount_minor,first.amountMinor);
       await owner.page.goto(ORIGIN+detail+"?view=settle");
       await owner.page.getByLabel('Đã trả đủ').waitFor();
-      const amountPaid='Đã trả '+new Intl.NumberFormat('vi-VN')
-        .format(BigInt(cash.amountMinor))+' ₫';
-      await owner.page.getByText(amountPaid,{exact:true}).first().waitFor();
+      const paidLabel='Đã trả '+new Intl.NumberFormat('vi-VN')
+        .format(BigInt(first.amountMinor))+' ₫';
+      await owner.page.getByText(paidLabel,{exact:true}).first().waitFor();
       const remaining=await pool.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId]);
       assert.ok(remaining.rows.every(r=>r.outstanding_minor==='0'&&r.pending_cash_minor==='0'));
       const finished=await originalBalance(groupId);

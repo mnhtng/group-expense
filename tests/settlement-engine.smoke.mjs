@@ -209,60 +209,99 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
     assert.equal(paidPreview.body.cashStatus.pendingMinor,'0');
     assert.equal(paidPreview.body.completedSetoff.amountMinor,'100000',
       'applied setoff remains separate historical metadata');
-    // SC030: two distinct actors each agree ONCE. The second agreement
-    // automatically applies the verified noncash offset, no separate
-    // create/approve/apply steps exposed to the mobile client.
+    // New BN030 mobile workflow: exactly two signed SENT/RECEIVED clicks
+    // replace both the old setoff approval screen and subsequent residual
+    // confirmation. A <-> third has 7000 / 3000, so net cash is 4000.
     await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=false');
-    const quick=cycles+'/'+cycleId+'/quick-setoff';
-    const quickPreviewUrl=proposals+'?partyAId='+encodeURIComponent(a.id)+
+    const pairCashUrl=cycles+'/'+cycleId+'/pair-cash';
+    const pairPreviewUrl=proposals+'?partyAId='+encodeURIComponent(a.id)+
       '&partyBId='+encodeURIComponent(third.id);
-    const quickPreview=await req('GET',quickPreviewUrl,undefined,a);
-    assert.equal(quickPreview.status,200,quickPreview.text);
-    assert.equal(quickPreview.body.calculation.offsetMinor,'3000');
-    const agreed1=await req('POST',quick,{
-      action:'agree',otherId:third.id,requestKey:randomUUID(),
-      expectedVersion:quickPreview.body.currentVersion,
-      expectedFingerprint:quickPreview.body.fingerprint,
-    },a);
-    assert.equal(agreed1.status,200,agreed1.text);
-    assert.equal(agreed1.body.state,'awaiting_other');
-    const noQuickProof=await owner.query(`SELECT count(*)::int AS n
-      FROM group_settlement_bilateral_applications
-      WHERE group_id=$1 AND party_low=$2 AND party_high=$3`,
+    const initial=await req('GET',pairPreviewUrl,undefined,a);
+    assert.equal(initial.status,200,initial.text);
+    assert.equal(initial.body.calculation.offsetMinor,'3000');
+    assert.equal(initial.body.cashIntent,null);
+    const startData={action:'start',otherId:third.id,
+      expectedVersion:initial.body.currentVersion,
+      expectedFingerprint:initial.body.fingerprint,
+      requestKey:randomUUID()};
+    const start=await req('POST',pairCashUrl,startData,a);
+    assert.equal(start.status,200,start.text);
+    assert.equal(start.body.state,'pending');
+    assert.equal(start.body.amountMinor,'4000');
+    const firstRepeat=await req('POST',pairCashUrl,startData,a);
+    assert.equal(firstRepeat.status,200,firstRepeat.text);
+    assert.equal(firstRepeat.body.alreadyProcessed,true);
+    const beforeConfirmation=await owner.query(
+      'SELECT count(*)::int AS n FROM group_settlement_bilateral_applications WHERE group_id=$1 AND party_low=$2 AND party_high=$3',
       [groupId,...[a.id,third.id].sort()]);
-    assert.equal(noQuickProof.rows[0].n,0,"first signature never discharges debt");
-    const checkedPreview=await req('GET',quickPreviewUrl,undefined,third);
-    assert.equal(checkedPreview.status,200,checkedPreview.text);
-    const agreed2=await req('POST',quick,{
-      action:'agree',otherId:a.id,requestKey:randomUUID(),
-      expectedVersion:checkedPreview.body.currentVersion,
-      expectedFingerprint:checkedPreview.body.fingerprint,
-    },third);
-    assert.equal(agreed2.status,200,agreed2.text);
-    assert.equal(agreed2.body.state,'applied');
-    const proofCount=await owner.query(`SELECT count(*)::int AS n
-      FROM group_settlement_bilateral_applications
-      WHERE group_id=$1 AND party_low=$2 AND party_high=$3`,
-      [groupId,...[a.id,third.id].sort()]);
-    assert.equal(proofCount.rows[0].n,1,"one immutable noncash application after both agree");
-    await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=true');
-    const batchUrl=cycles+'/'+cycleId+'/repayments';
-    const batchPreview=await req('GET',batchUrl,undefined,third);
-    assert.equal(batchPreview.body.enabled,false);
-    const direction=batchPreview.body.pairs.find(p=>p.debtorId===third.id&&p.creditorId===a.id);
-    assert.equal(direction.availableMinor,'4000',
-      "only the post-setoff residual may be collected as cash");
-    const batchBody={expectedCycleVersion:3,requestKey:randomUUID(),debtorId:third.id,
-      creditorId:a.id,expectedFingerprint:direction.fingerprint};
-    assert.equal((await req('POST',batchUrl,batchBody,third)).status,409,'pause also blocks ordinary cycle CASH');
-    await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=false');
-    assert.equal((await req('GET',batchUrl,undefined,third)).body.enabled,true);
-    const batch=await req('POST',batchUrl,batchBody,third);assert.equal(batch.status,201,batch.text);
-    await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=true');
-    const batchReplay=await req('POST',batchUrl,batchBody,third);
-    assert.equal(batchReplay.status,200,batchReplay.text);assert.equal(batchReplay.body.id,batch.body.id);
-    assert.equal((await req('PATCH',root+'/settlements/'+batch.body.id,{action:'confirm'},third)).status,403);
-    assert.equal((await req('PATCH',root+'/settlements/'+batch.body.id,{action:'confirm'},a)).status,200);
+    assert.equal(beforeConfirmation.rows[0].n,0,'first click never discharges money');
+    const awaiting=await req('GET',pairPreviewUrl,undefined,third);
+    assert.equal(awaiting.body.cashStatus.paidMinor,'0');
+    assert.equal(awaiting.body.cashIntent.status,'pending');
+    assert.equal(awaiting.body.cashIntent.initiatedBy,a.id);
+    // The historic APIs cannot approve or commit a paired-cash document
+    // until the actual other person has confirmed the transfer.
+    const awaitingProposal=awaiting.body.current;
+    assert.ok(awaitingProposal?.id);
+    const bypassApproval=await req('POST',
+      proposals+'/'+awaitingProposal.id+'/decisions',{
+        action:'approve',expectedVersion:awaitingProposal.version,
+        expectedFingerprint:awaitingProposal.sourceFingerprint,
+        requestKey:randomUUID(),
+      },third);
+    assert.equal(bypassApproval.status,409,
+      'legacy approval endpoint must not substitute cash receipt');
+    const bypassApply=await req('POST',
+      proposals+'/'+awaitingProposal.id+'/applications',{
+        expectedVersion:awaitingProposal.version,
+        expectedFingerprint:awaitingProposal.sourceFingerprint,
+        requestKey:randomUUID(),
+      },third);
+    assert.equal(bypassApply.status,409,
+      'legacy noncash apply cannot bypass two cash attestations');
+    const unrelated=await req('POST',pairCashUrl,{
+      action:'confirm',otherId:third.id,requestKey:randomUUID(),
+      expectedVersion:awaiting.body.currentVersion,
+      expectedFingerprint:awaiting.body.fingerprint},b);
+    assert.equal(unrelated.status,409,'unrelated pair cannot confirm a payment');
+    const confirmed=await req('POST',pairCashUrl,{
+      action:'confirm',otherId:a.id,requestKey:randomUUID(),
+      expectedVersion:awaiting.body.currentVersion,
+      expectedFingerprint:awaiting.body.fingerprint},third);
+    assert.equal(confirmed.status,200,confirmed.text);
+    assert.equal(confirmed.body.state,'confirmed');
+    assert.equal(confirmed.body.amountMinor,'4000');
+    assert.ok(confirmed.body.applicationId);
+    assert.ok(confirmed.body.settlementId);
+    const committed=await owner.query(
+      'SELECT status,amount_minor::text,initiated_by,resolved_by FROM settlements WHERE id=$1',
+      [confirmed.body.settlementId]);
+    assert.deepEqual(committed.rows[0],{
+      status:'confirmed',amount_minor:'4000',initiated_by:a.id,resolved_by:third.id,
+    });
+    const after=await req('GET',pairPreviewUrl,undefined,a);
+    assert.equal(after.status,200,after.text);
+    assert.equal(after.body.completedSetoff.amountMinor,'3000');
+    assert.equal(after.body.cashStatus.paidMinor,'4000');
+    assert.equal(after.body.cashStatus.remainingMinor,'0');
+    assert.equal(after.body.cashIntent.status,'confirmed');
+    const finalNotice=await owner.query(
+      `SELECT count(*)::int AS n FROM notifications
+        WHERE recipient_id=$1 AND group_id=$2
+          AND event_key=$3 AND kind='setoff_applied'`,
+      [a.id,groupId,'pair-money-confirmed:'+awaiting.body.cashIntent.id]);
+    assert.equal(finalNotice.rows[0].n,1,
+      'first signer receives one durable terminal payment notice');
+    const pairedCashReplay=await req('POST',pairCashUrl,{
+      action:'confirm',otherId:a.id,requestKey:randomUUID(),
+      expectedVersion:awaiting.body.currentVersion,
+      expectedFingerprint:awaiting.body.fingerprint},third);
+    assert.equal(pairedCashReplay.status,200,pairedCashReplay.text);
+    assert.equal(pairedCashReplay.body.alreadyProcessed,true);
+    assert.equal(pairedCashReplay.body.settlementId,confirmed.body.settlementId);
+    assert.equal((await owner.query(
+      'SELECT count(*)::int AS n FROM group_settlement_bilateral_cash_intents WHERE group_id=$1',
+      [groupId])).rows[0].n,1,'cash replay must be idempotent');
     const balances=(await owner.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId])).rows;
     assert.ok(balances.every(v=>v.outstanding_minor==='0'&&v.pending_cash_minor==='0'));
     assert.deepEqual((await owner.query('SELECT to_jsonb(o)::text AS row FROM obligations o WHERE group_id=$1 ORDER BY id',[groupId])).rows,source);

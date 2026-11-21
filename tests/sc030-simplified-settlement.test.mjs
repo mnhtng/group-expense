@@ -3,28 +3,35 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const read=p=>readFileSync(p,"utf8");
 const ui=read("components/groups/settlement-cycle-finance-panel.tsx");
-const quick=read("app/api/groups/[groupId]/settlement-cycle/cycles/[cycleId]/quick-setoff/route.ts");
+const quick=read("app/api/groups/[groupId]/settlement-cycle/cycles/[cycleId]/pair-cash/route.ts");
+const paymentFlow=read("lib/settlement-cycles/paired-cash.ts");
+const migration030=read("db/migrations/030_bilateral_cash_two_actions.sql");
 const auto=read("lib/expenses/service.ts");
 const payment=read("lib/settlements/service.ts");
 const noncash=read("lib/settlement-cycles/applications.ts");
 const paymentUi=read("components/settlements/settlement-actions.tsx");
 const sql=read("db/migrations/029_automatic_expense_completion.sql");
 
-test("two signatures only, not proposal/approve/apply user buttons",()=>{
-  assert.match(ui,/quick-setoff/);
-  assert.match(quick,/createBilateralProposal/);
-  assert.match(quick,/decideBilateralProposal/);
-  assert.match(quick,/applyBilateralNoncash/);
-  assert.match(quick,/decision\.status==="agreed"/);
+test("each party signs only a sent/received action; backend implicitly nets",()=>{
+  assert.match(ui,/pair-cash/);
+  assert.doesNotMatch(ui,/quick-setoff|Đồng ý bù nợ|Gửi đề xuất bù nợ/);
+  assert.match(ui,/Đã chuyển tiền/);
+  assert.match(ui,/Đã nhận tiền/);
+  assert.match(ui,/run\(canConfirm\?"confirm":"start"\)/);
   assert.match(quick,/getCurrentSession\(\)/);
-  assert.match(quick,/access\.bilateralEnabled/);
-  assert.match(quick,/expectedFingerprint/);
-  assert.match(quick,/requestKey/);
-  assert.doesNotMatch(ui,/Gửi đề xuất|Thu hồi đồng ý|Bù nợ ngay|Xác nhận thao tác|<code|obligationId/);
-  assert.doesNotMatch(ui,/type="checkbox"|Chứng từ|Phiên bản \d+/);
+  assert.match(paymentFlow,/createBilateralProposal/);
+  assert.match(paymentFlow,/decideBilateralProposal/);
+  assert.match(paymentFlow,/applyBilateralNoncash/);
+  assert.match(paymentFlow,/createBilateralResidual/);
+  assert.match(paymentFlow,/resolveSettlement/);
+  assert.match(paymentFlow,/return await transact/);
+  assert.match(paymentFlow,/pending\.initiatedBy/);
+  assert.match(paymentFlow,/cash\.id/);
+  assert.match(migration030,/bn030_one_pending_pair/);
+  assert.match(migration030,/bn030_finalize_guard/);
 });
 test("direct one-tap confirm/reject is still counterparty-authorized server side",()=>{
-  assert.match(ui,/Đồng ý bù nợ/);
+  assert.match(ui,/Đã chuyển tiền/);
   assert.match(ui,/Từ chối/);
   assert.match(paymentUi,/run\("confirm"\)/);
   assert.match(paymentUi,/run\("reject"\)/);
@@ -58,7 +65,7 @@ test("completed setoff list badge is grounded in a committed noncash document",(
   assert.match(projection,/preview\.completedSetoff/);
   assert.match(ui,/aria-label=\{s\.pairSettled/);
   assert.match(ui,/Đã trả "\+money\(s\.cashPaidMinor\)/);
-  assert.match(ui,/Đã bù \{money\(completed\.amountMinor\)\} mỗi chiều/);
+  assert.match(ui,/Đã cấn trừ \{money\(completed\.amountMinor\)\} mỗi chiều/);
   assert.match(preview,/cashStatus:/);
   assert.match(preview,/confirmedCashMinor/);
   assert.match(projection,/pairSettled/);
@@ -71,7 +78,7 @@ test("mobile UI remains readable, no technical identifiers or duplicate explanat
   assert.match(ui,/counterparts\[cursor\+\+\]/);
   assert.match(ui,/id="cycle-pair-member"/);
   assert.match(ui,/style=\{\{height:"48px",minHeight:"48px"\}\}/);
-  assert.match(ui,/beforeAMinor/);
+  assert.match(ui,/p\.offsetMinor/);
   assert.match(ui,/residualMinor/);
   assert.match(ui,/Tiền|Đang chờ|đang chờ/);
   assert.doesNotMatch(ui,/sourceFingerprint:[^\n]*<code|obligationId\}/);

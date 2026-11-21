@@ -23,6 +23,7 @@ export const APPEND_ONLY_TABLES=Object.freeze([
 // no actual identifier update is allowed. Never grant audit-body UPDATE.
 export const LOCK_COLUMNS=Object.freeze({
   group_settlement_cycle_snapshots:'cycle_id',
+  group_settlement_bilateral_cash_intents:'id',
   group_settlement_bilateral_proposals:'id',
   group_settlement_bilateral_decision_events:'id',
   group_settlement_bilateral_applications:'id',
@@ -35,14 +36,19 @@ const deletable=new Set(['user','session','account','verification',
 export const COLUMN_UPDATES=Object.freeze({
   ...Object.fromEntries(Object.entries(LOCK_COLUMNS).map(([t,c])=>[t,[c]])),
   obligations:['voided_at'],settlements:['status','resolved_at','resolved_by'],
+  group_settlement_bilateral_cash_intents:[
+    'status','resolved_by','resolved_at','application_id','settlement_id'],
   notifications:['read_at'],
 });
-const guardNames=['sc004_manifest_immutable','bn002_proposal_immutable',
+const guardNames=['sc004_manifest_immutable','bn030_immutable_intent',
+  'bn002_proposal_immutable',
   'bn003_event_immutable','bn004_app_immutable','sc006_adjustment_guard',
   'sc009_dispute_guard','sc009_dispute_event_guard'];
 const guards=Object.entries(LOCK_COLUMNS).map(([table],i)=>({table_name:table,
   trigger_name:guardNames[i],operations:16}));
 guards.push(
+  {table_name:'group_settlement_bilateral_cash_intents',
+    trigger_name:'bn030_immutable_intent',operations:24},
   {table_name:'group_settlement_cycle_draft_events',
     trigger_name:'sc026_draft_events_immutable',operations:24},
   {table_name:'group_settlement_cycle_draft_events',

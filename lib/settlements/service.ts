@@ -145,11 +145,11 @@ export async function createSettlement(groupId:string, actorId:string, raw:Creat
   });
 }
 export async function resolveSettlement(groupId:string,settlementId:string,actorId:string,
-  action:"confirm"|"reject"|"cancel",note?:string) {
+  action:"confirm"|"reject"|"cancel",note?:string,externalClient?:PoolClient) {
   if(!validUUID(settlementId)) throw new SettlementError(404,"Không tìm thấy yêu cầu.");
   if(note!==undefined && (typeof note!=="string" || note.length>500))
     throw new SettlementError(400,"Ghi chú tối đa 500 ký tự.");
-  return transaction(async client=>{
+  const work=async (client:PoolClient)=>{
     await memberGate(client,groupId,actorId);
     const result=await client.query<{id:string;status:SettlementStatus;initiated_by:string;
       debtor_id:string;creditor_id:string;}>(
@@ -168,7 +168,7 @@ export async function resolveSettlement(groupId:string,settlementId:string,actor
     }
     const next: SettlementStatus=action==="confirm"?"confirmed":action==="reject"?"rejected":"cancelled";
     await client.query(
-      `UPDATE settlements SET status=$2,resolved_at=now(),resolved_by=$3 WHERE id=$1`,
+      `UPDATE settlements SET status=$2,resolved_at=clock_timestamp(),resolved_by=$3 WHERE id=$1`,
       [settlementId,next,actorId],
     );
     await client.query(
@@ -194,7 +194,8 @@ export async function resolveSettlement(groupId:string,settlementId:string,actor
       );
     }
     return {id:settlementId,status:next,autoCompletedCount:autoCompleted.length};
-  });
+  };
+  return externalClient?work(externalClient):transaction(work);
 }
 
 const selectSettlement=`
