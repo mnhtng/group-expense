@@ -53,11 +53,12 @@ test("finance UI discovers all counterparts, stays actor-scoped, and preserves s
   assert.match(view,/partyAId:me,partyBId:member\.id/);
   assert.match(view,/summarizeBilateralPreview/);
   assert.match(view,/pendingMinor/);
-  assert.match(view,/afterAMinor/);
-  assert.match(view,/afterBMinor/);
+  assert.match(view,/beforeAMinor/);
+  assert.match(view,/beforeBMinor/);
+  assert.match(view,/residualMinor/);
   assert.match(view,/\/settlements/);
   assert.match(view,/cashActionCopy/);
   assert.match(view,/const financeReady=financialEngineEnabled&&requestedEnabled/);
-  assert.match(view,/disabled=\{!canUse\}/);
+  assert.match(view,/disabled=\{!enabled\|\|Boolean\(sending\)\}/);
   assert.doesNotMatch(view,/<details|window\.confirm|financialEngineEnabled\s*=\s*true/i);
 });
