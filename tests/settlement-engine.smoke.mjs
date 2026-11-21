@@ -239,6 +239,26 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
     assert.equal(awaiting.body.cashStatus.paidMinor,'0');
     assert.equal(awaiting.body.cashIntent.status,'pending');
     assert.equal(awaiting.body.cashIntent.initiatedBy,a.id);
+    // The historic APIs cannot approve or commit a paired-cash document
+    // until the actual other person has confirmed the transfer.
+    const awaitingProposal=awaiting.body.current;
+    assert.ok(awaitingProposal?.id);
+    const bypassApproval=await req('POST',
+      proposals+'/'+awaitingProposal.id+'/decisions',{
+        action:'approve',expectedVersion:awaitingProposal.version,
+        expectedFingerprint:awaitingProposal.sourceFingerprint,
+        requestKey:randomUUID(),
+      },third);
+    assert.equal(bypassApproval.status,409,
+      'legacy approval endpoint must not substitute cash receipt');
+    const bypassApply=await req('POST',
+      proposals+'/'+awaitingProposal.id+'/applications',{
+        expectedVersion:awaitingProposal.version,
+        expectedFingerprint:awaitingProposal.sourceFingerprint,
+        requestKey:randomUUID(),
+      },third);
+    assert.equal(bypassApply.status,409,
+      'legacy noncash apply cannot bypass two cash attestations');
     const unrelated=await req('POST',pairCashUrl,{
       action:'confirm',otherId:third.id,requestKey:randomUUID(),
       expectedVersion:awaiting.body.currentVersion,
@@ -265,6 +285,13 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
     assert.equal(after.body.cashStatus.paidMinor,'4000');
     assert.equal(after.body.cashStatus.remainingMinor,'0');
     assert.equal(after.body.cashIntent.status,'confirmed');
+    const finalNotice=await owner.query(
+      `SELECT count(*)::int AS n FROM notifications
+        WHERE recipient_id=$1 AND group_id=$2
+          AND event_key=$3 AND kind='setoff_applied'`,
+      [a.id,groupId,'pair-money-confirmed:'+awaiting.body.cashIntent.id]);
+    assert.equal(finalNotice.rows[0].n,1,
+      'first signer receives one durable terminal payment notice');
     const pairedCashReplay=await req('POST',pairCashUrl,{
       action:'confirm',otherId:a.id,requestKey:randomUUID(),
       expectedVersion:awaiting.body.currentVersion,
