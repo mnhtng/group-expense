@@ -154,6 +154,10 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
     assert.equal((await req('POST',decisionUrl,decision(),b)).status,201);
     const approved=await req('GET',decisionUrl,undefined,a);
     assert.equal(approved.body.readyForApplication,true);assert.equal(approved.body.financialEngineEnabled,true);
+    const awaitingApplication=await req('GET',proposals+
+      '?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,a);
+    assert.equal(awaitingApplication.body.completedSetoff,null,
+      'two votes alone are not proof of a committed noncash transaction');
     await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=true');
     assert.equal((await req('POST',applyUrl,apply,a)).status,409,'pause blocks an otherwise fully approved application');
     await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=false');
@@ -161,6 +165,14 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
     assert.deepEqual(applied.map(r=>r.status).sort(),[200,201]);
     const application=applied[0].body.application;assert.equal(applied[0].body.financialEngineEnabled,true);
     assert.equal((await owner.query('SELECT count(*)::int AS n FROM group_settlement_bilateral_applications WHERE group_id=$1',[groupId])).rows[0].n,1);
+    const afterSetoff=await req('GET',proposals+
+      '?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,b);
+    assert.equal(afterSetoff.status,200,afterSetoff.text);
+    assert.equal(afterSetoff.body.completedSetoff.amountMinor,'100000',
+      'pair card badge must display the ACTUAL confirmed setoff amount');
+    assert.ok(Date.parse(afterSetoff.body.completedSetoff.appliedAt)>0);
+    assert.equal(afterSetoff.body.calculation.offsetMinor,'0',
+      'after apply no new two-way amount remains but the completed badge must persist');
     await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=true');
     const replay=await req('POST',applyUrl,apply,a);assert.equal(replay.status,200);
     assert.equal(replay.body.application.id,application.id);assert.equal(replay.body.financialEngineEnabled,false);
