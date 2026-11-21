@@ -21,7 +21,7 @@ test("SC028 group-specific Financial Engine, independent emergency pause, safe d
       env:{...process.env,DATABASE_URL:base.replace(/group_expense$/,db),DATABASE_URL_DIRECT:""},
       encoding:"utf8",timeout:30000});
     assert.equal(run.status,0,run.stderr);
-    assert.equal((await owner.query("SELECT COUNT(*)::int AS n FROM schema_migrations")).rows[0].n,29);
+    assert.equal((await owner.query("SELECT COUNT(*)::int AS n FROM schema_migrations")).rows[0].n,30);
 
     await owner.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)',
       [actor,"SC028 group owner",actor+"@example.test"]);
