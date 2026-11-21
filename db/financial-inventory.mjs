@@ -43,6 +43,7 @@ export const FINANCIAL_CLASSES=Object.freeze([
   ["schedule_history","group_settlement_schedule_events","id"],
   ["cycles","group_settlement_cycles","id"],
   ["cycle_history","group_settlement_cycle_events","id"],
+  ["cycle_completion","group_settlement_cycle_completions","cycle_id"],
   ["cycle_draft_history","group_settlement_cycle_draft_events","id"],
   ["cycle_checkpoints","group_settlement_cycle_cron_checkpoints","group_id"],
   ["snapshot_expenses","group_settlement_cycle_snapshot_expenses","cycle_id,expense_id"],
