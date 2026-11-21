@@ -1,4 +1,5 @@
 import "server-only";
+import {recordEligibleCycleCompletions} from "@/lib/settlement-cycles/completion";
 import {createHash,randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
 import type {PoolClient} from "pg";
@@ -241,6 +242,9 @@ export async function processPairCash(groupId:string,cycleId:string,
         [pending.id,actorId,app.application.id,settlementId],
       );
       if(updated.rowCount!==1)throw error(409,"Khoản thanh toán đã được xử lý.");
+      // Both real counterparties signed: cash + noncash + intent are now
+      // final inside this transaction; no further user action is needed.
+      await recordEligibleCycleCompletions(client,groupId,[cycleId],actorId);
       await client.query(
         `SELECT sc009_emit_notice($1,$2,$3,$4,$5,'setoff_applied',$6,$7,$8)`,
         [groupId,cycleId,pending.initiatedBy,actorId,
