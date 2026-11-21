@@ -804,6 +804,7 @@ async function scenario(engine,project,options,actors){
       await openPair(owner,other);
       const first=await cashTap(owner,'Đã nhận tiền');
       assert.equal(first.state,'pending','one side cannot discharge either debt');
+      assert.ok(BigInt(first.amountMinor)>0n,'the cycle has an actual cash difference');
       const beforeSecond=await originalBalance(groupId);
       assert.equal(beforeSecond.noncash_docs,0);
       assert.equal(beforeSecond.cash_requests,0);
@@ -815,7 +816,8 @@ async function scenario(engine,project,options,actors){
       const second=await cashTap(other,'Đã chuyển tiền');
       assert.equal(second.state,'confirmed',
         'second actor attestation applies exact bilateral setoff and real cash atomically');
-      assert.equal(second.amountMinor,'30000');
+      assert.equal(second.amountMinor,first.amountMinor,
+        'confirmed cash must equal the precise transfer the first actor saw');
       const intentResult=await pool.query(
         'SELECT status,application_id,settlement_id FROM group_settlement_bilateral_cash_intents WHERE group_id=$1',
         [groupId]);
@@ -828,10 +830,12 @@ async function scenario(engine,project,options,actors){
       assert.equal(settled.rows[0].status,'confirmed');
       assert.equal(settled.rows[0].initiated_by,owner.id);
       assert.equal(settled.rows[0].resolved_by,other.id);
-      assert.equal(settled.rows[0].amount_minor,'30000');
+      assert.equal(settled.rows[0].amount_minor,first.amountMinor);
       await owner.page.goto(ORIGIN+detail+"?view=settle");
       await owner.page.getByLabel('Đã trả đủ').waitFor();
-      await owner.page.getByText('Đã trả 30.000 ₫',{exact:true}).first().waitFor();
+      const paidLabel='Đã trả '+new Intl.NumberFormat('vi-VN')
+        .format(BigInt(first.amountMinor))+' ₫';
+      await owner.page.getByText(paidLabel,{exact:true}).first().waitFor();
       const remaining=await pool.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId]);
       assert.ok(remaining.rows.every(r=>r.outstanding_minor==='0'&&r.pending_cash_minor==='0'));
       const finished=await originalBalance(groupId);
