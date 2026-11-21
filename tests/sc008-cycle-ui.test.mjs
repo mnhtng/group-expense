@@ -83,7 +83,7 @@ test("SC-008 never enables money through frontend opt-in, and requires real pair
   assert.match(view,/crypto\.randomUUID\(\)/);
   assert.match(view,/e\.status===409/);
   assert.match(view,/Đã bù/);
-  assert.match(view,/aria-label="Đã bù nợ"/);
+  assert.match(view,/aria-label=\{s\.pairSettled/);
   assert.match(view,/quick-setoff/);
   assert.match(view,/Xem hóa đơn trong kỳ/);
   assert.doesNotMatch(view,/Chứng từ <code|obligationId\}/);
