@@ -19,6 +19,7 @@ export type CycleReconciliation={
   unresolvedDisputes:number;pendingCashRequests:number;
   uncompletedInvoices:number;currentProposals:number;
   readyForManualReview:boolean;financialEngineEnabled:boolean;
+  settlementCompletedAt:string|null;settlementCompletionOrigin:"automatic"|"backfill"|null;
 };
 export type CycleAuditEvent={
   id:string;kind:string;eventType:string;actorId:string|null;
@@ -145,7 +146,14 @@ export async function readCycleReconciliation(groupId:string,cycleId:string,acto
               ('reject','revoke','invalidated','expired')))
          AS "currentProposals"`,[groupId,cycleId]);
     const v=checks.rows[0];
+    const completion=await c.query<{completedAt:Date;origin:"automatic"|"backfill"}>(
+      `SELECT completed_at AS "completedAt",origin
+       FROM group_settlement_cycle_completions
+       WHERE group_id=$1 AND cycle_id=$2`,[groupId,cycleId]);
+    const done=completion.rows[0];
     return {cycleId,state,...money,...v,
+      settlementCompletedAt:done?.completedAt.toISOString()??null,
+      settlementCompletionOrigin:done?.origin??null,
       readyForManualReview:state==="locked"&&
         asMoney(money.outstandingMinor)===0n&&v.unresolvedDisputes===0&&
         v.pendingCashRequests===0&&v.uncompletedInvoices===0&&
