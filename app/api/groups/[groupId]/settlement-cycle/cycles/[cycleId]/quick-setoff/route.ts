@@ -52,15 +52,18 @@ export async function POST(request:Request,{params}:Context){
 
     const preview=await previewBilateralProposal(groupId,cycleId,actor,actor,other);
     const current=preview.current;
-    // A financial action must be explicitly based on the numbers the user saw.
-    if(preview.fingerprint!==data.expectedFingerprint)
-      throw new SettlementError(409,"Số tiền đã thay đổi, vui lòng xem lại.");
+    // Return an existing committed noncash proof BEFORE comparing stale
+    // preview fingerprints: post-commit balances necessarily changed.
+    // Existing DAL still authenticates the real pair; no new money is written.
     if(current){
       const existing=await getBilateralApplication(groupId,cycleId,current.id,actor);
       if(existing.application)return NextResponse.json({
         state:"applied",applicationId:existing.application.id,alreadyApplied:true,
       },{headers:settlementNoStore});
     }
+    // A NEW financial action must match exactly the amount the user viewed.
+    if(preview.fingerprint!==data.expectedFingerprint)
+      throw new SettlementError(409,"Số tiền đã thay đổi, vui lòng xem lại.");
 
     if(data.action==="reject"&&!current)
       throw new SettlementError(409,"Không có khoản bù nợ chờ phản hồi.");
