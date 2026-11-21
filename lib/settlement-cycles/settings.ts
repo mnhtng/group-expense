@@ -169,6 +169,12 @@ export async function updateSettlementSettings(
        FROM group_settlement_settings WHERE group_id=$1 FOR UPDATE`, [groupId],
     );
     const old = existing.rows[0];
+    // Delegated period managers may edit the schedule/opt-in, but cannot
+    // indirectly revoke the owner's active financial engine permission.
+    if(old?.financial_engine_enabled && !input.requestedEnabled &&
+      group.owner_id!==actorId)
+      throw new SettlementSettingsError(403,
+        "Chỉ chủ nhóm được tắt quyết toán khi Financial Engine đang bật.");
     const version = old?.version ?? 0;
     if (input.expectedVersion !== version) {
       throw new SettlementSettingsError(409, "Cấu hình đã thay đổi. Vui lòng tải lại trước khi lưu.");
