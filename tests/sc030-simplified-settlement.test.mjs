@@ -65,7 +65,7 @@ test("completed setoff list badge is grounded in a committed noncash document",(
   assert.match(projection,/preview\.completedSetoff/);
   assert.match(ui,/aria-label=\{s\.pairSettled/);
   assert.match(ui,/Đã trả "\+money\(s\.cashPaidMinor\)/);
-  assert.match(ui,/Đã bù \{money\(completed\.amountMinor\)\} mỗi chiều/);
+  assert.match(ui,/Đã cấn trừ \{money\(completed\.amountMinor\)\} mỗi chiều/);
   assert.match(preview,/cashStatus:/);
   assert.match(preview,/confirmedCashMinor/);
   assert.match(projection,/pairSettled/);
@@ -78,7 +78,7 @@ test("mobile UI remains readable, no technical identifiers or duplicate explanat
   assert.match(ui,/counterparts\[cursor\+\+\]/);
   assert.match(ui,/id="cycle-pair-member"/);
   assert.match(ui,/style=\{\{height:"48px",minHeight:"48px"\}\}/);
-  assert.match(ui,/beforeAMinor/);
+  assert.match(ui,/p\.offsetMinor/);
   assert.match(ui,/residualMinor/);
   assert.match(ui,/Tiền|Đang chờ|đang chờ/);
   assert.doesNotMatch(ui,/sourceFingerprint:[^\n]*<code|obligationId\}/);
