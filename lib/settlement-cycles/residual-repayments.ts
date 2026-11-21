@@ -217,7 +217,8 @@ export async function previewBilateralResidual(groupId:string,cycleId:string,
  * real counterparty confirms through the existing settlements route.
  */
 export async function createBilateralResidual(groupId:string,cycleId:string,
-  applicationId:string,actorId:string,input:CreateResidualInput){
+  applicationId:string,actorId:string,input:CreateResidualInput,
+  externalClient?:PoolClient,options?:{suppressPendingNotification?:boolean}){
   ids(groupId,cycleId,applicationId);
   const note=validated(input);
   const digest=createHash("sha256").update(JSON.stringify([
@@ -225,7 +226,7 @@ export async function createBilateralResidual(groupId:string,cycleId:string,
     actorId,input.expectedCycleVersion,input.expectedFingerprint,note,
   ])).digest("hex");
   try{
-    return await transaction(async client=>{
+    const work=async (client:PoolClient)=>{
       // Same lock order as original cash + BN-004: group -> cycle -> originals.
       await activeGroup(client,groupId,actorId,true);
       const app=await applied(client,groupId,cycleId,applicationId,actorId);
@@ -290,13 +291,15 @@ export async function createBilateralResidual(groupId:string,cycleId:string,
       await client.query(`INSERT INTO settlement_events
         (id,settlement_id,actor_id,event_type,note)
         VALUES($1,$2,$3,'created',$4)`,[randomUUID(),sid,actorId,note]);
-      await notifySettlement(client,sid,actorId,"settlement_requested");
+      if(!options?.suppressPendingNotification)
+        await notifySettlement(client,sid,actorId,"settlement_requested");
       return {id:sid,alreadyCreated:false,applicationId,cycleId,
         amountMinor:preview.amountMinor,allocationCount:allocations.length,
         debtorId:preview.debtorId,creditorId:preview.creditorId,
         status:"pending" as const,cash:true,noncash:false,
         financialEngineEnabled:access.bilateralEnabled};
-    });
+    };
+    return await (externalClient?work(externalClient):transaction(work));
   }catch(e){
     if(e instanceof SettlementError)throw e;
     if(e&&typeof e==="object"&&"code" in e&&
