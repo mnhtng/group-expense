@@ -130,10 +130,10 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
         <strong className="text-sm tabular-nums">{money(p.beforeBMinor)}</strong>
       </div>
     </div>}
-    <div className="flex items-center justify-between gap-3">
-      <p className="text-sm">{completed?"Đã bù mỗi chiều":"Có thể bù mỗi chiều"}</p>
-      <strong className="text-lg tabular-nums">{money(completed?.amountMinor??p.offsetMinor)}</strong>
-    </div>
+    {!completed&&<div className="flex items-center justify-between gap-3">
+      <p className="text-sm">Có thể bù mỗi chiều</p>
+      <strong className="text-lg tabular-nums">{money(p.offsetMinor)}</strong>
+    </div>}
     {p.debtorId&&p.creditorId&&<div className="flex items-center justify-between gap-3 rounded-xl bg-secondary/60 p-3">
       <p className="text-sm">Còn {name(p.debtorId)} trả {name(p.creditorId)}</p>
       <strong className="text-base tabular-nums">{money(p.residualMinor)}</strong>
@@ -142,7 +142,7 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
       {money(p.pendingMinor)} đang chờ xác nhận ·
       {" "}<Link className="underline" href={"/groups/"+groupId+"/settlements"}>Xem</Link>
     </p>}
-    {proposal.staleCurrent&&<p role="alert" className="text-sm text-destructive">
+    {proposal.staleCurrent&&!completed&&<p role="alert" className="text-sm text-destructive">
       Công nợ đã thay đổi. Tải lại để kiểm tra.
     </p>}
     {completed?null
@@ -171,9 +171,10 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
         {residual.preview.debtorId===me?"Đã chuyển tiền":"Đã nhận tiền"}
         {" · "}{money(residual.preview.amountMinor)}
       </button>}
-    {residual?.preview.status==="blocked"&&<p className="text-sm text-muted-foreground">
-      {residual.preview.blockedReason??"Có khoản thanh toán đang chờ xác nhận."}
-    </p>}
+    {residual?.preview.status==="blocked"&&BigInt(p.pendingMinor)===0n&&
+      <p className="text-sm text-muted-foreground">
+        {residual.preview.blockedReason??"Có khoản thanh toán đang chờ xác nhận."}
+      </p>}
     {createdCash&&<p className="text-sm">
       Đang chờ bên kia xác nhận ·
       {" "}<Link className="underline" href={"/groups/"+groupId+"/settlements/"+createdCash}>
