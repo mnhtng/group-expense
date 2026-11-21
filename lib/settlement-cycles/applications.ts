@@ -1,4 +1,5 @@
 import "server-only";
+import {autoCompleteEligibleExpenses} from "@/lib/expenses/service";
 import {createHash,randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
 import type {PoolClient} from "pg";
@@ -212,11 +213,24 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
       // Force deferred check *before* returning success; all changes
       // still rollback together if conservation fails.
       await client.query("SET CONSTRAINTS bn004_conservation_on_commit IMMEDIATE");
+      // Two independently recorded approvals now back this immutable
+      // noncash discharge. Only then may a fully settled invoice complete.
+      const invoices=await client.query<{expense_id:string}>(
+        `SELECT DISTINCT o.expense_id
+          FROM group_settlement_bilateral_application_allocations a
+          JOIN obligations o ON o.id=a.obligation_id AND o.group_id=a.group_id
+          WHERE a.application_id=$1 AND a.group_id=$2 ORDER BY o.expense_id`,
+        [id,groupId],
+      );
+      const autoCompleted=await autoCompleteEligibleExpenses(
+        client,groupId,invoices.rows.map(r=>r.expense_id),actorId,
+      );
       const saved=await client.query<Stored>(
         `SELECT ${applicationColumns} FROM group_settlement_bilateral_applications
          WHERE id=$1`,[id]);
       if(!saved.rows[0])throw fail(409,"Không đọc lại được bút toán bù trừ.");
       return {application:toDocument(saved.rows[0]),alreadyApplied:false,
+        autoCompletedCount:autoCompleted.length,
         financialEngineEnabled:access.bilateralEnabled};
     });
   }catch(e){
