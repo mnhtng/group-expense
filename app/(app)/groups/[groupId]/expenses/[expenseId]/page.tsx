@@ -27,7 +27,7 @@ export default async function ExpenseDetailPage({params,searchParams}:{params:Pr
       action={editable?<ActionLink secondary href={base+"/edit"}>Sửa</ActionLink>:undefined}/>
     <div className="space-y-2"><p className="app-money">{vnd(expense.totalMinor)}</p>
       <p className="text-muted-foreground">{expense.payerName} đã trả · {formatDateDMY(expense.occurredOn)}</p>
-      <p className={`font-medium ${completed||allSettled?"text-money-in":"text-muted-foreground"}`}>{completed?"Đã chốt":allSettled?"Hết nợ · Chờ chốt":pending>0n?"Chờ xác nhận":`Còn nợ ${vnd(expense.remainingMinor)}`}</p></div>
+      <p className={`font-medium ${completed||allSettled?"text-money-in":"text-muted-foreground"}`}>{completed?(expense.completionOrigin==="automatic"?"Tự động hoàn tất":"Đã chốt"):allSettled?"Hết nợ · Chờ chốt":pending>0n?"Chờ xác nhận":`Còn nợ ${vnd(expense.remainingMinor)}`}</p></div>
     {!completed&&allSettled&&canEdit&&<CompleteExpenseButton groupId={groupId} expenseId={expenseId} version={expense.version}/>}
     <SegmentedNav label="Chi tiết khoản chi" items={[{href:base,label:"Chia tiền",active:tab==="split"},{href:base+"?tab=items",label:"Các món",active:tab==="items"},{href:base+"?tab=details",label:"Chi tiết",active:tab==="details"}]}/>
     {tab==="split"&&(debts.length===0?<EmptyState>Không có khoản cần hoàn trả.</EmptyState>:<GroupedList>
@@ -48,7 +48,10 @@ export default async function ExpenseDetailPage({params,searchParams}:{params:Pr
       </section>
       <section className="app-panel space-y-3"><h2 className="text-xl font-semibold">Thông tin</h2><p>{expense.creatorName} tạo khoản chi.</p>
         {expense.notes&&<p className="whitespace-pre-wrap break-words">{expense.notes}</p>}
-        {expense.completedAt&&<p>Chốt {formatDateTimeDMY(expense.completedAt)}</p>}
+        {expense.completedAt&&<p>
+          {expense.completionOrigin==="automatic"?"Hệ thống tự hoàn tất":"Đã chốt"}
+          {" · "}{formatDateTimeDMY(expense.completedAt)}
+        </p>}
         {expense.completionNote&&<p className="whitespace-pre-wrap break-words">{expense.completionNote}</p>}
         {expense.recurringRuleId&&<ActionLink secondary href={`/groups/${groupId}/recurring/${expense.recurringRuleId}`}>Xem lịch chi cố định</ActionLink>}
       </section>
