@@ -2612,9 +2612,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       [bnGroup])).rows[0].n,2,
       "tampered proposal must be fully rolled back");
 
-    // A creator may complete an already fully PAID source invoice without
-    // altering the immutable original obligation. This metadata version
-    // increment must not make all remaining opposite-side debts unqueryable.
+    // Financial confirmation auto-completes a fully paid source invoice
+    // without altering the immutable obligation or making other debt unreadable.
     const bnAllPaid=await expenseRequest("POST",bnCash,{
       requestKey:randomUUID(),allocations:[
         {obligationId:bnSmallOb,amountMinor:"1000"}],
@@ -2623,11 +2622,18 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal((await expenseRequest("PATCH",`${bnCash}/${bnAllPaid.body.id}`,
       {action:"confirm"},jar)).response.status,200);
     const bnBeforeComplete=(await expenseRequest("GET",bnReadUrl,undefined,jar)).body;
+    const finishedInvoiceId=(await pool.query(
+      "SELECT expense_id FROM obligations WHERE id=$1",[bnSmallOb]
+    )).rows[0].expense_id;
+    const bnCompleted=await expenseRequest("GET",
+      `${bnExpenses}/${finishedInvoiceId}`,undefined,jar);
+    assert.equal(bnCompleted.response.status,200);
+    assert.equal(bnCompleted.body.expense.completionOrigin,"automatic");
+    assert.ok(bnCompleted.body.expense.completedAt);
     const bnComplete=await expenseRequest("POST",
-      `${bnExpenses}/${(await pool.query(
-        "SELECT expense_id FROM obligations WHERE id=$1",[bnSmallOb]
-      )).rows[0].expense_id}/complete`,{expectedVersion:1},jar);
-    assert.equal(bnComplete.response.status,200,JSON.stringify(bnComplete.body));
+      `${bnExpenses}/${finishedInvoiceId}/complete`,{expectedVersion:1},jar);
+    assert.equal(bnComplete.response.status,409,
+      "an auto-completed invoice cannot be manually completed again");
     const bnAfterComplete=await expenseRequest("GET",bnReadUrl,undefined,jar);
     assert.equal(bnAfterComplete.response.status,200);
     assert.equal(bnAfterComplete.body.fingerprint,bnBeforeComplete.fingerprint,
