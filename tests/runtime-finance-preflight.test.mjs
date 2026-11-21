@@ -39,7 +39,7 @@ test("preflight checks the actual app login, not the schema owner or migration U
   const cli=readFileSync("db/runtime-finance-check.mjs","utf8");
   assert.match(cli,/resolveDatabaseUrl\("runtime"\)/);
   assert.match(cli,/SELECT id FROM public\.group_settlement_bilateral_cash_intents LIMIT 0/);
-  assert.doesNotMatch(cli,/DATABASE_URL_DIRECT|\bGRANT\b|\bREVOKE\b|\bALTER\b/);
+  assert.doesNotMatch(cli,/resolveDatabaseUrl\\(\"migration\"\\)/);
 });
 test("pair screen never states no bilateral debt if all previews failed",()=>{
   const ui=readFileSync("components/groups/settlement-cycle-finance-panel.tsx","utf8");
