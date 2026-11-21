@@ -606,7 +606,7 @@ async function scenario(engine,project,options,actors){
     const selector=owner.page.getByLabel("Chọn người");
     await selector.selectOption({label:other.name});
     await assertTapTarget(selector,"counterparty selector");
-    const sent=owner.page.getByRole("button",{name:"Đã chuyển tiền",exact:true});
+    const sent=owner.page.getByRole("button",{name:"Đã nhận tiền",exact:true});
     await sent.waitFor();
     assert.equal(await sent.isDisabled(),true);
     await assertTapTarget(sent,"disabled cash attestation");
@@ -802,7 +802,7 @@ async function scenario(engine,project,options,actors){
         return response.json();
       };
       await openPair(owner,other);
-      const first=await cashTap(owner,'Đã chuyển tiền');
+      const first=await cashTap(owner,'Đã nhận tiền');
       assert.equal(first.state,'pending','one side cannot discharge either debt');
       const beforeSecond=await originalBalance(groupId);
       assert.equal(beforeSecond.noncash_docs,0);
@@ -812,7 +812,7 @@ async function scenario(engine,project,options,actors){
         [groupId]);
       assert.equal(pending.rows[0].n,1);
       await openPair(other,owner);
-      const second=await cashTap(other,'Đã nhận tiền');
+      const second=await cashTap(other,'Đã chuyển tiền');
       assert.equal(second.state,'confirmed',
         'second actor attestation applies exact bilateral setoff and real cash atomically');
       assert.equal(second.amountMinor,'30000');
