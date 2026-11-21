@@ -365,6 +365,50 @@ export async function completeExpense(groupId: string, expenseId: string, actorI
   });
 }
 
+/**
+ * Invoked ONLY from an already-authorized finance write holding the group lock.
+ * Finalizes only source invoices touched by a CONFIRMED cash settlement or an
+ * APPLIED noncash setoff, after reading the complete live obligation ledger.
+ * The original creator remains the legacy invoice owner, but the completion
+ * event is marked as AUTOMATIC and attributes its trigger to the actual actor.
+ * Never claim the creator clicked the completion button.
+ */
+export async function autoCompleteEligibleExpenses(
+  client: PoolClient, groupId: string, expenseIds: string[], triggeredBy: string,
+): Promise<string[]> {
+  const ids=[...new Set(expenseIds)].sort();
+  if(!ids.length)return [];
+  const result=await client.query<{
+    id:string;version:number;createdBy:string;
+    remainingMinor:string;pendingMinor:string;invalidCount:number;
+  }>(
+    `SELECT e.id,e.version,e.created_by AS "createdBy",
+       progress."remainingMinor",progress."pendingMinor",progress."invalidCount"
+       FROM expenses e ${expensePaymentProgress}
+       WHERE e.group_id=$1 AND e.id=ANY($2::uuid[])
+         AND e.deleted_at IS NULL AND e.completed_at IS NULL
+       ORDER BY e.id FOR UPDATE OF e`,[groupId,ids],
+  );
+  const completed:string[]=[];
+  for(const invoice of result.rows){
+    if(!completionReady(invoice))continue;
+    const updated=await client.query(
+      `UPDATE expenses SET completed_at=now(),completed_by=created_by,
+          version=version+1,updated_at=now()
+        WHERE id=$1 AND group_id=$2 AND completed_at IS NULL
+        RETURNING version`,[invoice.id,groupId]);
+    if(!updated.rows[0])continue;
+    await client.query(
+      `INSERT INTO expense_completion_events
+        (id,group_id,expense_id,actor_id,expense_version,note,origin,triggered_by)
+       VALUES($1,$2,$3,NULL,$4,NULL,'automatic',$5)`,
+      [randomUUID(),groupId,invoice.id,updated.rows[0].version,triggeredBy],
+    );
+    completed.push(invoice.id);
+  }
+  return completed;
+}
+
 export async function getExpense(groupId: string, expenseId: string, actorId: string): Promise<ExpenseDetail | null> {
   const client = await pool.connect();
   try {
