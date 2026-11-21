@@ -326,13 +326,13 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
       'money shown is only confirmed actual cash, never the noncash setoff');
     assert.equal(pairAfter.body.cashStatus.remainingMinor,'0');
     assert.equal(pairAfter.body.cashIntent.status,'confirmed');
-    const replay=await req('POST',quickMoney,{
+    const pairedCashReplay=await req('POST',quickMoney,{
       action:'confirm',otherId:fourth.id,requestKey:randomUUID(),
       expectedVersion:fourthPending.body.currentVersion,
       expectedFingerprint:fourthPending.body.fingerprint},a);
-    assert.equal(replay.status,200,replay.text);
-    assert.equal(replay.body.alreadyProcessed,true);
-    assert.equal(replay.body.settlementId,confirmed.body.settlementId);
+    assert.equal(pairedCashReplay.status,200,pairedCashReplay.text);
+    assert.equal(pairedCashReplay.body.alreadyProcessed,true);
+    assert.equal(pairedCashReplay.body.settlementId,confirmed.body.settlementId);
     assert.equal((await owner.query(
       'SELECT count(*)::int AS n FROM group_settlement_bilateral_cash_intents WHERE group_id=$1',
       [groupId])).rows[0].n,1,'retries must never create new monetary intent');
