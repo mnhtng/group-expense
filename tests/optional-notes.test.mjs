@@ -27,11 +27,14 @@ test("all supported invoice and payment forms provide an optional note", () => {
   }
   for (const path of [
     "components/expenses/delete-expense-button.tsx",
-    "components/settlements/settlement-actions.tsx",
   ]) {
     assert.match(read(path), /onNoteChange=/, path);
     assert.match(read(path), /note=\{note\}/, path);
   }
+  const compact=read("components/settlements/settlement-actions.tsx");
+  assert.match(compact,/Ghi chú \(không bắt buộc\)/);
+  assert.match(compact,/value=\{note\}/);
+  assert.match(compact,/maxLength=\{500\}/);
   assert.match(read("components/ui/inline-confirmation.tsx"), /onNoteChange/);
 });
 test("no group, invite or membership form displays an optional note", () => {
