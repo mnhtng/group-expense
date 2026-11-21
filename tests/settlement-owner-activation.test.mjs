@@ -26,7 +26,7 @@ test("SC028 group-owner only UI and signed API, independent server owner verific
 test("SC028 financial write authorization is per group, NOT legacy global rollout or cohort",()=>{
   assert.match(engine(),/p\.emergency_paused,s\.financial_engine_enabled/);
   assert.match(engine(),/!row\.financial_engine_enabled\?"not-enrolled":"enabled"/);
-  assert.match(engine(),/!row\?\.enabled/); // no match? see note below
+  assert.doesNotMatch(engine(),/!row\?\.enabled\?"paused"/);
 });
 
 test("SC028 migration is additive and all existing groups start with financial writes disabled",()=>{
