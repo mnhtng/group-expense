@@ -6,6 +6,8 @@ import {
   CASH_INTENT_RUNTIME_PRIVILEGES_SQL,
   evaluateCashIntentRuntimePrivileges,
   projectCashIntentRuntimePrivileges,
+  CYCLE_COMPLETION_RUNTIME_PRIVILEGES_SQL,
+  evaluateCycleCompletionRuntimePrivileges,
 } from "../db/runtime-finance-policy.mjs";
 
 function completeAccess(){
@@ -53,4 +55,21 @@ test("financial HTTP errors expose SQLSTATE internally but never raw SQL or user
   assert.match(handler,/sqlState:dbCode/);
   assert.match(handler,/\^\[0-9A-Z\]\{5\}\$/);
   assert.doesNotMatch(handler,/console\.error\([^;]*\b(error\.message|error\.stack)\b/);
+});
+
+test("SC031 append-only completion is granted read/create but never edits or deletion",()=>{
+  const approved={migrated:true,canSelect:true,canInsert:true,
+    canUpdate:false,canDelete:false,canTruncate:false,canTrigger:false};
+  assert.equal(evaluateCycleCompletionRuntimePrivileges(approved).ok,true);
+  for(const name of ["canSelect","canInsert","migrated"]){
+    assert.equal(evaluateCycleCompletionRuntimePrivileges({...approved,[name]:false}).ok,false,name);
+  }
+  for(const name of ["canUpdate","canDelete","canTruncate","canTrigger"]){
+    assert.equal(evaluateCycleCompletionRuntimePrivileges({...approved,[name]:true}).ok,false,name);
+  }
+  assert.match(CYCLE_COMPLETION_RUNTIME_PRIVILEGES_SQL,
+    /has_table_privilege\(current_user/);
+  const cli=readFileSync("db/runtime-finance-check.mjs","utf8");
+  assert.match(cli,/CYCLE_COMPLETION_RUNTIME_PRIVILEGES_SQL/);
+  assert.match(cli,/SELECT cycle_id FROM public\.group_settlement_cycle_completions LIMIT 0/);
 });
