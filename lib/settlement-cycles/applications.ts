@@ -25,7 +25,7 @@ export type ApplyBilateralInput={
 type Proposal={
   id:string;groupId:string;cycleId:string;partyLow:string;partyHigh:string;
   version:number;amount:string;fingerprint:string;snapshotFingerprint:string;
-  headId:string|null;headVersion:number;createdAt:Date;
+  headId:string|null;headVersion:number;createdAt:Date;flowOrigin:string;
 };
 type Stored={
   id:string;proposalId:string;groupId:string;cycleId:string;
@@ -44,7 +44,7 @@ const proposalQuery=`SELECT p.id,p.group_id AS "groupId",p.cycle_id AS "cycleId"
     p.version,p.offset_minor::text AS amount,
     p.source_fingerprint AS fingerprint,
     p.snapshot_fingerprint AS "snapshotFingerprint",
-    p.created_at AS "createdAt",
+    p.created_at AS "createdAt",p.flow_origin AS "flowOrigin",
     h.current_proposal_id AS "headId",h.version AS "headVersion"
   FROM group_settlement_bilateral_proposals p
   JOIN group_settlement_bilateral_heads h
@@ -127,6 +127,9 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
       // settlement cash confirmations and source reservation changes.
       await activeGroup(client,groupId,actorId,true);
       const p=await selected(client,groupId,cycleId,proposalId);
+      // No public legacy apply endpoint may bypass the second CASH action.
+      if(p.flowOrigin==="paired_cash"&&!externalClient)
+        throw fail(409,"Khoản trả chỉ được hoàn tất tại màn thanh toán.");
       if(actorId!==p.partyLow&&actorId!==p.partyHigh)
         throw fail(403,"Chỉ hai người trong đề xuất được ghi bù trừ.");
       if(input.expectedVersion!==p.version||
