@@ -2030,9 +2030,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(stillFrozen.confirmedCashMinor,"50000");
     assert.equal(stillFrozen.pendingCashMinor,"10000");
     assert.equal(stillFrozen.fingerprint,stored.fingerprint);
-    // Creator-only completion still works AFTER all actual cash is confirmed.
-    // Neither the snapshot nor group-manager authorization can complete an
-    // invoice in place of its original creator.
+    // Both-party financial confirmation automatically completes the receipt.
+    // Manual completion remains creator-only but cannot close it again.
     const sc004LastCash=await expenseRequest("POST",sc004PaymentsApi,{
       requestKey:randomUUID(),
       allocations:[{obligationId:sc004Obligation.id,amountMinor:"40000"}],
@@ -2047,8 +2046,13 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       "debtor cannot complete another person's invoice");
     const sc004Completed=await expenseRequest("POST",sc004CompleteUrl,
       {expectedVersion:1},jar);
-    assert.equal(sc004Completed.response.status,200,JSON.stringify(sc004Completed.body));
-    assert.equal(sc004Completed.body.completed,true);
+    assert.equal(sc004Completed.response.status,409,
+      "fully paid frozen invoice was automatically completed");
+    const sc004Ready=await expenseRequest("GET",
+      `${sc004ExpensesApi}/${sc004Invoice}`,undefined,jar);
+    assert.equal(sc004Ready.response.status,200);
+    assert.equal(sc004Ready.body.expense.completionOrigin,"automatic");
+    assert.ok(sc004Ready.body.expense.completedAt);
     assert.equal((await expenseRequest("GET",sc004Url,undefined,jar))
       .body.snapshot.fingerprint,stored.fingerprint,
       "creator completion cannot rewrite a frozen expense snapshot");
