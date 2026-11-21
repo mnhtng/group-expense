@@ -31,6 +31,7 @@ type ExpenseItem = {
 };
 export type ExpenseDetail = ExpenseSummary & {
   groupId: string; notes: string; completionNote: string | null;
+  completionOrigin: "manual" | "automatic" | null;
   items: ExpenseItem[];
 };
 
@@ -424,6 +425,8 @@ export async function getExpense(groupId: string, expenseId: string, actorId: st
        e.version, (SELECT count(*)::int FROM expense_items WHERE expense_id=e.id) AS "itemCount",
        (SELECT ev.note FROM expense_completion_events ev
          WHERE ev.expense_id=e.id) AS "completionNote",
+       (SELECT ev.origin FROM expense_completion_events ev
+         WHERE ev.expense_id=e.id) AS "completionOrigin",
        progress.*
        FROM expenses e JOIN "user" u ON u.id=e.payer_id
        JOIN "user" author ON author.id=e.created_by
