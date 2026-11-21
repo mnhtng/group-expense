@@ -3,71 +3,67 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 
 const read=file=>readFileSync(file,"utf8");
-const service=()=>read("lib/settlement-cycles/owner-activation.ts");
-const migration=()=>read("db/migrations/027_owner_cohort_lock_scope.sql");
+const svc=()=>read("lib/settlement-cycles/owner-activation.ts");
+const engine=()=>read("lib/settlement-cycles/engine.ts");
+const migration=()=>read("db/migrations/028_group_scoped_financial_engine.sql");
+const settings=()=>read("lib/settlement-cycles/settings.ts");
 const route=()=>read("app/api/groups/[groupId]/settlement-cycle/owner-activation/route.ts");
 const page=()=>read("app/(app)/groups/[groupId]/manage/page.tsx");
 const ui=()=>read("components/groups/settlement-owner-engine-panel.tsx");
 
-test("owner-only controls render in group settlement management",()=>{
+test("SC028 group-owner only UI and signed API, independent server owner verification",()=>{
   assert.match(page(),/ownerActivation=section==="cycle"&&role==="owner"/);
   assert.match(page(),/ownerActivation&&<SettlementOwnerEnginePanel/);
-  assert.match(ui(),/Chỉ chủ nhóm có thể cho phép/);
-});
-
-test("signed API and SQL function both verify owner and active membership",()=>{
   assert.match(route(),/withAuthenticatedApi/);
-  assert.match(route(),/settlementBody\(request,\[/);
-  assert.match(route(),/expectedControlRevision/);
-  assert.match(service(),/sc027_owner_cohort_change/);
-  assert.match(migration(),/g\.archived_at IS NULL FOR UPDATE/);
-  assert.match(migration(),/v_owner<>p_actor OR NOT EXISTS/);
-  assert.match(migration(),/m\.status='active'/);
-  assert.match(migration(),/SC027_NOT_OWNER/);
+  assert.match(route(),/expectedSettingsVersion/);
+  assert.match(route(),/expectedEnabled/);
+  assert.match(svc(),/WHERE id=\$1 AND archived_at IS NULL FOR UPDATE/);
+  assert.match(svc(),/group\.rows\[0\]\.owner_id!==actorId\|\|!member\.rowCount/);
+  assert.match(svc(),/m\.status='active'|status='active'/);
+  assert.match(svc(),/throw new SettlementSettingsError\(403/);
 });
 
-test("limited separate role gets EXECUTE only; no policy or financial table writes",()=>{
-  assert.match(service(),/SETTLEMENT_OWNER_ACTIVATION_DATABASE_URL/);
-  assert.match(service(),/operatorUrl===process\.env\.DATABASE_URL/);
-  assert.match(service(),/role\.superuser\|\|role\.createRole\|\|role\.createDb/);
-  assert.match(service(),/role\.globalWrite\|\|role\.cohortWrite/);
-  assert.match(service(),/role\.groupWrite\|\|role\.userWrite\|\|role\.moneyWrite\|\|!role\.functionExecute/);
-  assert.match(migration(),/SECURITY DEFINER/);
-  assert.match(migration(),/SET search_path=pg_catalog,public/);
-  assert.match(migration(),/REVOKE ALL ON FUNCTION public\.sc027_owner_cohort_change/);
-  assert.doesNotMatch(service(),/UPDATE settlement_cycle_engine_control/);
-  assert.doesNotMatch(service(),/UPDATE settlement_cycle_engine_cohort/);
-  assert.match(read("db/rr004-runtime-policy.mjs"),/'settlement_cycle_engine_control','settlement_cycle_engine_cohort','settlement_cycle_engine_events'/);
+test("SC028 financial write authorization is per group, NOT legacy global rollout or cohort",()=>{
+  assert.match(engine(),/p\.emergency_paused,s\.financial_engine_enabled/);
+  assert.match(engine(),/!row\.financial_engine_enabled\?"not-enrolled":"enabled"/);
+  assert.match(engine(),/!row\?\.enabled/); // no match? see note below
 });
 
-test("global pause, explicit group opt-in and cohort capacity stay authoritative",()=>{
-  assert.match(service(),/operator kill switch remains OFF unless explicitly enabled/);
-  assert.match(migration(),/COALESCE\(v_opted,false\) IS FALSE/);
-  assert.match(migration(),/SC027_GROUP_NOT_OPTED_IN/);
-  assert.match(migration(),/SC027_CONTROL_STALE/);
-  assert.match(migration(),/SC027_GROUP_STALE/);
-  assert.match(migration(),/Rollout cohort capacity exceeded/);
-  assert.match(read("lib/settlement-cycles/engine.ts"),/!row\?\.enabled\?"paused":!row\.admitted\?"not-enrolled"/);
-  assert.match(migration(),/FOR UPDATE/);
+test("SC028 migration is additive and all existing groups start with financial writes disabled",()=>{
+  assert.match(migration(),/ADD COLUMN financial_engine_enabled boolean NOT NULL DEFAULT false/);
+  assert.match(migration(),/ADD COLUMN emergency_paused boolean NOT NULL DEFAULT false/);
+  assert.match(migration(),/sc028_financial_engine_requires_settlement/);
+  assert.doesNotMatch(migration(),/\bDROP TABLE\b|\bDELETE FROM expenses\b|\bUPDATE obligations\b/i);
+  assert.doesNotMatch(migration(),/UPDATE group_settlement_settings SET financial_engine_enabled=true/);
 });
 
-test("owner enrollment and revocation are atomic, auditable and ledger-neutral",()=>{
-  assert.match(service(),/await client\.query\("BEGIN"\)/);
-  assert.match(service(),/await client\.query\("COMMIT"\)/);
-  assert.match(service(),/await client\.query\("ROLLBACK"\)/);
-  assert.match(migration(),/group_settlement_config_events/);
-  assert.match(migration(),/'owner_financial_activation'/);
-  assert.match(migration(),/'before',v_admitted,'after',p_enabled/);
-  assert.match(read("db/migrations/025_settlement_engine_rollout.sql"),/operator_role text NOT NULL DEFAULT current_user/);
+test("SC028 owner update version checks, audit, and finance-neutral transaction",()=>{
+  assert.match(svc(),/row\.version!==input\.expectedSettingsVersion/);
+  assert.match(svc(),/row\.financial_engine_enabled!==input\.expectedEnabled/);
+  assert.match(svc(),/await client\.query\("BEGIN"\)/);
+  assert.match(svc(),/await client\.query\("COMMIT"\)/);
+  assert.match(svc(),/await client\.query\("ROLLBACK"\)/);
+  assert.match(svc(),/group_settlement_config_events/);
+  assert.match(svc(),/subject:"group_financial_engine"/);
+  assert.doesNotMatch(svc(),/SETTLEMENT_OWNER_ACTIVATION_DATABASE_URL|settlement_cycle_engine_cohort/);
+  assert.doesNotMatch(svc(),/INSERT INTO settlements|UPDATE obligations|DELETE FROM settlements/);
+});
+
+test("SC028 disabling settlement automatically disables finance to prevent unexpected reactivation",()=>{
+  assert.match(settings(),/financial_engine_enabled=CASE WHEN \$2 THEN financial_engine_enabled ELSE false END/);
+  assert.match(settings(),/financialEngineAutoDisabled/);
+  assert.match(migration(),/CHECK \(NOT financial_engine_enabled OR requested_enabled\)/);
+  assert.match(svc(),/!row\.requested_enabled/);
+});
+
+test("SC028 independent operator-only emergency stop serializes financial writers",()=>{
+  assert.match(engine(),/row\.emergency_paused\?"paused"/);
+  assert.match(engine(),/pg_advisory_xact_lock_shared\(250025,1\)/);
+  assert.match(migration(),/pg_advisory_xact_lock\(250025,1\)/);
+  assert.match(migration(),/CREATE OR REPLACE FUNCTION public.sc025_control_guard/);
+  assert.match(migration(),/NEW\.emergency_paused/);
+  assert.match(ui(),/view\.emergencyPaused/);
+  assert.match(ui(),/Bật Financial Engine cho nhóm/);
+  assert.match(ui(),/Tắt Financial Engine của nhóm/);
   assert.match(ui(),/aria-label="Xác nhận thay đổi quyền thanh toán"/);
-  assert.match(ui(),/view\.globalEnabled&&view\.admitted&&requestedEnabled/);
-  assert.doesNotMatch(migration(),/UPDATE settlements|DELETE FROM settlements|INSERT INTO obligations/);
-});
-
-test("global OFF or missing scoped credentials never appear as financial access",()=>{
-  assert.match(ui(),/canEnable=view\.operatorConfigured&&requestedEnabled/);
-  assert.match(ui(),/canDisable=view\.operatorConfigured&&view\.admitted/);
-  assert.match(ui(),/!view\.globalEnabled&&<p/);
-  assert.match(ui(),/Máy chủ chưa cấu hình quyền kích hoạt có giới hạn/);
-  assert.match(ui(),/!requestedEnabled&&<p/);
 });
