@@ -144,9 +144,11 @@ export function SettlementCycleOpsPanel({groupId,cycleId,userId,
         <p>Đề xuất chờ bù nợ: <strong>{report.currentProposals}</strong></p>
       </div>
       <p role="status" className="text-sm font-medium">
-        {report.readyForManualReview
-          ?"Đủ điều kiện kiểm tra cuối kỳ."
-          :"Còn khoản cần xử lý."}
+        {report.settlementCompletedAt
+          ?"✓ Kỳ đã hoàn tất quyết toán."
+          :report.readyForManualReview
+            ?"Đã trả đủ. Hệ thống đang hoàn tất kỳ."
+            :"Còn khoản cần xử lý."}
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
         <a className="inline-flex min-h-12 items-center justify-center rounded-xl border px-4 text-sm font-medium"
