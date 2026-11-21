@@ -11,6 +11,8 @@ import {
   CASH_INTENT_RUNTIME_PRIVILEGES_SQL,
   evaluateCashIntentRuntimePrivileges,
   projectCashIntentRuntimePrivileges,
+  CYCLE_COMPLETION_RUNTIME_PRIVILEGES_SQL,
+  evaluateCycleCompletionRuntimePrivileges,
 } from "./runtime-finance-policy.mjs";
 
 const pool=new pg.Pool({
@@ -24,10 +26,17 @@ try{
   if(!result.ok)throw Error("BN030_RUNTIME_ACL_MISMATCH: "+result.reasons.join(", "));
   // Check a real SELECT with the same non-owner login as the app.
   await pool.query("SELECT id FROM public.group_settlement_bilateral_cash_intents LIMIT 0");
-  console.log("BN-030 runtime permissions: PASS (app login, read-only preflight)");
+  const cycle=(await pool.query(CYCLE_COMPLETION_RUNTIME_PRIVILEGES_SQL)).rows[0];
+  const cycleResult=evaluateCycleCompletionRuntimePrivileges(cycle);
+  if(!cycleResult.ok)
+    throw Error("SC031_RUNTIME_ACL_MISMATCH: "+cycleResult.reasons.join(", "));
+  await pool.query("SELECT cycle_id FROM public.group_settlement_cycle_completions LIMIT 0");
+  console.log("BN-030 + SC-031 runtime permissions: PASS (app login, read-only)");
 }catch(error){
   console.error("BN-030 runtime permissions: FAIL",
-    error instanceof Error && error.message.startsWith("BN030_RUNTIME_ACL_MISMATCH")
+    error instanceof Error && (
+      error.message.startsWith("BN030_RUNTIME_ACL_MISMATCH")||
+      error.message.startsWith("SC031_RUNTIME_ACL_MISMATCH"))
       ?error.message:"DATABASE_READ_OR_ACCESS_FAILED");
   process.exitCode=1;
 }finally{
