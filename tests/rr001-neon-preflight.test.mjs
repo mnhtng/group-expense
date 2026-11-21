@@ -88,7 +88,8 @@ test("RR-001 historical 23-migration evidence reports new source migrations as p
   assert.equal(result.installedCount,23);
   assert.equal(result.sourceSchemaParity,false);
   assert.deepEqual(result.pendingMigrationFiles,["024_legacy_audit_immutability.sql",
-    "025_settlement_engine_rollout.sql","026_manual_cycle_drafts.sql"]);
+    "025_settlement_engine_rollout.sql","026_manual_cycle_drafts.sql",
+    "027_owner_cohort_lock_scope.sql"]);
   await assert.rejects(verifyMigrationChecksums([...rows,{filename:names[23]}]),/approved baseline/);
   rows[0].checksum_sha256="a".repeat(64);
   await assert.rejects(verifyMigrationChecksums(rows),/checksum drift/);
