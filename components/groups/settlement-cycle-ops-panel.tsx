@@ -68,7 +68,7 @@ export function SettlementCycleOpsPanel({groupId,cycleId,userId,
   },[base]);
   useEffect(()=>{queueMicrotask(()=>void load());},[load,revision]);
   async function create(){
-    if(saving||!consent||reason.trim().length<10||reason.trim().length>500||!source)return;
+    if(saving||report?.settlementCompletedAt||!consent||reason.trim().length<10||reason.trim().length>500||!source)return;
     if(!key.current)key.current=crypto.randomUUID();
     setSaving(true);setError("");
     try{
@@ -160,7 +160,8 @@ export function SettlementCycleOpsPanel({groupId,cycleId,userId,
     {view==="disputes"&&<section className="space-y-3 rounded-3xl border bg-card p-4 sm:p-5">
       <h3 className="font-semibold">Trao đổi về khoản nợ</h3>
 
-      {mySources.length>0&&<div className="space-y-3 rounded-2xl border p-3">
+      {report?.settlementCompletedAt&&<p className="text-sm text-muted-foreground">Kỳ đã hoàn tất. Tranh chấp và lịch sử chỉ còn để xem.</p>}
+      {!report?.settlementCompletedAt&&mySources.length>0&&<div className="space-y-3 rounded-2xl border p-3">
         <label htmlFor="sc009-obligation" className="block text-sm font-medium">
           Chọn khoản nợ
         </label>
@@ -212,7 +213,7 @@ export function SettlementCycleOpsPanel({groupId,cycleId,userId,
             <p>{e.body}</p>
           </li>)}
         </ol>
-        {(d.canRespond||d.canResolve||d.canWithdraw)&&<div className="flex flex-wrap gap-2">
+        {!report?.settlementCompletedAt&&(d.canRespond||d.canResolve||d.canWithdraw)&&<div className="flex flex-wrap gap-2">
           {([
             ["respond",d.canRespond],["resolve",d.canResolve],
             ["withdraw",d.canWithdraw],
@@ -221,7 +222,7 @@ export function SettlementCycleOpsPanel({groupId,cycleId,userId,
               onClick={()=>{setActive({id:d.id,action:kind});setReply("");key.current=null;}}
               className="min-h-11 rounded-xl border px-3 text-sm">{actionText[kind]}</button>)}
         </div>}
-        {active?.id===d.id&&<div role="group" aria-label="Phản hồi tranh chấp"
+        {!report?.settlementCompletedAt&&active?.id===d.id&&<div role="group" aria-label="Phản hồi tranh chấp"
           className="space-y-2 rounded-xl bg-secondary/60 p-3">
           <p className="text-sm font-medium">{actionText[active.action]}</p>
           <label htmlFor="sc009-reply" className="block text-xs">Trả lời</label>
