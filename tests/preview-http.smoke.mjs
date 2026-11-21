@@ -3326,7 +3326,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       JOIN expenses e ON e.id=o.expense_id
       WHERE o.group_id=$1 AND o.voided_at IS NULL
         AND b.confirmed_setoff_minor>0 AND b.available_minor=0
-        AND b.outstanding_minor=0 AND e.completed_at IS NULL
+        AND b.outstanding_minor=0
       ORDER BY o.id LIMIT 1`,[bnGroup]);
     assert.equal(fully.rowCount,1,"fixture has a noncash-settled invoice");
     const full=fully.rows[0];
@@ -3356,19 +3356,24 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
         "SQL bypass also must not overbook applied setoff");
     }finally{await rawClient.query("ROLLBACK");rawClient.release();}
 
-    // Creator-only completion after NONCASH discharge, without cash
-    // confirmation. The non-creator must never be able to finalize it.
+    // A fully discharged NONCASH source is automatically completed.
+    // Creator-only manual endpoint remains restricted; neither person may
+    // complete the same invoice twice.
     assert.equal((await expenseRequest("POST",
       `${bnExpenses}/${full.expense_id}/complete`,
       {expectedVersion:1},debtorJar)).response.status,403);
     const completedSetoff=await expenseRequest("POST",
       `${bnExpenses}/${full.expense_id}/complete`,
       {expectedVersion:1},creditorJar);
-    assert.equal(completedSetoff.response.status,200,
-      JSON.stringify(completedSetoff.body));
-    assert.equal((await pool.query(`SELECT completed_by
-      FROM expenses WHERE id=$1`,[full.expense_id])).rows[0].completed_by,
-      full.creditor_id);
+    assert.equal(completedSetoff.response.status,409,
+      "system already completed this noncash-settled invoice");
+    const autoProof=await pool.query(`SELECT e.completed_at,e.completed_by,ev.origin,ev.actor_id
+      FROM expenses e JOIN expense_completion_events ev ON ev.expense_id=e.id
+      WHERE e.id=$1`,[full.expense_id]);
+    assert.ok(autoProof.rows[0].completed_at);
+    assert.equal(autoProof.rows[0].completed_by,full.creditor_id);
+    assert.equal(autoProof.rows[0].origin,'automatic');
+    assert.equal(autoProof.rows[0].actor_id,null);
 
     // Do not permit a member with residual debt to leave, nor archive a
     // group with remaining obligations. The checks are live, not snapshots.
