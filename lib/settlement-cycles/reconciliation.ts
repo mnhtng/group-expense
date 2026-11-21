@@ -33,6 +33,11 @@ const auditUnion=`
  FROM group_settlement_cycle_events ev
  WHERE ev.group_id=$1 AND ev.cycle_id=$2
  UNION ALL
+ SELECT done.cycle_id,'cycle_completed',done.origin,done.triggered_by,
+   done.completed_at,done.cycle_id::text,'Kỳ quyết toán đã hoàn tất'
+ FROM group_settlement_cycle_completions done
+ WHERE done.group_id=$1 AND done.cycle_id=$2
+ UNION ALL
  SELECT p.id,'proposal','created',p.created_by,p.created_at,
     p.id::text,'Đề xuất bù trừ phi tiền mặt'
  FROM group_settlement_bilateral_proposals p
