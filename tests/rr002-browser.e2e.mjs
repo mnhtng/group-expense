@@ -746,11 +746,24 @@ async function scenario(engine,project,options,actors){
       [groupId]);
     assert.equal(noFinance.rows[0].n,0);
 
-    // Real gate, not a finance test flag: exercise the newly admitted group's
-    // consent controls with two independent browser sessions in every profile.
-    await pool.query('INSERT INTO settlement_cycle_engine_cohort(group_id) VALUES($1)',[groupId]);
+    // Real SC-028 gate: group OWNER enables Financial Engine via the signed
+    // owner-only API. Legacy global rollout/cohort no longer grant writes.
+    const activationUrl='/api/groups/'+groupId+'/settlement-cycle/owner-activation';
+    const beforeActivation=await must(owner,'GET',activationUrl);
+    assert.equal(beforeActivation.enabled,false);
+    assert.equal(beforeActivation.emergencyPaused,false);
+    const forbiddenActivation=await send(other,'PATCH',activationUrl,{
+      enabled:true,expectedEnabled:false,
+      expectedSettingsVersion:beforeActivation.settingsVersion,
+    });
+    assert.equal(forbiddenActivation.response.status(),403,
+      'a regular group member cannot enable Financial Engine');
+    const activated=await must(owner,'PATCH',activationUrl,{
+      enabled:true,expectedEnabled:false,
+      expectedSettingsVersion:beforeActivation.settingsVersion,
+    });
+    assert.equal(activated.enabled,true);
     try{
-      await pool.query('UPDATE settlement_cycle_engine_control SET enabled=true');
       const openPair=async(user,counterparty)=>{
         await user.page.goto(ORIGIN+detail+"?view=settle");
         assert.equal((await must(user,'GET','/api/groups/'+groupId+'/settlement-cycle/settings')).effectiveEnabled,true);
@@ -797,8 +810,16 @@ async function scenario(engine,project,options,actors){
       assert.equal(finished.cash_requests,1);
       await noHorizontalOverflow(owner.page,project+' activated finance');
     }finally{
-      await pool.query('UPDATE settlement_cycle_engine_control SET enabled=false');
-      await pool.query('UPDATE settlement_cycle_engine_cohort SET admitted=false WHERE group_id=$1',[groupId]);
+      // Disable only this throwaway group's engine through the same owner
+      // API, preserving audit and leaving global emergency controls intact.
+      const current=await must(owner,'GET',activationUrl);
+      if(current.enabled){
+        const disabled=await must(owner,'PATCH',activationUrl,{
+          enabled:false,expectedEnabled:true,
+          expectedSettingsVersion:current.settingsVersion,
+        });
+        assert.equal(disabled.enabled,false);
+      }
     }
     if(project.includes("phone")){
       const manifest=await owner.context.request.get(ORIGIN+"/manifest.webmanifest");
