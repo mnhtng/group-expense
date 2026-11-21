@@ -52,6 +52,8 @@ test("SC028 owner update version checks, audit, and finance-neutral transaction"
 test("SC028 disabling settlement automatically disables finance to prevent unexpected reactivation",()=>{
   assert.match(settings(),/financial_engine_enabled=CASE WHEN \$2 THEN financial_engine_enabled ELSE false END/);
   assert.match(settings(),/financialEngineAutoDisabled/);
+  assert.match(settings(),/old\?\.financial_engine_enabled && !input\.requestedEnabled/);
+  assert.match(settings(),/group\.owner_id!==actorId/);
   assert.match(migration(),/CHECK \(NOT financial_engine_enabled OR requested_enabled\)/);
   assert.match(svc(),/!row\.requested_enabled/);
 });
