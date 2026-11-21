@@ -417,7 +417,6 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
         }
       }
     };
-    setBusy(true);
     void Promise.all(Array.from({length:Math.min(4,counterparts.length)},()=>scan()))
       .then(()=>{
         if(ctrl.signal.aborted)return;
@@ -450,7 +449,7 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
         const other=quickOther;
         return <BilateralWorkbench key={other} groupId={groupId} cycleId={cycleId}
           me={me} other={other} people={people} enabled={enabled}
-          onUpdated={()=>setRevision(x=>x+1)}/>;
+          onUpdated={()=>{setBusy(true);setRevision(x=>x+1);}}/>;
       })()}
     </div>}
     {!quickOther&&busy&&<p role="status" className="text-sm text-muted-foreground">
@@ -462,7 +461,7 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
     {!quickOther&&!busy&&failed>0&&<div role="alert" className="space-y-2 rounded-xl border p-3 text-sm">
       <p>Không tải được {failed} cặp. Danh sách có thể chưa đầy đủ.</p>
       <button type="button" className="min-h-11 underline"
-        onClick={()=>setRevision(x=>x+1)}>Thử tải lại</button>
+        onClick={()=>{setBusy(true);setRevision(x=>x+1);}}>Thử tải lại</button>
     </div>}
     {!quickOther&&!busy&&cards.length===0&&failed===0&&<p className="rounded-xl bg-secondary p-3 text-sm">
       Không có cặp nợ hai chiều khả dụng hoặc yêu cầu bù nợ cần theo dõi trong kỳ này.
@@ -494,7 +493,7 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
         {open&&<div id={`bilateral-pair-${other}`} className="mt-3 border-t pt-3">
           <BilateralWorkbench key={other} groupId={groupId} cycleId={cycleId}
             me={me} other={other} people={people} enabled={enabled}
-            onUpdated={()=>setRevision(x=>x+1)}/>
+            onUpdated={()=>{setBusy(true);setRevision(x=>x+1);}}/>
         </div>}
       </article>;
     })}
