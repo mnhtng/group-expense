@@ -51,6 +51,16 @@ export type BilateralProposalPreview={
    * This may exist even if the current proposal head later changes.
    */
   completedSetoff:{amountMinor:string;appliedAt:string}|null;
+  /** Cash actually confirmed for original debts within THIS locked period and
+   * pair. Pending cash and noncash offset are NEVER counted as money paid.
+   */
+  cashStatus:{
+    paidMinor:string;
+    remainingMinor:string;
+    pendingMinor:string;
+    lowToHighRemainingMinor:string;
+    highToLowRemainingMinor:string;
+  };
 };
 export type BilateralProposalInput={
   partyAId:string;partyBId:string;expectedVersion:number;
@@ -271,6 +281,20 @@ export async function previewBilateralProposal(groupId:string,cycleId:string,
       [groupId,cycleId,low,high],
     );
     const live=await computed(client,groupId,cycleId,c,low,high,false);
+    // Same authenticated repeatable-read snapshot as the noncash application.
+    // Use the existing complete frozen original-source set, not a subset of
+    // "remaining" obligations or the amount in a noncash receipt. No extra
+    // ledger mutation or transfer is implied by this read-only calculation.
+    let paid=0n,pending=0n,lowOwesHigh=0n,highOwesLow=0n;
+    for(const src of live.sources){
+      const cash=BigInt(src.confirmedCashMinor);
+      const remaining=BigInt(src.originalMinor)-cash-
+        BigInt(src.confirmedSetoffMinor);
+      paid+=cash;
+      pending+=BigInt(src.pendingCashMinor);
+      if(src.debtorId===low&&src.creditorId===high)lowOwesHigh+=remaining;
+      else if(src.debtorId===high&&src.creditorId===low)highOwesLow+=remaining;
+    }
     await client.query("COMMIT");
     return {fingerprint:live.fingerprint,snapshotFingerprint:c.snapshotFingerprint,
       calculation:live.calculation,eligibleSourceCount:live.sources.length,
@@ -280,7 +304,14 @@ export async function previewBilateralProposal(groupId:string,cycleId:string,
       completedSetoff:applied.rows[0]?{
         amountMinor:applied.rows[0].amountMinor,
         appliedAt:applied.rows[0].appliedAt.toISOString(),
-      }:null};
+      }:null,
+      cashStatus:{
+        paidMinor:paid.toString(),
+        remainingMinor:(lowOwesHigh+highOwesLow).toString(),
+        pendingMinor:pending.toString(),
+        lowToHighRemainingMinor:lowOwesHigh.toString(),
+        highToLowRemainingMinor:highOwesLow.toString(),
+      }};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
 }

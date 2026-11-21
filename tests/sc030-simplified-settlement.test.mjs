@@ -56,8 +56,13 @@ test("completed setoff list badge is grounded in a committed noncash document",(
   assert.match(preview,/completedSetoff:applied\.rows\[0\]/);
   assert.match(projection,/hasCompletedSetoff/);
   assert.match(projection,/preview\.completedSetoff/);
-  assert.match(ui,/aria-label="Đã bù nợ"/);
-  assert.match(ui,/Đã bù \{money\(s\.appliedSetoffMinor\)\} mỗi chiều/);
+  assert.match(ui,/aria-label=\{s\.pairSettled/);
+  assert.match(ui,/Đã trả "\+money\(s\.cashPaidMinor\)/);
+  assert.match(ui,/Đã bù \{money\(completed\.amountMinor\)\} mỗi chiều/);
+  assert.match(preview,/cashStatus:/);
+  assert.match(preview,/confirmedCashMinor/);
+  assert.match(projection,/pairSettled/);
+  assert.match(projection,/cashPaidMinor/);
   assert.match(ui,/Còn \{name\(s\.debtorId\)\} trả/);
   assert.match(ui,/if\(aDone!==bDone\)return aDone\?1:-1/);
 });
