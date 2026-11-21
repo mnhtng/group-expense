@@ -170,7 +170,7 @@ async function appendEvent(client:PoolClient,p:Proposal,kind:string,
  * HTTP 409. Never throw inside a transaction after inserting that event.
  */
 export async function decideBilateralProposal(groupId:string,cycleId:string,
-  proposalId:string,actorId:string,input:DecisionRequest){
+  proposalId:string,actorId:string,input:DecisionRequest,externalClient?:PoolClient){
   validateIds(groupId,cycleId,proposalId);
   if(!input||!["approve","reject","revoke"].includes(input.action)||
     !Number.isSafeInteger(input.expectedVersion)||input.expectedVersion<1||
@@ -178,7 +178,7 @@ export async function decideBilateralProposal(groupId:string,cycleId:string,
     throw error(400,"Hành động, phiên bản hoặc mã yêu cầu không hợp lệ.");
   const digest=sha(["bn003-decision-v1",proposalId,actorId,input.action,
     input.expectedVersion,input.expectedFingerprint]);
-  const result=await transact(async client=>{
+  const work=async (client:PoolClient)=>{
     // Same lock order as all cash writers: group -> cycle -> proposal head.
     await activeGroup(client,groupId,actorId,true);
     const p=await selectProposal(client,groupId,cycleId,proposalId,false);
@@ -255,7 +255,8 @@ export async function decideBilateralProposal(groupId:string,cycleId:string,
     const after=await readModel(client,p,actorId,false);
     return {decisionId,alreadyRecorded:false,status:after.view.status,
       view:after.view,conflict:false};
-  });
+  };
+  const result=externalClient?await work(externalClient):await transact(work);
   if(result.conflict)throw error(409,result.status==="expired"?
     "Đề xuất đã hết hạn, không thể xác nhận.":"Công nợ hoặc quyền đã thay đổi; xác nhận cũ vô hiệu.");
   return {decisionId:result.decisionId,alreadyRecorded:result.alreadyRecorded,
