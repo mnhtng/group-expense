@@ -173,6 +173,10 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
     assert.ok(Date.parse(afterSetoff.body.completedSetoff.appliedAt)>0);
     assert.equal(afterSetoff.body.calculation.offsetMinor,'0',
       'after apply no new two-way amount remains but the completed badge must persist');
+    assert.equal(afterSetoff.body.cashStatus.paidMinor,'0',
+      'noncash setoff never counts as money transferred');
+    assert.equal(afterSetoff.body.cashStatus.remainingMinor,'30000',
+      'cash due remains visible after netting');
     await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=true');
     const replay=await req('POST',applyUrl,apply,a);assert.equal(replay.status,200);
     assert.equal(replay.body.application.id,application.id);assert.equal(replay.body.financialEngineEnabled,false);
@@ -185,11 +189,26 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
     const cashKey=randomUUID(),cashBody={expectedCycleVersion:3,requestKey:cashKey,expectedFingerprint:cashPreview.body.preview.fingerprint};
     const cash=await req('POST',residual,cashBody,a);assert.equal(cash.status,201,cash.text);
     assert.equal(cash.body.status,'pending');
+    const pendingPreview=await req('GET',proposals+
+      '?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,a);
+    assert.equal(pendingPreview.body.cashStatus.paidMinor,'0',
+      'a unilateral payment claim must not be displayed as paid');
+    assert.equal(pendingPreview.body.cashStatus.pendingMinor,'30000');
+    assert.equal(pendingPreview.body.cashStatus.remainingMinor,'30000');
     await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=true');
     const cashRetry=await req('POST',residual,cashBody,a);assert.equal(cashRetry.status,200,cashRetry.text);
     assert.equal(cashRetry.body.id,cash.body.id);
     assert.equal((await req('PATCH',root+'/settlements/'+cash.body.id,{action:'confirm'},a)).status,403);
     assert.equal((await req('PATCH',root+'/settlements/'+cash.body.id,{action:'confirm'},b)).status,200);
+    const paidPreview=await req('GET',proposals+
+      '?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,b);
+    assert.equal(paidPreview.status,200,paidPreview.text);
+    assert.equal(paidPreview.body.cashStatus.paidMinor,'30000',
+      'only real two-party-confirmed cash is displayed as the amount paid');
+    assert.equal(paidPreview.body.cashStatus.remainingMinor,'0');
+    assert.equal(paidPreview.body.cashStatus.pendingMinor,'0');
+    assert.equal(paidPreview.body.completedSetoff.amountMinor,'100000',
+      'applied setoff remains separate historical metadata');
     // SC030: two distinct actors each agree ONCE. The second agreement
     // automatically applies the verified noncash offset, no separate
     // create/approve/apply steps exposed to the mobile client.
