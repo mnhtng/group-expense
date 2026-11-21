@@ -119,6 +119,7 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
       {new Intl.DateTimeFormat("vi-VN",{day:"numeric",month:"numeric",year:"numeric"})
         .format(new Date(completed.appliedAt))}
     </p>}
+    {(!completed||BigInt(p.beforeAMinor)>0n||BigInt(p.beforeBMinor)>0n)&&
     <div className="grid grid-cols-2 gap-2">
       <div className="rounded-xl bg-secondary/60 p-3">
         <p className="text-xs text-muted-foreground">{name(proposal.calculation.aOwesB.debtorId)} → {name(proposal.calculation.aOwesB.creditorId)}</p>
@@ -128,7 +129,7 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
         <p className="text-xs text-muted-foreground">{name(proposal.calculation.bOwesA.debtorId)} → {name(proposal.calculation.bOwesA.creditorId)}</p>
         <strong className="text-sm tabular-nums">{money(p.beforeBMinor)}</strong>
       </div>
-    </div>
+    </div>}
     <div className="flex items-center justify-between gap-3">
       <p className="text-sm">{completed?"Đã bù mỗi chiều":"Có thể bù mỗi chiều"}</p>
       <strong className="text-lg tabular-nums">{money(completed?.amountMinor??p.offsetMinor)}</strong>
@@ -183,7 +184,7 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
       className="inline-flex min-h-11 items-center text-sm underline"
       href={"/groups/"+groupId+"/settlements"}>Xem lịch sử trả tiền</Link>}
     <Link href={"/groups/"+groupId+"/cycles/"+cycleId+"?view=sources"}
-      className="inline-flex min-h-11 items-center text-sm text-muted-foreground underline underline-offset-4">
+      className="flex min-h-11 items-center text-sm text-muted-foreground underline underline-offset-4">
       Xem hóa đơn trong kỳ
     </Link>
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
