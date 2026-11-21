@@ -57,3 +57,33 @@ export function projectCashIntentRuntimePrivileges(row){
     updates[c]=row?.[c];
   return {...row,allowedUpdates:updates};
 }
+
+
+/** SC031: only the original authenticated runtime may write a completion
+ * proof and only through the database readiness trigger. Never allow mutation
+ * of an existing proof or schema-level powers. */
+export const CYCLE_COMPLETION_RUNTIME_PRIVILEGES_SQL=`
+SELECT EXISTS(SELECT 1 FROM public.schema_migrations
+  WHERE filename='031_automatic_cycle_completion.sql') AS "migrated",
+  has_table_privilege(current_user,'public.group_settlement_cycle_completions',
+    'SELECT') AS "canSelect",
+  has_table_privilege(current_user,'public.group_settlement_cycle_completions',
+    'INSERT') AS "canInsert",
+  has_table_privilege(current_user,'public.group_settlement_cycle_completions',
+    'UPDATE') AS "canUpdate",
+  has_table_privilege(current_user,'public.group_settlement_cycle_completions',
+    'DELETE') AS "canDelete",
+  has_table_privilege(current_user,'public.group_settlement_cycle_completions',
+    'TRUNCATE') AS "canTruncate",
+  has_table_privilege(current_user,'public.group_settlement_cycle_completions',
+    'TRIGGER') AS "canTrigger"
+`;
+export function evaluateCycleCompletionRuntimePrivileges(state){
+  const reasons=[];
+  if(state?.migrated!==true)reasons.push("MIGRATION_031_MISSING");
+  if(state?.canSelect!==true)reasons.push("SC031_SELECT_MISSING");
+  if(state?.canInsert!==true)reasons.push("SC031_INSERT_MISSING");
+  for(const key of ["canUpdate","canDelete","canTruncate","canTrigger"])
+    if(state?.[key]!==false)reasons.push("SC031_UNSAFE_"+key.toUpperCase());
+  return {ok:reasons.length===0,reasons};
+}
