@@ -85,20 +85,21 @@ export async function POST(request:Request,{params}:Context){
     let decision=await getBilateralDecisions(groupId,cycleId,doc.id,actor);
     if(data.action==="reject"){
       if(!decision.canReject)throw new SettlementError(409,"Không còn khoản chờ để từ chối.");
-      decision=(await decideBilateralProposal(groupId,cycleId,doc.id,actor,{
+      const rejected=await decideBilateralProposal(groupId,cycleId,doc.id,actor,{
         action:"reject",expectedVersion:doc.version,
         expectedFingerprint:doc.sourceFingerprint,
         requestKey:keyFor(data.requestKey as string,"reject"),
-      })).view;
-      return NextResponse.json({state:decision.status},{headers:settlementNoStore});
+      });
+      return NextResponse.json({state:rejected.status},{headers:settlementNoStore});
     }
 
     if(decision.canApprove){
-      decision=(await decideBilateralProposal(groupId,cycleId,doc.id,actor,{
+      await decideBilateralProposal(groupId,cycleId,doc.id,actor,{
         action:"approve",expectedVersion:doc.version,
         expectedFingerprint:doc.sourceFingerprint,
         requestKey:keyFor(data.requestKey as string,"approve"),
-      })).view;
+      });
+      decision=await getBilateralDecisions(groupId,cycleId,doc.id,actor);
     }else if(!decision.approvedBy.includes(actor)||!["agreed","partially_approved"].includes(decision.status)){
       throw new SettlementError(409,"Bù nợ không còn chờ xác nhận. Hãy tải lại.");
     }
