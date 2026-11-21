@@ -1,0 +1,75 @@
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const read=p=>readFileSync(p,"utf8");
+const ui=read("components/groups/settlement-cycle-finance-panel.tsx");
+const quick=read("app/api/groups/[groupId]/settlement-cycle/cycles/[cycleId]/quick-setoff/route.ts");
+const auto=read("lib/expenses/service.ts");
+const payment=read("lib/settlements/service.ts");
+const noncash=read("lib/settlement-cycles/applications.ts");
+const paymentUi=read("components/settlements/settlement-actions.tsx");
+const sql=read("db/migrations/029_automatic_expense_completion.sql");
+
+test("two signatures only, not proposal/approve/apply user buttons",()=>{
+  assert.match(ui,/quick-setoff/);
+  assert.match(quick,/createBilateralProposal/);
+  assert.match(quick,/decideBilateralProposal/);
+  assert.match(quick,/applyBilateralNoncash/);
+  assert.match(quick,/decision\.status==="agreed"/);
+  assert.match(quick,/getCurrentSession\(\)/);
+  assert.match(quick,/access\.bilateralEnabled/);
+  assert.match(quick,/expectedFingerprint/);
+  assert.match(quick,/requestKey/);
+  assert.doesNotMatch(ui,/Gửi đề xuất|Thu hồi đồng ý|Bù nợ ngay|Xác nhận thao tác|<code|obligationId/);
+  assert.doesNotMatch(ui,/type="checkbox"|Chứng từ|Phiên bản \d+/);
+});
+test("direct one-tap confirm/reject is still counterparty-authorized server side",()=>{
+  assert.match(ui,/Đồng ý bù nợ/);
+  assert.match(ui,/Từ chối/);
+  assert.match(paymentUi,/run\("confirm"\)/);
+  assert.match(paymentUi,/run\("reject"\)/);
+  assert.doesNotMatch(paymentUi,/InlineConfirmation|note=|Xác nhận thao tác/);
+  assert.match(payment,/if\(isInitiator \|\| !\[row\.debtor_id,row\.creditor_id\]/);
+  assert.match(payment,/if\(row\.status!=="pending"\)/);
+  assert.match(payment,/FOR UPDATE/);
+});
+test("auto close executes only AFTER confirmed cash or committed noncash, not pending/reject",()=>{
+  assert.match(payment,/if\(next==="confirmed"\)/);
+  assert.match(payment,/autoCompleteEligibleExpenses/);
+  assert.match(noncash,/SET CONSTRAINTS bn004_conservation_on_commit IMMEDIATE/);
+  assert.match(noncash,/autoCompleteEligibleExpenses/);
+  assert.match(auto,/completionReady\(invoice\)/);
+  assert.match(auto,/progress\."remainingMinor"/);
+  assert.match(auto,/progress\."pendingMinor"/);
+  assert.match(auto,/ORDER BY e\.id FOR UPDATE OF e/);
+  assert.match(auto,/completed_at IS NULL/);
+  assert.match(auto,/origin,triggered_by/);
+  assert.match(auto,/NULL,\$4,NULL,'automatic',\$5/);
+  assert.match(sql,/ALTER COLUMN actor_id DROP NOT NULL/);
+  assert.match(sql,/origin='automatic' AND actor_id IS NULL AND triggered_by IS NOT NULL/);
+  assert.doesNotMatch(sql,/DROP TABLE|TRUNCATE|DELETE FROM/i);
+});
+test("completed setoff list badge is grounded in a committed noncash document",()=>{
+  const preview=read("lib/settlement-cycles/proposals.ts");
+  const projection=read("lib/settlement-cycles/finance-ux.ts");
+  assert.match(preview,/FROM group_settlement_bilateral_applications/);
+  assert.match(preview,/completedSetoff:applied\.rows\[0\]/);
+  assert.match(projection,/hasCompletedSetoff/);
+  assert.match(projection,/preview\.completedSetoff/);
+  assert.match(ui,/aria-label="Đã bù nợ"/);
+  assert.match(ui,/Đã bù \{money\(s\.appliedSetoffMinor\)\} mỗi chiều/);
+  assert.match(ui,/Còn \{name\(s\.debtorId\)\} trả/);
+  assert.match(ui,/if\(aDone!==bDone\)return aDone\?1:-1/);
+});
+test("mobile UI remains readable, no technical identifiers or duplicate explanatory panels",()=>{
+  assert.match(ui,/function BilateralPairList/);
+  assert.match(ui,/counterparts\[cursor\+\+\]/);
+  assert.match(ui,/id="cycle-pair-member"/);
+  assert.match(ui,/style=\{\{height:"48px",minHeight:"48px"\}\}/);
+  assert.match(ui,/beforeAMinor/);
+  assert.match(ui,/residualMinor/);
+  assert.match(ui,/Tiền|Đang chờ|đang chờ/);
+  assert.doesNotMatch(ui,/sourceFingerprint:[^\n]*<code|obligationId\}/);
+  assert.match(ui,/cashActionCopy/);
+  assert.match(ui,/const financeReady=financialEngineEnabled&&requestedEnabled/);
+});

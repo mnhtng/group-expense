@@ -53,7 +53,8 @@ export default async function SettlementPage({params,searchParams}:{
       Chờ bên kia xác nhận. Công nợ chưa thay đổi.
     </p>}
     {(canConfirm||canCancel)&&<SettlementActions groupId={groupId} settlementId={settlementId}
-      canConfirm={canConfirm} canCancel={canCancel}/>}
+      canConfirm={canConfirm} canCancel={canCancel}
+      actorRole={outgoing?"debtor":"creditor"}/>}
     </>}
     {view==="details"&&<section className="space-y-3">
       <h2 className="font-semibold">Các khoản</h2>

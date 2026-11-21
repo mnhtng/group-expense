@@ -1158,56 +1158,48 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       "pending settlement still blocks exit");
     assert.equal((await expenseRequest("PATCH",finalizeUrl,{action:"confirm"},jar)).response.status,200);
 
-    // All debts fully confirmed -> creator must explicitly close each invoice.
-    const beforeClose=(await expenseRequest("GET",endpoint)).body.expenses;
-    const readyReceipt=beforeClose.find(x=>x.id===receipt2.body.id);
-    const readyReceipt3=beforeClose.find(x=>x.id===receipt3.body.id);
-    assert.equal(readyReceipt.remainingMinor,"0");
-    assert.equal(readyReceipt.pendingMinor,"0");
-    assert.equal(readyReceipt.completedAt,null,"payoff does not automatically close the invoice");
-    assert.equal(readyReceipt3.remainingMinor,"0");
-    const readyIds=beforeClose.filter(x=>!x.completedAt &&
-      x.remainingMinor==="0" && x.pendingMinor==="0").map(x=>x.id);
-    assert.equal(beforeClose[0].id,readyIds[0],"ready invoices are sorted to the top");
+    // All debts fully confirmed -> invoices touched by this payment
+    // automatically complete in the same atomic financial transaction.
+    const afterPayoff=(await expenseRequest("GET",endpoint)).body.expenses;
+    const paidReceipt=afterPayoff.find(x=>x.id===receipt2.body.id);
+    const paidReceipt3=afterPayoff.find(x=>x.id===receipt3.body.id);
+    assert.equal(paidReceipt.remainingMinor,"0");
+    assert.equal(paidReceipt.pendingMinor,"0");
+    assert.ok(paidReceipt.completedAt,"payoff must auto-close the fully settled invoice");
+    assert.ok(paidReceipt3.completedAt,"other fully settled source is also auto-closed");
     const closeUrl=`${endpoint}/${receipt2.body.id}/complete`;
     assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:1},new Map())).response.status,401);
-    assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:1,note:"not the creator"},thirdJar))
-      .response.status,403,"group OWNER may not close an invoice created by someone else");
+    assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:1},thirdJar))
+      .response.status,403,"group OWNER may not masquerade as invoice creator");
     assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:1},otherJar))
-      .response.status,403,"debtor may not close creator's invoice");
-    assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:88},jar))
-      .response.status,409,"closing must check optimistic version");
-    const closed=await expenseRequest("POST",closeUrl,{expectedVersion:1,note:"Đã nhận đủ từ mọi người"},jar);
-    assert.equal(closed.response.status,200,JSON.stringify(closed.body));
-    assert.equal(closed.body.completed,true);
-    assert.equal(closed.body.version,2);
+      .response.status,403,"debtor cannot manually close creator's invoice");
     assert.equal((await expenseRequest("POST",closeUrl,{expectedVersion:1},jar))
-      .response.status,409,"closing twice is forbidden");
+      .response.status,409,"a confirmed invoice cannot be finalized again");
     const completedDetail=await expenseRequest("GET",`${endpoint}/${receipt2.body.id}`,undefined,jar);
     assert.equal(completedDetail.response.status,200);
     assert.ok(completedDetail.body.expense.completedAt);
-    assert.equal(completedDetail.body.expense.completedBy,registered.user.id);
-    assert.equal(completedDetail.body.expense.completionNote,"Đã nhận đủ từ mọi người");
+    assert.equal(completedDetail.body.expense.completedBy,registered.user.id,
+      "legacy creator attribution is retained for frozen-source compatibility");
+    assert.equal(completedDetail.body.expense.completionOrigin,"automatic");
+    assert.equal(completedDetail.body.expense.completionNote,null);
     assert.equal((await expenseRequest("PATCH",`${endpoint}/${receipt2.body.id}`,{
       expectedVersion:2,expense:debtDraft,
     },jar)).response.status,409,"completed invoice cannot be edited");
     assert.equal((await expenseRequest("DELETE",`${endpoint}/${receipt2.body.id}`,{
       expectedVersion:2,
     },jar)).response.status,409,"completed invoice cannot be deleted");
-    const closedEvent=await pool.query(
-      "SELECT actor_id,expense_version AS version,note FROM expense_completion_events WHERE expense_id=$1",
+    const completionAudit=await pool.query(
+      "SELECT actor_id,triggered_by,origin FROM expense_completion_events WHERE expense_id=$1",
       [receipt2.body.id],
     );
-    assert.equal(closedEvent.rows.length,1);
-    assert.equal(closedEvent.rows[0].actor_id,registered.user.id);
-    assert.equal(closedEvent.rows[0].note,"Đã nhận đủ từ mọi người");
-    const afterClose=(await expenseRequest("GET",endpoint)).body.expenses;
-    assert.ok(afterClose.find(x=>x.id===receipt2.body.id).completedAt);
-    assert.equal(afterClose.find(x=>x.id===receipt3.body.id).completedAt,null,
-      "finalizing one invoice must not auto-complete unrelated invoices");
+    assert.equal(completionAudit.rows.length,1);
+    assert.equal(completionAudit.rows[0].actor_id,null,
+      "automatic completion is not a fabricated creator click");
+    assert.equal(completionAudit.rows[0].triggered_by,registered.user.id);
+    assert.equal(completionAudit.rows[0].origin,"automatic");
     assert.equal((await expenseRequest("GET",debtEndpoint)).body.debts.find(
       x=>x.expenseId===receipt2.body.id).outstandingMinor,"0",
-      "completion does not remove or rewrite settled debts");
+      "completion does not rewrite or delete original obligations");
 
     // Multiple debtors in the SAME invoice: creator must wait for EVERY person.
     const sharedDraft={...debtDraft,title:"Finalized group dinner",items:[
@@ -1244,13 +1236,13 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(readyShared.remainingMinor,"0");
     assert.equal(readyShared.confirmedMinor,"26000");
     assert.equal(readyShared.pendingMinor,"0");
-    assert.equal(readyShared.completedAt,null);
+    assert.ok(readyShared.completedAt,"the second debtor confirmation auto-closes the shared invoice");
+    assert.equal(readyShared.completionOrigin,"automatic");
     assert.equal((await expenseRequest("POST",sharedCloseUrl,{expectedVersion:1},thirdJar))
-      .response.status,403,"group owner is NOT permitted to finalize invoice they didn't create");
+      .response.status,403,"group owner is NOT permitted to manually finalize another creator's invoice");
     assert.equal((await expenseRequest("POST",sharedCloseUrl,{
-      expectedVersion:1,note:"B và C đã tất toán",
-    },jar)).response.status,200);
-    assert.ok((await expenseRequest("GET",`${endpoint}/${shared.body.id}`)).body.expense.completedAt);
+      expectedVersion:1,note:"already automatically settled",
+    },jar)).response.status,409,"creator cannot manually close an already auto-completed invoice");
 
     assert.equal((await expenseRequest("GET",bLeave,undefined,otherJar)).body.eligibility.canLeave,true);
     assert.equal((await expenseRequest("POST",bLeave,undefined,otherJar)).response.status,200);
@@ -2038,9 +2030,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal(stillFrozen.confirmedCashMinor,"50000");
     assert.equal(stillFrozen.pendingCashMinor,"10000");
     assert.equal(stillFrozen.fingerprint,stored.fingerprint);
-    // Creator-only completion still works AFTER all actual cash is confirmed.
-    // Neither the snapshot nor group-manager authorization can complete an
-    // invoice in place of its original creator.
+    // Both-party financial confirmation automatically completes the receipt.
+    // Manual completion remains creator-only but cannot close it again.
     const sc004LastCash=await expenseRequest("POST",sc004PaymentsApi,{
       requestKey:randomUUID(),
       allocations:[{obligationId:sc004Obligation.id,amountMinor:"40000"}],
@@ -2055,8 +2046,13 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       "debtor cannot complete another person's invoice");
     const sc004Completed=await expenseRequest("POST",sc004CompleteUrl,
       {expectedVersion:1},jar);
-    assert.equal(sc004Completed.response.status,200,JSON.stringify(sc004Completed.body));
-    assert.equal(sc004Completed.body.completed,true);
+    assert.equal(sc004Completed.response.status,409,
+      "fully paid frozen invoice was automatically completed");
+    const sc004Ready=await expenseRequest("GET",
+      `${sc004ExpensesApi}/${sc004Invoice}`,undefined,jar);
+    assert.equal(sc004Ready.response.status,200);
+    assert.equal(sc004Ready.body.expense.completionOrigin,"automatic");
+    assert.ok(sc004Ready.body.expense.completedAt);
     assert.equal((await expenseRequest("GET",sc004Url,undefined,jar))
       .body.snapshot.fingerprint,stored.fingerprint,
       "creator completion cannot rewrite a frozen expense snapshot");
@@ -2616,9 +2612,8 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       [bnGroup])).rows[0].n,2,
       "tampered proposal must be fully rolled back");
 
-    // A creator may complete an already fully PAID source invoice without
-    // altering the immutable original obligation. This metadata version
-    // increment must not make all remaining opposite-side debts unqueryable.
+    // Financial confirmation auto-completes a fully paid source invoice
+    // without altering the immutable obligation or making other debt unreadable.
     const bnAllPaid=await expenseRequest("POST",bnCash,{
       requestKey:randomUUID(),allocations:[
         {obligationId:bnSmallOb,amountMinor:"1000"}],
@@ -2627,11 +2622,18 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
     assert.equal((await expenseRequest("PATCH",`${bnCash}/${bnAllPaid.body.id}`,
       {action:"confirm"},jar)).response.status,200);
     const bnBeforeComplete=(await expenseRequest("GET",bnReadUrl,undefined,jar)).body;
+    const finishedInvoiceId=(await pool.query(
+      "SELECT expense_id FROM obligations WHERE id=$1",[bnSmallOb]
+    )).rows[0].expense_id;
+    const bnCompleted=await expenseRequest("GET",
+      `${bnExpenses}/${finishedInvoiceId}`,undefined,jar);
+    assert.equal(bnCompleted.response.status,200);
+    assert.equal(bnCompleted.body.expense.completionOrigin,"automatic");
+    assert.ok(bnCompleted.body.expense.completedAt);
     const bnComplete=await expenseRequest("POST",
-      `${bnExpenses}/${(await pool.query(
-        "SELECT expense_id FROM obligations WHERE id=$1",[bnSmallOb]
-      )).rows[0].expense_id}/complete`,{expectedVersion:1},jar);
-    assert.equal(bnComplete.response.status,200,JSON.stringify(bnComplete.body));
+      `${bnExpenses}/${finishedInvoiceId}/complete`,{expectedVersion:1},jar);
+    assert.equal(bnComplete.response.status,409,
+      "an auto-completed invoice cannot be manually completed again");
     const bnAfterComplete=await expenseRequest("GET",bnReadUrl,undefined,jar);
     assert.equal(bnAfterComplete.response.status,200);
     assert.equal(bnAfterComplete.body.fingerprint,bnBeforeComplete.fingerprint,
@@ -3324,7 +3326,7 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
       JOIN expenses e ON e.id=o.expense_id
       WHERE o.group_id=$1 AND o.voided_at IS NULL
         AND b.confirmed_setoff_minor>0 AND b.available_minor=0
-        AND b.outstanding_minor=0 AND e.completed_at IS NULL
+        AND b.outstanding_minor=0
       ORDER BY o.id LIMIT 1`,[bnGroup]);
     assert.equal(fully.rowCount,1,"fixture has a noncash-settled invoice");
     const full=fully.rows[0];
@@ -3354,19 +3356,24 @@ test("Next.js HTTP -> Better Auth -> Postgres -> signed session -> logout", { ti
         "SQL bypass also must not overbook applied setoff");
     }finally{await rawClient.query("ROLLBACK");rawClient.release();}
 
-    // Creator-only completion after NONCASH discharge, without cash
-    // confirmation. The non-creator must never be able to finalize it.
+    // A fully discharged NONCASH source is automatically completed.
+    // Creator-only manual endpoint remains restricted; neither person may
+    // complete the same invoice twice.
     assert.equal((await expenseRequest("POST",
       `${bnExpenses}/${full.expense_id}/complete`,
       {expectedVersion:1},debtorJar)).response.status,403);
     const completedSetoff=await expenseRequest("POST",
       `${bnExpenses}/${full.expense_id}/complete`,
       {expectedVersion:1},creditorJar);
-    assert.equal(completedSetoff.response.status,200,
-      JSON.stringify(completedSetoff.body));
-    assert.equal((await pool.query(`SELECT completed_by
-      FROM expenses WHERE id=$1`,[full.expense_id])).rows[0].completed_by,
-      full.creditor_id);
+    assert.equal(completedSetoff.response.status,409,
+      "system already completed this noncash-settled invoice");
+    const autoProof=await pool.query(`SELECT e.completed_at,e.completed_by,ev.origin,ev.actor_id
+      FROM expenses e JOIN expense_completion_events ev ON ev.expense_id=e.id
+      WHERE e.id=$1`,[full.expense_id]);
+    assert.ok(autoProof.rows[0].completed_at);
+    assert.equal(autoProof.rows[0].completed_by,full.creditor_id);
+    assert.equal(autoProof.rows[0].origin,'automatic');
+    assert.equal(autoProof.rows[0].actor_id,null);
 
     // Do not permit a member with residual debt to leave, nor archive a
     // group with remaining obligations. The checks are live, not snapshots.
