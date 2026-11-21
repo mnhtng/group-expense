@@ -15,12 +15,12 @@ export const GET=withAuthenticatedApi<Context>(async(_req,{params},user)=>{
 export const PATCH=withAuthenticatedApi<Context>(async(request,{params},user)=>{
   try{
     const body=await settlementBody(request,[
-      "enabled","expectedAdmitted","expectedControlRevision",
+      "enabled","expectedEnabled","expectedSettingsVersion",
     ]);
     const result=await setOwnerEngineActivation((await params).groupId,user.id,{
       enabled:body.enabled as boolean,
-      expectedAdmitted:body.expectedAdmitted as boolean,
-      expectedControlRevision:body.expectedControlRevision as number,
+      expectedEnabled:body.expectedEnabled as boolean,
+      expectedSettingsVersion:body.expectedSettingsVersion as number,
     });
     return NextResponse.json(result);
   }catch(error){return settlementError(error);}
