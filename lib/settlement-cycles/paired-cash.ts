@@ -91,9 +91,19 @@ export async function processPairCash(groupId:string,cycleId:string,
       if(input.action==="start"){
         const retry=all.rows.find(x=>x.initiatedBy===actorId&&
           x.requestKey===input.requestKey);
-        if(retry)return {state:retry.status,amountMinor:retry.amountMinor,
-          applicationId:retry.applicationId,settlementId:retry.settlementId,
-          alreadyProcessed:true};
+        if(retry){
+          const original=await client.query<{version:number;fingerprint:string}>(
+            `SELECT version,source_fingerprint AS fingerprint
+               FROM group_settlement_bilateral_proposals WHERE id=$1`,
+            [retry.proposalId],
+          );
+          if(original.rows[0]?.fingerprint!==input.expectedFingerprint||
+             original.rows[0]?.version!==input.expectedVersion+1)
+            throw error(409,"Mã thao tác đã dùng với số tiền khác.");
+          return {state:retry.status,amountMinor:retry.amountMinor,
+            applicationId:retry.applicationId,settlementId:retry.settlementId,
+            alreadyProcessed:true};
+        }
         if(pending)throw error(409,
           "Người kia đã báo thanh toán. Hãy xác nhận trên thẻ hiện tại.");
         const live=await computed(client,groupId,cycleId,c,low,high,true);
@@ -170,6 +180,14 @@ export async function processPairCash(groupId:string,cycleId:string,
             WHERE id=$1 AND status='pending'`,
           [pending.id,status,actorId],
         );
+        await client.query(
+          `SELECT sc009_emit_notice($1,$2,$3,$4,$5,'setoff_decision',$6,$7,$8)`,
+          [groupId,cycleId,other,actorId,
+            "pair-money-"+status+":"+pending.id,
+            status==="rejected"?"Khoản trả bị từ chối":"Đã hủy khoản trả",
+            "Chưa có bù nợ hoặc thanh toán nào được ghi.",
+            "/groups/"+groupId+"/cycles/"+cycleId],
+        );
         return {state:status,amountMinor:pending.amountMinor,
           applicationId:null,settlementId:null,alreadyProcessed:false};
       }
@@ -223,6 +241,16 @@ export async function processPairCash(groupId:string,cycleId:string,
         [pending.id,actorId,app.application.id,settlementId],
       );
       if(updated.rowCount!==1)throw error(409,"Khoản thanh toán đã được xử lý.");
+      await client.query(
+        `SELECT sc009_emit_notice($1,$2,$3,$4,$5,'setoff_applied',$6,$7,$8)`,
+        [groupId,cycleId,pending.initiatedBy,actorId,
+          "pair-money-confirmed:"+pending.id,
+          "Đã hoàn tất thanh toán",
+          BigInt(pending.amountMinor)>0n
+            ?"Đã xác nhận tiền trả và cấn trừ công nợ."
+            :"Đã đối soát và cấn trừ công nợ, không chuyển tiền.",
+          "/groups/"+groupId+"/cycles/"+cycleId],
+      );
       return {state:"confirmed" as const,amountMinor:pending.amountMinor,
         applicationId:app.application.id,settlementId,alreadyProcessed:false};
     });
