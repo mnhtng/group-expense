@@ -42,6 +42,23 @@ test("single-direction pair without pending/history is omitted; historical propo
   assert.equal(summarizeBilateralPreview(pair("A","B","0","50000")).show,false);
   assert.equal(summarizeBilateralPreview(pair("A","B","0","0","0","0",true)).show,true);
 });
+test("applied noncash proof stays visible with zero newly available offset and no proposal head",()=>{
+  const x=pair("Dang","Tung","145334","0");
+  x.completedSetoff={amountMinor:"23333",appliedAt:"2026-11-21T10:00:00.000Z"};
+  const result=summarizeBilateralPreview(x);
+  assert.equal(result.canOffset,false);
+  assert.equal(result.show,true,"completed pairs must remain on the list");
+  assert.equal(result.hasCompletedSetoff,true);
+  assert.equal(result.appliedSetoffMinor,"23333");
+  assert.equal(result.residualMinor,"145334",
+    "a completed setoff does not imply the residual cash debt was paid");
+});
+test("a proposal alone is not a completed noncash payment",()=>{
+  const pending=summarizeBilateralPreview(pair("A","B","30000","20000","0","0",true));
+  assert.equal(pending.hasCompletedSetoff,false);
+  assert.equal(pending.appliedSetoffMinor,null);
+  assert.equal(pending.canOffset,true);
+});
 test("cash wording reflects authenticated debtor or creditor regardless of obligation count",()=>{
   assert.equal(cashActionCopy("A","B","A").label,"Báo đã chuyển tiền");
   assert.equal(cashActionCopy("A","B","B").label,"Báo đã nhận tiền");
