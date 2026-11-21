@@ -54,7 +54,8 @@ const qCycle=`SELECT id,group_id AS "groupId",
 function publicCycle(c:RawCycle):CycleRecord {
   return {...c,startAt:c.startAt.toISOString(),endAt:c.endAt.toISOString(),
     reviewedAt:c.reviewedAt?.toISOString()??null,
-    settlementCompletedAt:c.settlementCompletedAt?.toISOString()??null};
+    settlementCompletedAt:c.settlementCompletedAt?.toISOString()??null,
+    settlementCompletionOrigin:c.settlementCompletionOrigin??null};
 }
 function assertUuid(id:string) {
   if(typeof id!=="string"||!uuid.test(id))throw error(400,"Mã không hợp lệ.");
