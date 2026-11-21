@@ -591,22 +591,19 @@ async function scenario(engine,project,options,actors){
     await page2.getByRole("link",{name:"Trước"}).click();
     await owner.page.waitForURL(url=>url.searchParams.get("page")==="1");
 
-    // Pair dropdown permits selecting exactly one counterparty. The
-    // financial call-to-action remains truly disabled, not CSS-only.
+    // Single-tap agreement remains server-disabled while the finance engine is off.
     await owner.page.goto(ORIGIN+detail+"?view=settle");
     const selector=owner.page.getByLabel("Chọn người");
     await selector.selectOption({label:other.name});
     await assertTapTarget(selector,"counterparty selector");
-    const proposal=owner.page.getByRole("button",{name:"Gửi đề xuất bù nợ"});
-    await proposal.waitFor();
-    assert.equal(await proposal.isDisabled(),true);
-    await assertTapTarget(proposal,"disabled proposal");
-    const originals=owner.page.getByRole("button",{
-      name:"Xem các khoản bù nợ"});
+    const agree=owner.page.getByRole("button",{name:"Đồng ý bù nợ",exact:true});
+    await agree.waitFor();
+    assert.equal(await agree.isDisabled(),true);
+    await assertTapTarget(agree,"disabled bilateral agreement");
+    const originals=owner.page.getByRole("link",{name:"Xem hóa đơn trong kỳ"});
     await originals.focus();
     await owner.page.keyboard.press("Enter");
-    assert.equal(await owner.page.getByRole("button",{name:"Ẩn khoản nợ gốc"}).getAttribute("aria-expanded"),"true");
-    await owner.page.getByRole("heading",{name:"Chiều 1"}).waitFor();
+    await owner.page.waitForURL(url=>url.searchParams.get("view")==="sources");
     await noHorizontalOverflow(owner.page,project+" locked detail");
     if(project.includes("phone"))await capture(owner.page,project,"locked-cycle");
 
@@ -759,41 +756,38 @@ async function scenario(engine,project,options,actors){
         assert.equal((await must(user,'GET','/api/groups/'+groupId+'/settlement-cycle/settings')).effectiveEnabled,true);
         await user.page.getByLabel('Chọn người').selectOption({label:counterparty.name});
       };
-      const consentPost=async(user,label,path)=>{
-        await user.page.getByRole('button',{name:label,exact:true}).click();
-        const form=user.page.getByRole('group',{name:label,exact:true});
-        const commit=form.getByRole('button',{name:'Xác nhận thao tác',exact:true});
-        assert.equal(await commit.isDisabled(),true,'fresh explicit consent is required');
-        await form.getByRole('checkbox').check();
-        const result=await observeBrowserPost(user.page,path,()=>commit.click());
-        assert.equal(result.status(),201,label+' must commit through a real signed browser POST');
-        return result.json();
+      const quickPath=apiFor(groupId,cycleId)+'/quick-setoff';
+      const oneTap=async(user)=>{
+        const button=user.page.getByRole('button',{name:'Đồng ý bù nợ',exact:true});
+        await button.waitFor();
+        const response=await observeBrowserPost(user.page,quickPath,()=>button.click());
+        assert.equal(response.status(),200,'one user agreement must POST under real signed session');
+        return response.json();
       };
       await openPair(owner,other);
-      const proposalPath=apiFor(groupId,cycleId)+'/bilateral-proposals';
-      let created=await consentPost(owner,'Gửi đề xuất bù nợ',proposalPath);
-      let decisionsPath=proposalPath+'/'+created.proposal.id+'/decisions';
-      await consentPost(owner,'Đồng ý bù nợ',decisionsPath);
-      await consentPost(owner,'Thu hồi đồng ý',decisionsPath);
-      created=await consentPost(owner,'Gửi đề xuất bù nợ',proposalPath);
-      assert.equal(created.proposal.version,2,'closed proposal requires a new immutable version');
-      decisionsPath=proposalPath+'/'+created.proposal.id+'/decisions';
-      await consentPost(owner,'Đồng ý bù nợ',decisionsPath);
+      const first=await oneTap(owner);
+      assert.equal(first.state,'awaiting_other','one vote alone never discharges debt');
+      const beforeSecond=await pool.query(
+        'SELECT count(*)::int AS n FROM group_settlement_bilateral_applications WHERE group_id=$1',
+        [groupId]);
+      assert.equal(beforeSecond.rows[0].n,0);
       await openPair(other,owner);
-      await consentPost(other,'Đồng ý bù nợ',decisionsPath);
+      const second=await oneTap(other);
+      assert.equal(second.state,'applied','second vote applies authenticated noncash ledger');
       await openPair(owner,other);
-      const applied=await consentPost(owner,'Bù nợ ngay',
-        proposalPath+'/'+created.proposal.id+'/applications');
-      await owner.page.getByRole('heading',{name:'Đã bù nợ'}).waitFor();
-      const cash=await consentPost(owner,'Yêu cầu trả phần còn lại',
-        apiFor(groupId,cycleId)+'/bilateral-applications/'+applied.application.id+'/residual');
-      assert.equal(cash.status,'pending','requesting CASH never confirms a transfer');
+      await owner.page.getByText('Đã bù nợ thành công').waitFor();
+      const residualPath=apiFor(groupId,cycleId)+'/bilateral-applications/'+
+        second.applicationId+'/residual';
+      const payment=owner.page.getByRole('button',{name:/Đã chuyển tiền|Đã nhận tiền/});
+      const cashResponse=await observeBrowserPost(owner.page,residualPath,()=>payment.click());
+      assert.equal(cashResponse.status(),201);
+      const cash=await cashResponse.json();
+      assert.equal(cash.status,'pending','first cash step does not discharge debt');
       await other.page.goto(ORIGIN+'/groups/'+groupId+'/settlements/'+cash.id);
-      await other.page.getByRole('button',{name:'Xác nhận đã thanh toán',exact:true}).click();
       const confirmed=other.page.waitForResponse(r=>r.request().method()==='PATCH'&&
         new URL(r.url()).pathname==='/api/groups/'+groupId+'/settlements/'+cash.id);
-      await other.page.getByRole('button',{name:'Xác nhận',exact:true}).click();
-      assert.equal((await confirmed).status(),200,'the actual counterparty confirms synthetic CASH');
+      await other.page.getByRole('button',{name:/Xác nhận đã nhận|Xác nhận đã trả/}).click();
+      assert.equal((await confirmed).status(),200,'counterparty accepts cash in one tap');
       const remaining=await pool.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId]);
       assert.ok(remaining.rows.every(r=>r.outstanding_minor==='0'&&r.pending_cash_minor==='0'));
       const finished=await originalBalance(groupId);
