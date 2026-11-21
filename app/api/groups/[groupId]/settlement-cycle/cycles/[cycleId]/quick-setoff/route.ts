@@ -66,6 +66,12 @@ export async function POST(request:Request,{params}:Context){
       throw new SettlementError(409,"Không có khoản bù nợ chờ phản hồi.");
 
     let doc=current;
+    if(doc&&data.action==="agree"){
+      const before=await getBilateralDecisions(groupId,cycleId,doc.id,actor);
+      // A rejected/revoked/expired document is history, not a new vote.
+      if(["rejected","revoked","invalidated","expired","superseded"].includes(before.status))
+        doc=null;
+    }
     if(!doc){
       const created=await createBilateralProposal(groupId,cycleId,actor,{
         partyAId:actor,partyBId:other,
