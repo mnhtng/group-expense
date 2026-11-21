@@ -321,7 +321,7 @@ export async function previewBilateralProposal(groupId:string,cycleId:string,
  * serialize two simultaneous participants. No APPROVAL or reservation occurs.
  */
 export async function createBilateralProposal(groupId:string,cycleId:string,
-  actorId:string,input:BilateralProposalInput){
+  actorId:string,input:BilateralProposalInput,externalClient?:PoolClient){
   const [low,high]=scoped(groupId,cycleId,input?.partyAId,input?.partyBId);
   if(!input||!Number.isSafeInteger(input.expectedVersion)||
      input.expectedVersion<0||!UUID.test(input.requestKey)||
@@ -332,7 +332,7 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
     "bn002-request-v1",groupId,cycleId,low,high,input.expectedVersion,
     input.expectedFingerprint,
   ])).digest("hex");
-  return transact(async client=>{
+  const work=async (client:PoolClient)=>{
     await activeGroup(client,groupId,actorId,true);
     const prior=await client.query<ProposalRow & {requestDigest:string}>(
       `SELECT id,version,request_digest AS "requestDigest",
@@ -439,5 +439,6 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
     const result=await currentProposal(client,groupId,cycleId,low,high);
     if(!result||result.id!==id)throw err(409,"Không thể đối soát phiên bản đề xuất.");
     return {proposal:summary(result),alreadyCreated:false};
-  });
+  };
+  return externalClient?work(externalClient):transact(work);
 }
