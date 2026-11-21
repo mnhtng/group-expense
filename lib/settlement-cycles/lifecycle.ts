@@ -23,9 +23,10 @@ export type CycleRecord={
   source:CycleSource;periodStart:string;periodEnd:string;
   timeZone:string;startAt:string;endAt:string;state:CycleState;
   version:number;draftRevision:number;reviewedAt:string|null;createdBy:string|null;
+  settlementCompletedAt:string|null;settlementCompletionOrigin:"automatic"|"backfill"|null;
 };
-type RawCycle=Omit<CycleRecord,"startAt"|"endAt"|"reviewedAt"> & {
-  startAt:Date;endAt:Date;reviewedAt:Date|null;
+type RawCycle=Omit<CycleRecord,"startAt"|"endAt"|"reviewedAt"|"settlementCompletedAt"> & {
+  startAt:Date;endAt:Date;reviewedAt:Date|null;settlementCompletedAt:Date|null;
 };
 type Rule={
   id:string;frequency:CycleFrequency;timeZone:string;
@@ -44,11 +45,16 @@ const qCycle=`SELECT id,group_id AS "groupId",
   source,period_start::text AS "periodStart",period_end::text AS "periodEnd",
   time_zone AS "timeZone",start_at AS "startAt",end_at AS "endAt",
   state,version,draft_revision AS "draftRevision",
-       reviewed_at AS "reviewedAt",created_by AS "createdBy"
+       reviewed_at AS "reviewedAt",created_by AS "createdBy",
+       (SELECT done.completed_at FROM group_settlement_cycle_completions done
+        WHERE done.cycle_id=group_settlement_cycles.id) AS "settlementCompletedAt",
+       (SELECT done.origin FROM group_settlement_cycle_completions done
+        WHERE done.cycle_id=group_settlement_cycles.id) AS "settlementCompletionOrigin"
   FROM group_settlement_cycles`;
 function publicCycle(c:RawCycle):CycleRecord {
   return {...c,startAt:c.startAt.toISOString(),endAt:c.endAt.toISOString(),
-    reviewedAt:c.reviewedAt?.toISOString()??null};
+    reviewedAt:c.reviewedAt?.toISOString()??null,
+    settlementCompletedAt:c.settlementCompletedAt?.toISOString()??null};
 }
 function assertUuid(id:string) {
   if(typeof id!=="string"||!uuid.test(id))throw error(400,"Mã không hợp lệ.");
