@@ -1,4 +1,5 @@
 import "server-only";
+import {recordEligibleCycleCompletions} from "@/lib/settlement-cycles/completion";
 import {createHash,randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
 import {getSettlementSettings,SettlementSettingsError,
@@ -349,6 +350,8 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
          fingerprint:details.fingerprint,expenseCount:t.expenseCount,
          obligationCount:t.obligationCount,financialSettlement:false})],
     );
+    // If the period had nothing unpaid, close it as part of the snapshot lock.
+    await recordEligibleCycleCompletions(client,groupId,[cycleId],actorId);
     return snapshotRecord(insert.rows[0]);
   });
 }
