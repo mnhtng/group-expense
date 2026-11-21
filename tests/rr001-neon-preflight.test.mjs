@@ -91,7 +91,8 @@ test("RR-001 historical 23-migration evidence reports new source migrations as p
     "025_settlement_engine_rollout.sql","026_manual_cycle_drafts.sql",
     "027_owner_cohort_lock_scope.sql","028_group_scoped_financial_engine.sql",
     "029_automatic_expense_completion.sql",
-    "030_bilateral_cash_two_actions.sql"]);
+    "030_bilateral_cash_two_actions.sql",
+    "031_automatic_cycle_completion.sql"]);
   await assert.rejects(verifyMigrationChecksums([...rows,{filename:names[23]}]),/approved baseline/);
   rows[0].checksum_sha256="a".repeat(64);
   await assert.rejects(verifyMigrationChecksums(rows),/checksum drift/);

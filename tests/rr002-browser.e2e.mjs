@@ -832,10 +832,17 @@ async function scenario(engine,project,options,actors){
       assert.equal(settled.rows[0].resolved_by,other.id);
       assert.equal(settled.rows[0].amount_minor,first.amountMinor);
       await owner.page.goto(ORIGIN+detail+"?view=settle");
-      await owner.page.getByLabel('Đã trả đủ').waitFor();
-      const paidLabel='Đã trả '+new Intl.NumberFormat('vi-VN')
-        .format(BigInt(first.amountMinor))+' ₫';
-      await owner.page.getByText(paidLabel,{exact:true}).first().waitFor();
+      // The new final cycle state suppresses another payment CTA and shows
+      // a single clear read-only link to the report, not a third approval.
+      await owner.page.getByText('✓ Đã quyết toán xong!',{exact:true}).waitFor();
+      assert.equal(await owner.page.getByRole('button',{name:'Đã chuyển tiền',exact:true}).count(),0);
+      const proof=await must(owner,'GET',apiFor(groupId,cycleId)+'/reconciliation');
+      assert.ok(proof.settlementCompletedAt,'cycle completes on the second signature');
+      assert.equal(proof.state,'locked','snapshot state must never change');
+      assert.equal(proof.outstandingMinor,'0');
+      assert.equal(proof.pendingCashMinor,'0');
+      await owner.page.getByRole('link',{name:'Xem tổng kết kỳ'}).click();
+      await owner.page.getByText('✓ Kỳ đã hoàn tất quyết toán.').waitFor();
       const remaining=await pool.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId]);
       assert.ok(remaining.rows.every(r=>r.outstanding_minor==='0'&&r.pending_cash_minor==='0'));
       const finished=await originalBalance(groupId);

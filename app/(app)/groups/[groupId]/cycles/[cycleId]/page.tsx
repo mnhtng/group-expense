@@ -5,7 +5,7 @@ import {getMemberRole,getGroupDetails,listMembers} from "@/lib/groups/service";
 import {getSettlementSettings} from "@/lib/settlement-cycles/settings";
 import {getSettlementCycleById} from "@/lib/settlement-cycles/lifecycle";
 import {readCycleSources} from "@/lib/settlement-cycles/ui-read";
-import {formatDateDMY} from "@/lib/date-format";
+import {formatDateDMY,formatDateTimeDMY} from "@/lib/date-format";
 import {SettlementSnapshotPanel} from "@/components/groups/settlement-snapshot-panel";
 import {SettlementCycleFinancePanel} from "@/components/groups/settlement-cycle-finance-panel";
 import {SettlementLateInvoicePanel} from "@/components/groups/settlement-late-invoice-panel";
@@ -31,14 +31,26 @@ export default async function CycleDetailPage({params,searchParams}:{
   return <main className="app-page space-y-6">
     <PageHeader title={titles[view]} context={group.name} backHref={view==="overview"?`/groups/${groupId}/cycles`:base} backLabel={view==="overview"?"Các kỳ":"Quyết toán"}/>
     <div className="space-y-1"><p className="font-medium">{formatDateDMY(selected.periodStart)} – trước {formatDateDMY(selected.periodEnd)}</p>
-      <p className="app-caption">{locked?"Đã chốt số liệu":selected.state==="review"?"Chờ kiểm tra":"Đang mở"}</p></div>
+      <p className="app-caption">{selected.settlementCompletedAt?"Hoàn tất quyết toán":locked?"Đã chốt số liệu":selected.state==="review"?"Chờ kiểm tra":"Đang mở"}</p></div>
     {view==="overview"&&<>
       {locked&&source?<>
+        {selected.settlementCompletedAt&&<section
+          aria-label="Kỳ đã hoàn tất" className="app-panel space-y-3">
+          <p className="text-lg font-semibold">✓ Đã quyết toán xong!</p>
+          <p className="app-caption">
+            Các khoản nợ đã được xử lý và không còn thanh toán chờ xác nhận.
+          </p>
+          <p className="app-caption">
+            Hoàn tất lúc {formatDateTimeDMY(selected.settlementCompletedAt)}
+          </p>
+          <ActionLink href={base+"?view=check"}>Xem tổng kết kỳ</ActionLink>
+        </section>}
         <section className="app-panel space-y-2"><p className="text-muted-foreground">Còn nợ trong kỳ</p>
           <p className="app-money">{new Intl.NumberFormat("vi-VN").format(BigInt(source.totals.outstandingMinor))} ₫</p>
           <p className="app-caption">{settings.effectiveEnabled?"Quyết toán đã mở cho nhóm":"Quyết toán chưa mở cho nhóm"}</p></section>
         <GroupedList>
-          <NavigationRow href={base+"?view=settle"} title="Trả nợ" icon="wallet"/>
+          {!selected.settlementCompletedAt&&
+            <NavigationRow href={base+"?view=settle"} title="Trả nợ" icon="wallet"/>}
           <NavigationRow href={base+"?view=sources"} title="Khoản trong kỳ" value={String(source.totals.sourceCount)} icon="groups"/>
           <NavigationRow href={base+"?view=check&panel=disputes"} title="Trao đổi về khoản nợ" icon="bell"/>
           <NavigationRow href={base+"?view=check"} title="Tổng kết & lịch sử" icon="calendar"/>
@@ -52,7 +64,13 @@ export default async function CycleDetailPage({params,searchParams}:{
       {settings.canManage&&<ActionLink secondary href={`/groups/${groupId}/manage?section=periods`}>Quản lý kỳ</ActionLink>}
     </>}
     {locked&&view==="sources"&&source&&<SettlementCycleSourceList groupId={groupId} cycleId={cycleId} source={source} members={[...people,{id:user.id,name:me}]}/>}
-    {locked&&view==="settle"&&<>
+    {locked&&view==="settle"&&selected.settlementCompletedAt&&
+      <section aria-label="Kỳ đã hoàn tất" className="app-panel space-y-3">
+        <p className="text-lg font-semibold">✓ Đã quyết toán xong!</p>
+        <p className="app-caption">Không còn nợ hoặc khoản tiền chờ xác nhận trong kỳ.</p>
+        <ActionLink href={base+"?view=check"}>Xem tổng kết kỳ</ActionLink>
+      </section>}
+    {locked&&view==="settle"&&!selected.settlementCompletedAt&&<>
       <SegmentedNav label="Cách trả nợ" items={[{href:base+"?view=settle",label:"Bù nợ",active:mode==="bilateral"},{href:base+"?view=settle&mode=cash",label:"Trả tiền",active:mode==="cash"}]}/>
       <SettlementCycleFinancePanel groupId={groupId} cycleId={cycleId} currentUserId={user.id} currentUserName={me} counterparts={people}
         requestedEnabled={settings.requestedEnabled} bilateralEnabled={settings.requestedBilateralNetting} financialEngineEnabled={settings.effectiveEnabled} mode={mode}/>

@@ -84,6 +84,11 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
     const snap=await req('GET',snapshotUrl,undefined,a);assert.equal(snap.status,200,snap.text);
     const locked=await req('POST',snapshotUrl,{expectedVersion:2,expectedFingerprint:snap.body.snapshot.fingerprint,requestKey:randomUUID()},a);
     assert.equal(locked.status,200,locked.text);
+    const completionRows=()=>owner.query(
+      'SELECT cycle_id,origin,triggered_by FROM group_settlement_cycle_completions WHERE group_id=$1 AND cycle_id=$2',
+      [groupId,cycleId]);
+    assert.equal((await completionRows()).rows.length,0,
+      'cycle must remain open to settlement while debts are outstanding');
     const proposals=cycles+'/'+cycleId+'/bilateral-proposals';
     const preview=await req('GET',proposals+'?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,a);
     assert.equal(preview.status,200,preview.text);
@@ -304,6 +309,18 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
       [groupId])).rows[0].n,1,'cash replay must be idempotent');
     const balances=(await owner.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId])).rows;
     assert.ok(balances.every(v=>v.outstanding_minor==='0'&&v.pending_cash_minor==='0'));
+    const completedCycle=(await completionRows()).rows;
+    assert.equal(completedCycle.length,1,'the final independent signature auto-finishes the whole cycle');
+    assert.equal(completedCycle[0].origin,'automatic');
+    assert.equal(completedCycle[0].triggered_by,third.id);
+    const historic=await req('GET',cycles,undefined,a);
+    assert.equal(historic.status,200);
+    assert.ok(historic.body.cycles.some(c=>c.id===cycleId&&c.state==='locked'&&c.settlementCompletedAt),
+      'UI must show completed while the immutable snapshot stays LOCKED');
+    const reconcile=await req('GET',cycles+'/'+cycleId+'/reconciliation',undefined,a);
+    assert.equal(reconcile.status,200,reconcile.text);
+    assert.ok(reconcile.body.settlementCompletedAt||reconcile.body.report?.settlementCompletedAt,
+      'member-facing reconciliation must expose the recognized completion');
     assert.deepEqual((await owner.query('SELECT to_jsonb(o)::text AS row FROM obligations o WHERE group_id=$1 ORDER BY id',[groupId])).rows,source);
     for(const[name,sql]of FINANCIAL_AUDIT_QUERIES)assert.equal((await owner.query(sql)).rows.length,0,name);
     assert.equal((await req('PATCH',activation,{
