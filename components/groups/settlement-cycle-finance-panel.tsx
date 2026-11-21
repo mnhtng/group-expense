@@ -107,7 +107,7 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
   const {proposal,decision,application,residual}=data;
   const p=summarizeBilateralPreview(proposal);
   const completed=proposal.completedSetoff;
-  const active=enabled&&proposal.writable&&!proposal.staleCurrent;
+  const active=proposal.writable&&!proposal.staleCurrent;
   const approved=decision?.approvedBy.includes(me)??false;
   const finished=decision&&["rejected","revoked","expired","invalidated","superseded"].includes(decision.status);
   const canAgree=!completed&&!application&&p.canOffset&&active&&
@@ -151,7 +151,8 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
           ?<p className="text-sm font-medium">Đã đồng ý hai bên · Đang hoàn tất bù nợ</p>
           :finished?<p className="text-sm text-muted-foreground">Lần bù trước đã kết thúc</p>:null}
     {!completed&&!application&&<div className="flex flex-wrap gap-2">
-      {canAgree&&<button type="button" disabled={saving}
+      {canAgree&&<button type="button" disabled={saving||!enabled}
+        title={!enabled?"Financial Engine chưa được bật cho nhóm":undefined}
         onClick={()=>void run("agree")}
         className="min-h-12 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
         {saving?"Đang xử lý…":decision?.status==="agreed"?"Hoàn tất bù nợ":"Đồng ý bù nợ"}
