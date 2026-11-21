@@ -7,6 +7,13 @@ const view=readFileSync(path,"utf8");
 function pair(a,b,aBefore,bBefore,pendingA="0",pendingB="0",hasDoc=false){
   const offset=BigInt(aBefore)<BigInt(bBefore)?BigInt(aBefore):BigInt(bBefore);
   return {current:hasDoc?{id:"proposal"}:null,
+    cashStatus:{
+      paidMinor:"0",
+      remainingMinor:(BigInt(aBefore)+BigInt(bBefore)+BigInt(pendingA)+BigInt(pendingB)).toString(),
+      pendingMinor:(BigInt(pendingA)+BigInt(pendingB)).toString(),
+      lowToHighRemainingMinor:(BigInt(aBefore)+BigInt(pendingA)).toString(),
+      highToLowRemainingMinor:(BigInt(bBefore)+BigInt(pendingB)).toString(),
+    },
     calculation:{offsetMinor:offset.toString(),
       aOwesB:{debtorId:a,creditorId:b,availableBeforeMinor:aBefore,
         availableAfterMinor:(BigInt(aBefore)-offset).toString(),pendingReservedMinor:pendingA},
@@ -52,6 +59,39 @@ test("applied noncash proof stays visible with zero newly available offset and n
   assert.equal(result.appliedSetoffMinor,"23333");
   assert.equal(result.residualMinor,"145334",
     "a completed setoff does not imply the residual cash debt was paid");
+  assert.equal(result.cashPaidMinor,"0","noncash must never count as a cash payment");
+  assert.equal(result.remainingDueMinor,"145334");
+  assert.equal(result.pairSettled,false);
+});
+test("confirmed cash, not the noncash amount, becomes the main paid total",()=>{
+  const x=pair("Dang","Tung","0","0");
+  x.completedSetoff={amountMinor:"23333",appliedAt:"2026-11-21T10:00:00.000Z"};
+  x.cashStatus={paidMinor:"145334",remainingMinor:"0",pendingMinor:"0",
+    lowToHighRemainingMinor:"0",highToLowRemainingMinor:"0"};
+  const y=summarizeBilateralPreview(x);
+  assert.equal(y.appliedSetoffMinor,"23333");
+  assert.equal(y.cashPaidMinor,"145334");
+  assert.equal(y.pairSettled,true);
+  assert.equal(y.remainingDueMinor,"0");
+});
+test("initiated but unconfirmed money stays pending, never appears as paid",()=>{
+  const x=pair("Dang","Tung","0","0");
+  x.completedSetoff={amountMinor:"23333",appliedAt:"2026-11-21T10:00:00.000Z"};
+  x.cashStatus={paidMinor:"0",remainingMinor:"145334",pendingMinor:"145334",
+    lowToHighRemainingMinor:"145334",highToLowRemainingMinor:"0"};
+  const y=summarizeBilateralPreview(x);
+  assert.equal(y.cashPaidMinor,"0");
+  assert.equal(y.pairSettled,false);
+  assert.equal(y.remainingDebtorId,"Dang");
+  assert.equal(y.remainingCreditorId,"Tung");
+  assert.equal(y.confirmedCashPendingMinor,"145334");
+});
+test("all obligations covered by setoff alone means no money was transferred",()=>{
+  const x=pair("Dang","Tung","0","0");
+  x.completedSetoff={amountMinor:"23333",appliedAt:"2026-11-21T10:00:00.000Z"};
+  const y=summarizeBilateralPreview(x);
+  assert.equal(y.pairSettled,true);
+  assert.equal(y.cashPaidMinor,"0");
 });
 test("a proposal alone is not a completed noncash payment",()=>{
   const pending=summarizeBilateralPreview(pair("A","B","30000","20000","0","0",true));
