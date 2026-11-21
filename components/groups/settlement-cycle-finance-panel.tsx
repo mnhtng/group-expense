@@ -114,10 +114,15 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
     {completed&&<p className="text-sm text-muted-foreground">
       Đã cấn trừ {money(completed.amountMinor)} mỗi chiều
     </p>}
-    {completed&&BigInt(p.remainingDueMinor)>0n&&
+    {completed&&BigInt(p.remainingDueMinor)>0n&&<div className="space-y-2">
       <p className="text-sm text-muted-foreground">
         Còn {money(p.remainingDueMinor)} chưa được xác nhận thanh toán
-      </p>}
+      </p>
+      <Link href={"/groups/"+groupId+"/cycles/"+cycleId+"?view=settle&mode=cash"}
+        className="inline-flex min-h-12 items-center rounded-xl border px-4 text-sm font-semibold">
+        Trả/nhận tiền còn lại
+      </Link>
+    </div>}
     {pending&&<p className="text-sm text-muted-foreground" role="status">
       {initiatedByMe
         ?"Đã báo "+(netDebtor===me?"chuyển tiền":netCreditor===me?"nhận tiền":"đối soát")+
