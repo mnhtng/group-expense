@@ -51,11 +51,39 @@ cp .env.example .env.local
 pnpm install --frozen-lockfile
 pnpm db:neon-check   # read-only health check, direct URL
 pnpm db:migrate      # schema writes, direct URL
+# After each migration introducing new tables, the database owner must apply
+# the reviewed least-privilege grants to the application's dedicated role.
+pnpm db:runtime-check # verify BN-030 rights AS THE APPLICATION LOGIN
 pnpm db:check        # read migration history, direct URL
 pnpm test:unit
 ```
 
 The PR CI integration tests deliberately use an isolated PostgreSQL 17 service, **not** a live Neon database. Running SQL migrations against an unreviewed production database from a pull request is prohibited.
+
+## New tables and the deployed runtime role (BN-030)
+
+**Release blocker:** SQL migrations are applied through the schema owner, while
+Vercel queries through a separate restricted `DATABASE_URL` role. PostgreSQL
+does **not** retroactively give that role permissions on a newly created table.
+After migration `030_bilateral_cash_two_actions.sql`, an ungranted runtime
+`SELECT` on `group_settlement_bilateral_cash_intents` causes the
+`GET .../bilateral-proposals` API to return HTTP 500 (`SQLSTATE 42501`).
+
+Before allowing a migration to serve traffic, on the exact intended
+non-production branch: verify the migration checksum; review only the new
+table's minimal ACL; apply its `SELECT`, `INSERT` and
+`UPDATE(id,status,resolved_by,resolved_at,application_id,settlement_id)`
+grants to the already configured dedicated runtime role using the authorized
+database owner; then run `pnpm db:runtime-check` using that environment's
+actual pooled `DATABASE_URL`. The command is **read-only**, does not print
+credentials/role names, and fails if the migration/privileges are missing or
+if an unsafe broad `UPDATE`/`DELETE`/`TRUNCATE` grant is detected.
+Check the historical immutable triggers and ledger audit independently.
+
+Never embed an environment-specific role name in a shared SQL migration,
+never use the migration-owner URL for application requests, and never loosen
+the original immutable financial ledger to make the read work. Do not apply
+development grants to the production branch without its own release review.
 
 ## Hosting considerations
 
