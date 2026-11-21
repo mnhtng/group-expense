@@ -1,5 +1,6 @@
 import "server-only";
 import {autoCompleteEligibleExpenses} from "@/lib/expenses/service";
+import {recordEligibleCycleCompletions} from "@/lib/settlement-cycles/completion";
 import {createHash,randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
 import type {PoolClient} from "pg";
@@ -228,6 +229,8 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
       const autoCompleted=await autoCompleteEligibleExpenses(
         client,groupId,invoices.rows.map(r=>r.expense_id),actorId,
       );
+      // For paired cash, pending intent defers completion until confirmation.
+      await recordEligibleCycleCompletions(client,groupId,[cycleId],actorId);
       const saved=await client.query<Stored>(
         `SELECT ${applicationColumns} FROM group_settlement_bilateral_applications
          WHERE id=$1`,[id]);
