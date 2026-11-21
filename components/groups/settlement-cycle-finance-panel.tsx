@@ -392,6 +392,7 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
 }){
   const [cards,setCards]=useState<BilateralPairCard[]>([]);
   const [selected,setSelected]=useState<string|null>(null);
+  const [quickOther,setQuickOther]=useState("");
   const [busy,setBusy]=useState(true);
   const [failed,setFailed]=useState(0);
   const [revision,setRevision]=useState(0);
@@ -429,21 +430,43 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
   },[groupId,cycleId,me,counterparts,revision]);
   const eligible=cards.filter(c=>c.summary.canOffset).length;
   return <div className="space-y-3">
-    {busy&&<p role="status" className="text-sm text-muted-foreground">
+    <label className="block space-y-2 text-sm font-semibold" htmlFor="cycle-pair-member">
+      Chọn người
+    </label>
+    <select id="cycle-pair-member" value={quickOther}
+      onChange={e=>{setQuickOther(e.target.value);setSelected(null);}}
+      style={{height:"48px",minHeight:"48px"}}
+      className="h-12 min-h-12 w-full rounded-xl border bg-background px-3 text-base">
+      <option value="">Tất cả cặp có thể bù</option>
+      {counterparts.map(member=><option key={member.id} value={member.id}>
+        {member.name}
+      </option>)}
+    </select>
+    {quickOther&&<div className="space-y-2 rounded-2xl border p-3">
+      <button type="button" className="min-h-11 text-sm underline underline-offset-4"
+        onClick={()=>setQuickOther("")}>Xem tất cả cặp</button>
+      {(()=>{
+        const other=quickOther;
+        return <BilateralWorkbench key={other} groupId={groupId} cycleId={cycleId}
+          me={me} other={other} people={people} enabled={enabled}
+          onUpdated={()=>setRevision(x=>x+1)}/>;
+      })()}
+    </div>}
+    {!quickOther&&busy&&<p role="status" className="text-sm text-muted-foreground">
       Đang kiểm tra các cặp công nợ trong kỳ…
     </p>}
-    {!busy&&<p className="text-sm text-muted-foreground">
+    {!quickOther&&!busy&&<p className="text-sm text-muted-foreground">
       {eligible} cặp có thể bù · Chọn một cặp để xem chi tiết và xác nhận hai chiều.
     </p>}
-    {!busy&&failed>0&&<div role="alert" className="space-y-2 rounded-xl border p-3 text-sm">
+    {!quickOther&&!busy&&failed>0&&<div role="alert" className="space-y-2 rounded-xl border p-3 text-sm">
       <p>Không tải được {failed} cặp. Danh sách có thể chưa đầy đủ.</p>
       <button type="button" className="min-h-11 underline"
         onClick={()=>setRevision(x=>x+1)}>Thử tải lại</button>
     </div>}
-    {!busy&&cards.length===0&&failed===0&&<p className="rounded-xl bg-secondary p-3 text-sm">
+    {!quickOther&&!busy&&cards.length===0&&failed===0&&<p className="rounded-xl bg-secondary p-3 text-sm">
       Không có cặp nợ hai chiều khả dụng hoặc yêu cầu bù nợ cần theo dõi trong kỳ này.
     </p>}
-    {cards.map(({member,summary})=>{
+    {!quickOther&&cards.map(({member,summary})=>{
       const other=member.id;
       const open=selected===other;
       return <article key={other} className="rounded-2xl border p-3">
