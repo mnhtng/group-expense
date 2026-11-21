@@ -151,8 +151,10 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
           <span className="font-medium">
             {formatDateDMY(cycle.periodStart)} – trước {formatDateDMY(cycle.periodEnd)}
           </span>
-          <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">
-            {cycle.settlementCompletedAt?"Hoàn tất":cycle.state==="locked"?"Đã khóa snapshot":cycle.state==="review"?"Chờ kiểm tra":"Đang mở"}
+          <span className={cycle.settlementCompletedAt
+            ?"rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300"
+            :"rounded-full bg-secondary px-2.5 py-1 text-xs font-medium"}>
+            {cycle.settlementCompletedAt?"✓ Hoàn tất":cycle.state==="locked"?"Đã khóa snapshot":cycle.state==="review"?"Chờ kiểm tra":"Đang mở"}
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
