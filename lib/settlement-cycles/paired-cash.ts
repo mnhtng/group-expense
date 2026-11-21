@@ -181,6 +181,7 @@ export async function processPairCash(groupId:string,cycleId:string,
             WHERE id=$1 AND status='pending'`,
           [pending.id,status,actorId],
         );
+        await recordEligibleCycleCompletions(client,groupId,[cycleId],actorId);
         await client.query(
           `SELECT sc009_emit_notice($1,$2,$3,$4,$5,'setoff_decision',$6,$7,$8)`,
           [groupId,cycleId,other,actorId,
