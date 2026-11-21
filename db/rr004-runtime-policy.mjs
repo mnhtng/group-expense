@@ -37,7 +37,7 @@ export const COLUMN_UPDATES=Object.freeze({
   ...Object.fromEntries(Object.entries(LOCK_COLUMNS).map(([t,c])=>[t,[c]])),
   obligations:['voided_at'],settlements:['status','resolved_at','resolved_by'],
   group_settlement_bilateral_cash_intents:[
-    'status','resolved_by','resolved_at','application_id','settlement_id'],
+    'id','status','resolved_by','resolved_at','application_id','settlement_id'],
   notifications:['read_at'],
 });
 const guardNames=['sc004_manifest_immutable','bn030_immutable_intent',
