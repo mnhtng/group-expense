@@ -113,6 +113,15 @@ test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emer
       'owner activation alone grants financial writes without global/cohort rollout');
     assert.equal((await owner.query('SELECT enabled FROM settlement_cycle_engine_control WHERE id=1')).rows[0].enabled,false,
       'legacy global enabled remains OFF');
+    const grant=await req('POST',root+'/settlement-cycle/managers',
+      {memberId:b.id,action:'grant'},a);
+    assert.equal(grant.status,200,grant.text);
+    assert.equal((await req('PATCH',activation,{
+      enabled:false,expectedEnabled:true,expectedSettingsVersion:3},b)).status,403,
+      'delegated manager cannot disable owner financial engine');
+    assert.equal((await req('PATCH',settings,{
+      expectedVersion:3,requestedEnabled:false,requestedBilateralNetting:false},b)).status,403,
+      'delegated manager cannot indirectly disable an owner-enabled financial engine');
     const outside=randomUUID();
     await owner.query('INSERT INTO groups(id,owner_id,name) VALUES($1,$2,$3)',[outside,a.id,'SC025 outside cohort']);
     await owner.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",[outside,a.id]);
