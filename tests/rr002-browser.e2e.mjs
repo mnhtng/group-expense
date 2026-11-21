@@ -172,8 +172,17 @@ async function originalBalance(groupId){
 }
 async function capture(page,project,label){
   await mkdir("rr002-artifacts",{recursive:true});
+  // Playwright images cannot exceed 32767 physical pixels in either
+  // dimension. The 55-source ledger can be very tall on a DPR=3 iPhone.
+  // Preserve a useful viewport screenshot instead of failing the test.
+  const size=await page.evaluate(()=>({
+    height:Math.max(document.documentElement.scrollHeight,document.body.scrollHeight),
+    width:Math.max(document.documentElement.scrollWidth,document.body.scrollWidth),
+    dpr:window.devicePixelRatio||1,
+  }));
+  const fullPage=size.height*size.dpr<30000&&size.width*size.dpr<30000;
   await page.screenshot({path:"rr002-artifacts/"+project+"-"+label+".png",
-    fullPage:true,animations:"disabled",timeout:20000});
+    fullPage,animations:"disabled",timeout:20000});
 }
 // Read-only hit-test probe for the focus/overlay hypothesis. It never
 // changes navigation, click dispatch, keyboard focus, browser auth or money.
