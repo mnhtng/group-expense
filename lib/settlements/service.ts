@@ -4,6 +4,7 @@ import { pool } from "@/lib/db/pool";
 import type { PoolClient } from "pg";
 import { notifySettlement } from "@/lib/notifications/service";
 import { autoCompleteEligibleExpenses } from "@/lib/expenses/service";
+import {completeCyclesTouchedByExpenses} from "@/lib/settlement-cycles/completion";
 
 export type SettlementStatus = "pending" | "confirmed" | "rejected" | "cancelled";
 export type SettlementAllocationInput = { obligationId: string; amountMinor: string };
@@ -192,6 +193,10 @@ export async function resolveSettlement(groupId:string,settlementId:string,actor
       autoCompleted=await autoCompleteEligibleExpenses(
         client,groupId,sources.rows.map(r=>r.expense_id),actorId,
       );
+      // Same transaction, group-lock serialised. Paired-cash's pending intent
+      // blocks completion until the other signed action is fully committed.
+      await completeCyclesTouchedByExpenses(
+        client,groupId,sources.rows.map(r=>r.expense_id),actorId);
     }
     return {id:settlementId,status:next,autoCompletedCount:autoCompleted.length};
   };
