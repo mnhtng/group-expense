@@ -812,6 +812,7 @@ async function scenario(engine,project,options,actors){
       assert.equal(second.state,'applied','second vote applies authenticated noncash ledger');
       await openPair(owner,other);
       await owner.page.getByLabel('Đã bù nợ').waitFor();
+      await owner.page.getByText('Chưa ghi nhận tiền trả',{exact:true}).first().waitFor();
       const residualPath=apiFor(groupId,cycleId)+'/bilateral-applications/'+
         second.applicationId+'/residual';
       const payment=owner.page.getByRole('button',{name:/Đã chuyển tiền|Đã nhận tiền/});
@@ -824,6 +825,11 @@ async function scenario(engine,project,options,actors){
         new URL(r.url()).pathname==='/api/groups/'+groupId+'/settlements/'+cash.id);
       await other.page.getByRole('button',{name:/Xác nhận đã nhận|Xác nhận đã trả/}).click();
       assert.equal((await confirmed).status(),200,'counterparty accepts cash in one tap');
+      await owner.page.goto(ORIGIN+detail+"?view=settle");
+      await owner.page.getByLabel('Đã trả đủ').waitFor();
+      const amountPaid='Đã trả '+new Intl.NumberFormat('vi-VN')
+        .format(BigInt(cash.amountMinor))+' ₫';
+      await owner.page.getByText(amountPaid,{exact:true}).first().waitFor();
       const remaining=await pool.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId]);
       assert.ok(remaining.rows.every(r=>r.outstanding_minor==='0'&&r.pending_cash_minor==='0'));
       const finished=await originalBalance(groupId);
