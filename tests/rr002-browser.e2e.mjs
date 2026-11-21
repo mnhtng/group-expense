@@ -775,7 +775,7 @@ async function scenario(engine,project,options,actors){
       const second=await oneTap(other);
       assert.equal(second.state,'applied','second vote applies authenticated noncash ledger');
       await openPair(owner,other);
-      await owner.page.getByText('Đã bù nợ thành công').waitFor();
+      await owner.page.getByLabel('Đã bù nợ').waitFor();
       const residualPath=apiFor(groupId,cycleId)+'/bilateral-applications/'+
         second.applicationId+'/residual';
       const payment=owner.page.getByRole('button',{name:/Đã chuyển tiền|Đã nhận tiền/});
