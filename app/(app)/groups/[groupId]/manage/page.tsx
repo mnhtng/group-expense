@@ -57,7 +57,7 @@ export default async function ManageGroupPage({params,searchParams}:{
     {section==="invite"&&<section className="app-panel"><GroupInviteForm groupId={groupId} groupName={group.name} initialInviteUrl={inviteUrl}/></section>}
     {section==="cycle"&&<>
       <SettlementCycleSettingsPanel key={`${settings.version}-${settings.managerIds.join(",")}`} groupId={groupId} initial={settings} members={members}/>
-      {ownerActivation&&<SettlementOwnerEnginePanel groupId={groupId} initial={ownerActivation}
+      {ownerActivation&&<SettlementOwnerEnginePanel key={`${ownerActivation.settingsVersion}-${ownerActivation.enabled}`} groupId={groupId} initial={ownerActivation}
         requestedEnabled={settings.requestedEnabled}/>}
       <GroupedList><NavigationRow href={manage+"?section=schedule"} title="Lịch quyết toán"/>
         <NavigationRow href={manage+"?section=periods"} title="Tạo kỳ"/></GroupedList>
