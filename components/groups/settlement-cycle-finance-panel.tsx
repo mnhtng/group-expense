@@ -115,11 +115,11 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
   return <div className="space-y-3 border-t pt-3">
     <div className="grid grid-cols-2 gap-2">
       <div className="rounded-xl bg-secondary/60 p-3">
-        <p className="text-xs text-muted-foreground">{name(me)} → {member.name}</p>
+        <p className="text-xs text-muted-foreground">{name(proposal.calculation.aOwesB.debtorId)} → {name(proposal.calculation.aOwesB.creditorId)}</p>
         <strong className="text-sm tabular-nums">{money(p.beforeAMinor)}</strong>
       </div>
       <div className="rounded-xl bg-secondary/60 p-3">
-        <p className="text-xs text-muted-foreground">{member.name} → {name(me)}</p>
+        <p className="text-xs text-muted-foreground">{name(proposal.calculation.bOwesA.debtorId)} → {name(proposal.calculation.bOwesA.creditorId)}</p>
         <strong className="text-sm tabular-nums">{money(p.beforeBMinor)}</strong>
       </div>
     </div>
