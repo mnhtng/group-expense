@@ -32,9 +32,10 @@ RETURNS boolean LANGUAGE sql STABLE AS $sc031$
   )
   AND NOT EXISTS (
     SELECT 1 FROM group_settlement_cycle_snapshot_obligations src
-    JOIN bn005_obligation_balances bal ON bal.obligation_id=src.obligation_id
+    LEFT JOIN bn005_obligation_balances bal ON bal.obligation_id=src.obligation_id
     WHERE src.group_id=p_group AND src.cycle_id=p_cycle
-      AND (bal.outstanding_minor<>0 OR bal.pending_cash_minor<>0
+      AND (bal.obligation_id IS NULL OR bal.outstanding_minor<>0
+        OR bal.pending_cash_minor<>0
         OR bal.available_minor<>0 OR bal.original_minor<>
           bal.confirmed_cash_minor+bal.confirmed_setoff_minor)
   )
