@@ -79,7 +79,7 @@ test("SC-008 never enables money through frontend opt-in, and requires real pair
   assert.match(view,/decision\?\.approvedBy\.includes\(me\)/);
   assert.match(view,/decision\?\.canApprove/);
   assert.match(view,/decision\?\.canReject/);
-  assert.match(view,/disabled=\{saving\}/);
+  assert.match(view,/disabled=\{saving\|\|!enabled\}/);
   assert.match(view,/crypto\.randomUUID\(\)/);
   assert.match(view,/e\.status===409/);
   assert.match(view,/Đã bù/);
