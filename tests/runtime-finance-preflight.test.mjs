@@ -47,3 +47,10 @@ test("pair screen never states no bilateral debt if all previews failed",()=>{
   assert.match(ui,/visible\.length===0&&failed===0/);
   assert.match(ui,/Thử lại/);
 });
+
+test("financial HTTP errors expose SQLSTATE internally but never raw SQL or user data",()=>{
+  const handler=readFileSync("lib/settlements/http.ts","utf8");
+  assert.match(handler,/sqlState:dbCode/);
+  assert.match(handler,/\^\[0-9A-Z\]\{5\}\$/);
+  assert.doesNotMatch(handler,/console\.error\([^;]*\b(error\.message|error\.stack)\b/);
+});
