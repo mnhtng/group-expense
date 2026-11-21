@@ -115,8 +115,8 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
   const canReject=!completed&&active&&Boolean(decision?.canReject)&&!application;
   return <div className="space-y-3 border-t pt-3">
     {completed&&<p className="text-sm text-muted-foreground">
-      Đã bù {money(completed.amountMinor)} mỗi chiều
-      {" · "}{new Intl.DateTimeFormat("vi-VN",{day:"numeric",month:"numeric",year:"numeric"})
+      Hoàn tất ngày {" "}
+      {new Intl.DateTimeFormat("vi-VN",{day:"numeric",month:"numeric",year:"numeric"})
         .format(new Date(completed.appliedAt))}
     </p>}
     <div className="grid grid-cols-2 gap-2">
