@@ -52,6 +52,7 @@ export const FINANCIAL_CLASSES=Object.freeze([
   ["bilateral_proposals","group_settlement_bilateral_proposals","id"],
   ["bilateral_sources","group_settlement_bilateral_sources","proposal_id,obligation_id"],
   ["bilateral_decisions","group_settlement_bilateral_decision_events","id"],
+  ["bilateral_cash_intents","group_settlement_bilateral_cash_intents","id"],
   ["residual_repayments","group_settlement_bilateral_residual_repayments","settlement_id"],
   ["engine_control","settlement_cycle_engine_control","id"],
   ["engine_cohort","settlement_cycle_engine_cohort","group_id"],
