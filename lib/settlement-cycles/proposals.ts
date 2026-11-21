@@ -51,6 +51,10 @@ export type BilateralProposalPreview={
    * This may exist even if the current proposal head later changes.
    */
   completedSetoff:{amountMinor:string;appliedAt:string}|null;
+  cashIntent:{
+    id:string;initiatedBy:string;debtorId:string|null;
+    creditorId:string|null;amountMinor:string;status:string;
+  }|null;
   /** Cash actually confirmed for original debts within THIS locked period and
    * pair. Pending cash and noncash offset are NEVER counted as money paid.
    */
@@ -280,6 +284,19 @@ export async function previewBilateralProposal(groupId:string,cycleId:string,
        ORDER BY created_at DESC,id DESC LIMIT 1`,
       [groupId,cycleId,low,high],
     );
+
+    const cashIntent=await client.query<{
+      id:string;initiatedBy:string;debtorId:string|null;
+      creditorId:string|null;amountMinor:string;status:string;
+    }>(
+      `SELECT id,initiated_by AS "initiatedBy",
+         debtor_id AS "debtorId",creditor_id AS "creditorId",
+         amount_minor::text AS "amountMinor",status
+       FROM group_settlement_bilateral_cash_intents
+       WHERE group_id=$1 AND cycle_id=$2 AND party_low=$3 AND party_high=$4
+       ORDER BY (status='pending') DESC,created_at DESC,id DESC LIMIT 1`,
+      [groupId,cycleId,low,high],
+    );
     const live=await computed(client,groupId,cycleId,c,low,high,false);
     // Same authenticated repeatable-read snapshot as the noncash application.
     // Use the existing complete frozen original-source set, not a subset of
@@ -305,6 +322,7 @@ export async function previewBilateralProposal(groupId:string,cycleId:string,
         amountMinor:applied.rows[0].amountMinor,
         appliedAt:applied.rows[0].appliedAt.toISOString(),
       }:null,
+      cashIntent:cashIntent.rows[0]??null,
       cashStatus:{
         paidMinor:paid.toString(),
         remainingMinor:(lowOwesHigh+highOwesLow).toString(),
