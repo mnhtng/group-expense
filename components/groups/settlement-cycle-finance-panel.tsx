@@ -235,9 +235,12 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
               ?"Đã trả "+money(s.cashPaidMinor)
               :s.pairSettled?"Không cần chuyển tiền":"Chưa ghi nhận tiền trả"}
           </span>}
-          {!s.hasCompletedSetoff&&s.canOffset&&<span className="block text-base font-semibold tabular-nums">
-            Bù {money(s.offsetMinor)} mỗi chiều
-          </span>}
+          {!s.hasCompletedSetoff&&s.canOffset&&
+            <span className="block text-base font-semibold tabular-nums">
+              {preview.cashIntent?.status==="pending"?"Chờ xác nhận":
+               s.residualMinor==="0"?"Không cần chuyển tiền":
+               "Cần chuyển "+money(s.residualMinor)}
+            </span>}
           {!s.hasCompletedSetoff&&s.debtorId&&s.creditorId&&<span className="block text-sm text-muted-foreground">
             Còn {name(s.debtorId)} trả {name(s.creditorId)} · {money(s.residualMinor)}
           </span>}
@@ -252,7 +255,7 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
             {money(s.pendingMinor)} đang chờ
           </span>}
           <span className="block text-xs font-medium text-primary">
-            {open?"Thu gọn":s.hasCompletedSetoff?"Xem chi tiết":"Xem và xác nhận"}
+            {open?"Thu gọn":s.hasCompletedSetoff?"Xem chi tiết":"Xem khoản trả"}
           </span>
         </button>
         {open&&<div id={"bilateral-pair-"+other}>
