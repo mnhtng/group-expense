@@ -114,11 +114,18 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
     (!proposal.current||finished||decision?.canApprove||decision?.status==="agreed");
   const canReject=!completed&&active&&Boolean(decision?.canReject)&&!application;
   return <div className="space-y-3 border-t pt-3">
-    {completed&&<p className="text-sm text-muted-foreground">
-      Hoàn tất ngày {" "}
-      {new Intl.DateTimeFormat("vi-VN",{day:"numeric",month:"numeric",year:"numeric"})
-        .format(new Date(completed.appliedAt))}
-    </p>}
+    {completed&&<div className="space-y-1 text-sm">
+      <p className="font-semibold">
+        {BigInt(p.cashPaidMinor)>0n
+          ?"Đã trả "+money(p.cashPaidMinor)
+          :p.pairSettled?"Không cần chuyển tiền":"Chưa ghi nhận tiền trả"}
+      </p>
+      <p className="text-muted-foreground">
+        Đã bù {money(completed.amountMinor)} mỗi chiều ·
+        {" "}{new Intl.DateTimeFormat("vi-VN",{day:"numeric",month:"numeric",year:"numeric"})
+          .format(new Date(completed.appliedAt))}
+      </p>
+    </div>}
     {(!completed||BigInt(p.beforeAMinor)>0n||BigInt(p.beforeBMinor)>0n)&&
     <div className="grid grid-cols-2 gap-2">
       <div className="rounded-xl bg-secondary/60 p-3">
@@ -134,10 +141,19 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
       <p className="text-sm">Có thể bù mỗi chiều</p>
       <strong className="text-lg tabular-nums">{money(p.offsetMinor)}</strong>
     </div>}
-    {p.debtorId&&p.creditorId&&<div className="flex items-center justify-between gap-3 rounded-xl bg-secondary/60 p-3">
+    {!completed&&p.debtorId&&p.creditorId&&<div className="flex items-center justify-between gap-3 rounded-xl bg-secondary/60 p-3">
       <p className="text-sm">Còn {name(p.debtorId)} trả {name(p.creditorId)}</p>
       <strong className="text-base tabular-nums">{money(p.residualMinor)}</strong>
     </div>}
+    {completed&&BigInt(p.remainingDueMinor)>0n&&
+      <div className="flex items-center justify-between gap-3 rounded-xl bg-secondary/60 p-3">
+        <p className="text-sm">
+          {p.remainingDebtorId&&p.remainingCreditorId
+            ?"Còn "+name(p.remainingDebtorId)+" trả "+name(p.remainingCreditorId)
+            :"Công nợ còn lại"}
+        </p>
+        <strong className="text-base tabular-nums">{money(p.remainingDueMinor)}</strong>
+      </div>}
     {BigInt(p.pendingMinor)>0n&&<p className="text-sm text-amber-700 dark:text-amber-300">
       {money(p.pendingMinor)} đang chờ xác nhận ·
       {" "}<Link className="underline" href={"/groups/"+groupId+"/settlements"}>Xem</Link>
@@ -261,20 +277,35 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
           className="min-h-12 w-full space-y-1 text-left">
           <span className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-semibold">{name(me)} ↔ {member.name}</span>
-            {s.hasCompletedSetoff&&<span aria-label="Đã bù nợ"
+            {s.hasCompletedSetoff&&<span
+              aria-label={s.pairSettled
+                ?BigInt(s.cashPaidMinor)>0n?"Đã trả đủ":"Đã tất toán"
+                :"Đã bù nợ"}
               className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-              <span aria-hidden="true">✓</span> Đã bù
+              <span aria-hidden="true">✓</span>{" "}
+              {s.pairSettled
+                ?BigInt(s.cashPaidMinor)>0n?"Đã trả đủ":"Hoàn tất"
+                :"Đã bù"}
             </span>}
           </span>
-          {s.hasCompletedSetoff&&s.appliedSetoffMinor&&<span className="block text-sm tabular-nums">
-            Đã bù {money(s.appliedSetoffMinor)} mỗi chiều
+          {s.hasCompletedSetoff&&<span className="block text-sm font-medium tabular-nums">
+            {BigInt(s.cashPaidMinor)>0n
+              ?"Đã trả "+money(s.cashPaidMinor)
+              :s.pairSettled?"Không cần chuyển tiền":"Chưa ghi nhận tiền trả"}
           </span>}
           {!s.hasCompletedSetoff&&s.canOffset&&<span className="block text-base font-semibold tabular-nums">
             Bù {money(s.offsetMinor)} mỗi chiều
           </span>}
-          {s.debtorId&&s.creditorId&&<span className="block text-sm text-muted-foreground">
+          {!s.hasCompletedSetoff&&s.debtorId&&s.creditorId&&<span className="block text-sm text-muted-foreground">
             Còn {name(s.debtorId)} trả {name(s.creditorId)} · {money(s.residualMinor)}
           </span>}
+          {s.hasCompletedSetoff&&BigInt(s.remainingDueMinor)>0n&&
+            <span className="block text-sm text-muted-foreground">
+              {s.remainingDebtorId&&s.remainingCreditorId
+                ?"Còn "+name(s.remainingDebtorId)+" trả "+name(s.remainingCreditorId)
+                :"Công nợ còn lại"}
+              {" · "}{money(s.remainingDueMinor)}
+            </span>}
           {BigInt(s.pendingMinor)>0n&&<span className="block text-xs text-amber-700 dark:text-amber-300">
             {money(s.pendingMinor)} đang chờ
           </span>}
