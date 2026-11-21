@@ -61,7 +61,7 @@ test("SC028 independent operator-only emergency stop serializes financial writer
   assert.match(engine(),/pg_advisory_xact_lock_shared\(250025,1\)/);
   assert.match(migration(),/pg_advisory_xact_lock\(250025,1\)/);
   assert.match(migration(),/CREATE OR REPLACE FUNCTION public.sc025_control_guard/);
-  assert.match(migration(),/NEW\.emergency_paused/);
+  assert.match(migration(),/ADD COLUMN emergency_paused boolean NOT NULL DEFAULT false/);
   assert.match(ui(),/view\.emergencyPaused/);
   assert.match(ui(),/Bật Financial Engine cho nhóm/);
   assert.match(ui(),/Tắt Financial Engine của nhóm/);
