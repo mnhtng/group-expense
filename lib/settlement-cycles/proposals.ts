@@ -64,7 +64,7 @@ export type BilateralProposalPreview={
 };
 export type BilateralProposalInput={
   partyAId:string;partyBId:string;expectedVersion:number;
-  expectedFingerprint:string;requestKey:string;
+  expectedFingerprint:string;requestKey:string;flowOrigin?:"paired_cash";
 };
 const selectCycle=`SELECT c.id,c.version,c.state,
   c.period_start::text AS "startDate",c.period_end::text AS "endDate",
@@ -334,9 +334,9 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
   ])).digest("hex");
   const work=async (client:PoolClient)=>{
     await activeGroup(client,groupId,actorId,true);
-    const prior=await client.query<ProposalRow & {requestDigest:string}>(
+    const prior=await client.query<ProposalRow & {requestDigest:string;flowOrigin:string}>(
       `SELECT id,version,request_digest AS "requestDigest",
-        party_low AS "partyLow",party_high AS "partyHigh",
+        flow_origin AS "flowOrigin",party_low AS "partyLow",party_high AS "partyHigh",
         created_by AS "createdBy",offset_minor::text AS "offsetMinor",
         source_fingerprint AS "sourceFingerprint",
         snapshot_fingerprint AS "snapshotFingerprint",
@@ -347,7 +347,8 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
       [groupId,actorId,input.requestKey]);
     if(prior.rows[0]){
       const p=prior.rows[0];
-      if(p.requestDigest!==requestDigest||p.partyLow!==low||p.partyHigh!==high||
+      if(p.flowOrigin!==(input.flowOrigin??"manual")||
+          p.requestDigest!==requestDigest||p.partyLow!==low||p.partyHigh!==high||
          p.sourceFingerprint!==input.expectedFingerprint)
         throw err(409,"Mã yêu cầu đã được dùng cho đề xuất khác.");
       return {proposal:summary(p),alreadyCreated:true};
@@ -404,11 +405,12 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
       `INSERT INTO group_settlement_bilateral_proposals
        (id,group_id,cycle_id,party_low,party_high,version,
         request_key,request_digest,source_fingerprint,snapshot_fingerprint,
-        created_by,offset_minor,source_count,allocation_count)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        created_by,offset_minor,source_count,allocation_count,flow_origin)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [id,groupId,cycleId,low,high,next,input.requestKey,
         requestDigest,live.fingerprint,c.snapshotFingerprint,
-        actorId,live.calculation.offsetMinor,live.sources.length,allocations]);
+        actorId,live.calculation.offsetMinor,live.sources.length,allocations,
+         input.flowOrigin??"manual"]);
     const inserted=await client.query(
       `INSERT INTO group_settlement_bilateral_sources
        (proposal_id,group_id,cycle_id,party_low,party_high,
