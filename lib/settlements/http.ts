@@ -10,7 +10,14 @@ export function settlementErrorResponse(error: unknown) {
   if(error && typeof error==="object" && "code" in error &&
     (error.code==="22P02" || error.code==="23503" || error.code==="23514"))
     return NextResponse.json({ error: "Dữ liệu giao dịch không hợp lệ." }, { status: 400, headers });
-  console.error("Settlement request failed:", error instanceof Error ? error.name : "unknown");
+  // Report only the SQLSTATE and error category, never the SQL query,
+  // bind parameters, user data or connection string.
+  const dbCode=error && typeof error==="object" && "code" in error &&
+    typeof error.code==="string" && /^[0-9A-Z]{5}$/.test(error.code)
+    ?error.code:null;
+  console.error("Settlement request failed:",{
+    kind:error instanceof Error?error.name:"unknown",sqlState:dbCode,
+  });
   return NextResponse.json({ error: "Không thể xử lý thanh toán." }, { status: 500, headers });
 }
 export async function settlementJson(req: Request): Promise<unknown> {

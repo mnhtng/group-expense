@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import pg from 'pg';
 import {buildRuntimeGrantSql,readRuntimePrivileges,evaluateRuntimePrivileges} from '../db/rr004-runtime-policy.mjs';
+import {CASH_INTENT_RUNTIME_PRIVILEGES_SQL,projectCashIntentRuntimePrivileges,
+  evaluateCashIntentRuntimePrivileges} from '../db/runtime-finance-policy.mjs';
 const url='postgresql://test:test@localhost:5432/group_expense';
 test('RR-004 real non-owner LOGIN cannot edit audit bodies, change money, run DDL or assume owner',async()=>{
   assert.equal(process.env.CI,'true');assert.equal(process.env.DATABASE_URL,url);
@@ -15,6 +17,27 @@ test('RR-004 real non-owner LOGIN cannot edit audit bodies, change money, run DD
     await owner.query(buildRuntimeGrantSql(name));
     const identity=(await runtime.query('SELECT current_user AS role,session_user AS login')).rows[0];
     assert.deepEqual(identity,{role:name,login:name},'must be a real limited login, not SET ROLE on an owner session');
+    const assertCashAccess=async expected=>{
+      const current=(await runtime.query(CASH_INTENT_RUNTIME_PRIVILEGES_SQL)).rows[0];
+      const evaluated=evaluateCashIntentRuntimePrivileges(
+        projectCashIntentRuntimePrivileges(current));
+      assert.equal(evaluated.ok,expected,JSON.stringify(evaluated.reasons));
+    };
+    await assertCashAccess(true);
+    await runtime.query('SELECT id FROM group_settlement_bilateral_cash_intents LIMIT 0');
+    // Reproduce the staging incident: owner creates migration 030 while the
+    // non-owner app never receives SELECT on the newly created table.
+    await owner.query('REVOKE SELECT ON group_settlement_bilateral_cash_intents FROM "'+name+'"');
+    try{
+      await assertCashAccess(false);
+      await assert.rejects(
+        runtime.query('SELECT id FROM group_settlement_bilateral_cash_intents LIMIT 0'),
+        e=>e.code==='42501',
+        'the real runtime login must fail exactly as the staging 500 did');
+    }finally{
+      await owner.query('GRANT SELECT ON group_settlement_bilateral_cash_intents TO "'+name+'"');
+    }
+    await assertCashAccess(true);
     const good=evaluateRuntimePrivileges(await readRuntimePrivileges(runtime));
     assert.equal(good.ok,true,JSON.stringify(good));
     await owner.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "${name}"`);

@@ -211,7 +211,7 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
     {!busy&&failed>0&&<p role="alert" className="text-sm">
       Không tải được {failed} cặp. <button type="button" className="underline" onClick={refresh}>Thử lại</button>
     </p>}
-    {!busy&&visible.length===0&&<p className="rounded-xl bg-secondary p-3 text-sm">
+    {!busy&&visible.length===0&&failed===0&&<p className="rounded-xl bg-secondary p-3 text-sm">
       {quickOther?"Không có khoản bù nợ khả dụng với người này.":"Chưa có khoản nợ hai chiều để bù."}
     </p>}
     {!busy&&visible.map(({member,preview})=>{
