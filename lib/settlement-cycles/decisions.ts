@@ -1,4 +1,5 @@
 import "server-only";
+import {recordEligibleCycleCompletions} from "@/lib/settlement-cycles/completion";
 import {readEngineAccess} from "@/lib/settlement-cycles/engine";
 import {createHash,randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
@@ -257,6 +258,8 @@ export async function decideBilateralProposal(groupId:string,cycleId:string,
       throw error(409,"Chỉ người đã xác nhận mới được thu hồi.");
     const decisionId=await appendEvent(client,p,input.action,input.requestKey,
       digest,actorId);
+    if(input.action==="reject"||input.action==="revoke")
+      await recordEligibleCycleCompletions(client,groupId,[cycleId],actorId);
     const after=await readModel(client,p,actorId,false);
     return {decisionId,alreadyRecorded:false,status:after.view.status,
       view:after.view,conflict:false};
