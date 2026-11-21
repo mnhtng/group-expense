@@ -80,12 +80,19 @@ $sc031$;
 CREATE FUNCTION sc031_guard_completion()
 RETURNS trigger LANGUAGE plpgsql AS $sc031$
 BEGIN
+  IF TG_OP='INSERT' THEN
+    IF NOT sc031_cycle_ready(NEW.group_id,NEW.cycle_id) THEN
+      RAISE EXCEPTION 'SC031 unsettled or blocked period cannot complete'
+        USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+  END IF;
   RAISE EXCEPTION 'SC031 cycle completion is append-only'
     USING ERRCODE='23514';
 END;
 $sc031$;
 CREATE TRIGGER sc031_completion_immutable
-  BEFORE UPDATE OR DELETE ON group_settlement_cycle_completions
+  BEFORE INSERT OR UPDATE OR DELETE ON group_settlement_cycle_completions
   FOR EACH ROW EXECUTE FUNCTION sc031_guard_completion();
 CREATE TRIGGER sc031_completion_no_truncate
   BEFORE TRUNCATE ON group_settlement_cycle_completions
