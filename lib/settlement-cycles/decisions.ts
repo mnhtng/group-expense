@@ -148,10 +148,6 @@ export async function getBilateralDecisions(groupId:string,cycleId:string,
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     await activeGroup(client,groupId,actorId,false);
     const p=await selectProposal(client,groupId,cycleId,proposalId,false);
-    // Public legacy approval API must NEVER alter a paired-cash intent:
-    // the two cash attestations are the only accepted consent path.
-    if(p.flowOrigin==="paired_cash"&&!externalClient)
-      throw error(409,"Khoản trả chỉ được xác nhận tại màn thanh toán.");
     if(actorId!==p.partyLow&&actorId!==p.partyHigh)
       throw error(403,"Chỉ hai bên được xem xác nhận bù trừ.");
     const model=await readModel(client,p,actorId,false);
@@ -187,6 +183,10 @@ export async function decideBilateralProposal(groupId:string,cycleId:string,
     // Same lock order as all cash writers: group -> cycle -> proposal head.
     await activeGroup(client,groupId,actorId,true);
     const p=await selectProposal(client,groupId,cycleId,proposalId,false);
+    // Only the pair-cash orchestrator can sign its internal consent events.
+    // Legacy decision routes must not bypass the money acknowledgement.
+    if(p.flowOrigin==="paired_cash"&&!externalClient)
+      throw error(409,"Khoản trả chỉ được xác nhận tại màn thanh toán.");
     if(actorId!==p.partyLow&&actorId!==p.partyHigh)
       throw error(403,"Chỉ hai người liên quan mới được quyết định.");
     if(p.version!==input.expectedVersion||
