@@ -377,6 +377,106 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled,onUpdated}:
   </div>;
 }
 
+type BilateralPairCard={
+  member:Member;
+  summary:ReturnType<typeof summarizeBilateralPreview>;
+};
+
+/** Read-only discovery for every counterparty, not merely the first member.
+ * At most four concurrent existing pair-authorized GETs; no financial write
+ * and no assumptions about another user's obligations.
+ */
+function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
+  groupId:string;cycleId:string;me:string;counterparts:Member[];
+  people:Member[];enabled:boolean;
+}){
+  const [cards,setCards]=useState<BilateralPairCard[]>([]);
+  const [selected,setSelected]=useState<string|null>(null);
+  const [busy,setBusy]=useState(true);
+  const [failed,setFailed]=useState(0);
+  const [revision,setRevision]=useState(0);
+  const name=(id:string)=>people.find(p=>p.id===id)?.name??"Thành viên";
+  useEffect(()=>{
+    const ctrl=new AbortController();
+    let cursor=0,failures=0;
+    const found:BilateralPairCard[]=[];
+    const scan=async()=>{
+      while(cursor<counterparts.length&&!ctrl.signal.aborted){
+        const member=counterparts[cursor++];
+        const query=new URLSearchParams({partyAId:me,partyBId:member.id});
+        try{
+          const preview=await getJson<BilateralProposalPreview>(
+            `/api/groups/${groupId}/settlement-cycle/cycles/${cycleId}/bilateral-proposals?${query}`,
+            ctrl.signal);
+          const summary=summarizeBilateralPreview(preview);
+          if(summary.show)found.push({member,summary});
+        }catch{
+          if(!ctrl.signal.aborted)failures++;
+        }
+      }
+    };
+    setBusy(true);
+    void Promise.all(Array.from({length:Math.min(4,counterparts.length)},()=>scan()))
+      .then(()=>{
+        if(ctrl.signal.aborted)return;
+        found.sort((a,b)=>{
+          const aa=BigInt(a.summary.offsetMinor),bb=BigInt(b.summary.offsetMinor);
+          return aa>bb?-1:aa<bb?1:a.member.name.localeCompare(b.member.name,"vi");
+        });
+        setCards(found);setFailed(failures);
+      }).finally(()=>{if(!ctrl.signal.aborted)setBusy(false);});
+    return ()=>ctrl.abort();
+  },[groupId,cycleId,me,counterparts,revision]);
+  const eligible=cards.filter(c=>c.summary.canOffset).length;
+  return <div className="space-y-3">
+    {busy&&<p role="status" className="text-sm text-muted-foreground">
+      Đang kiểm tra các cặp công nợ trong kỳ…
+    </p>}
+    {!busy&&<p className="text-sm text-muted-foreground">
+      {eligible} cặp có thể bù · Chọn một cặp để xem chi tiết và xác nhận hai chiều.
+    </p>}
+    {!busy&&failed>0&&<div role="alert" className="space-y-2 rounded-xl border p-3 text-sm">
+      <p>Không tải được {failed} cặp. Danh sách có thể chưa đầy đủ.</p>
+      <button type="button" className="min-h-11 underline"
+        onClick={()=>setRevision(x=>x+1)}>Thử tải lại</button>
+    </div>}
+    {!busy&&cards.length===0&&failed===0&&<p className="rounded-xl bg-secondary p-3 text-sm">
+      Không có cặp nợ hai chiều khả dụng hoặc yêu cầu bù nợ cần theo dõi trong kỳ này.
+    </p>}
+    {cards.map(({member,summary})=>{
+      const other=member.id;
+      const open=selected===other;
+      return <article key={other} className="rounded-2xl border p-3">
+        <button type="button" aria-expanded={open}
+          aria-controls={`bilateral-pair-${other}`}
+          onClick={()=>setSelected(v=>v===other?null:other)}
+          className="w-full space-y-2 rounded-xl p-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2">
+          <span className="block font-semibold">{name(me)} ↔ {member.name}</span>
+          <span className="block text-sm">
+            {summary.canOffset?`Có thể bù mỗi chiều: ${money(summary.offsetMinor)}`
+              :"Chưa có tiền khả dụng để bù"}
+          </span>
+          {summary.debtorId&&summary.creditorId&&<span className="block text-sm text-muted-foreground">
+            Sau bù (dự kiến): {name(summary.debtorId)} → {name(summary.creditorId)}
+            {" · "}{money(summary.residualMinor)}
+          </span>}
+          {BigInt(summary.pendingMinor)>0n&&<span className="block text-sm text-amber-700 dark:text-amber-300">
+            Đang chờ xác nhận: {money(summary.pendingMinor)} · không thể bù phần này
+          </span>}
+          <span className="block text-sm font-medium underline underline-offset-4">
+            {open?"Thu gọn":"Xem chi tiết bù nợ"}
+          </span>
+        </button>
+        {open&&<div id={`bilateral-pair-${other}`} className="mt-3 border-t pt-3">
+          <BilateralWorkbench key={other} groupId={groupId} cycleId={cycleId}
+            me={me} other={other} people={people} enabled={enabled}
+            onUpdated={()=>setRevision(x=>x+1)}/>
+        </div>}
+      </article>;
+    })}
+  </div>;
+}
+
 function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
   groupId:string;cycleId:string;userId:string;people:Member[];enabled:boolean;
 }){
@@ -419,26 +519,68 @@ function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
     }finally{setSending(false);}
   }
   return <section className="space-y-3 rounded-3xl border bg-card p-4 sm:p-5">
-    <h3 className="text-base font-semibold">Gộp thanh toán một chiều</h3>
-
-    {loading&&<p role="status" className="text-sm">Đang tải thanh toán một chiều…</p>}
+    <h3 className="text-base font-semibold">Yêu cầu thanh toán</h3>
+    <p className="text-sm text-muted-foreground">
+      Mỗi yêu cầu ghi nhận một hoặc nhiều khoản nợ cùng chiều. Tiền được trao ngoài
+      ứng dụng; chỉ giảm công nợ khi người còn lại xác nhận.
+    </p>
+    {loading&&<p role="status" className="text-sm">Đang tải yêu cầu thanh toán…</p>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
     {!loading&&pairs.length===0&&<p className="text-sm text-muted-foreground">
-      Không có khoản khả dụng để gộp của bạn trong kỳ này.
+      Không có khoản khả dụng để yêu cầu thanh toán trong kỳ này.
     </p>}
-    {!loading&&pairs.map(p=><div key={p.debtorId+"-"+p.creditorId}
-      className="space-y-2 rounded-2xl border p-3">
-      <p className="text-sm font-medium">{name(p.debtorId)} → {name(p.creditorId)}</p>
-      <strong className="block text-lg tabular-nums">{money(p.availableMinor)}</strong>
-      <p className="text-xs text-muted-foreground">
-        {p.allocationCount} khoản nợ nguồn · Tiền đang chờ: {money(p.pendingMinor)}
+    {!loading&&pairs.map(p=>{
+      const copy=cashActionCopy(p.debtorId,p.creditorId,userId);
+      const opposite=pairs.some(other=>other.debtorId===p.creditorId&&
+        other.creditorId===p.debtorId);
+      return <article key={p.debtorId+"-"+p.creditorId}
+        className="space-y-2 rounded-2xl border p-3">
+        <p className="text-sm font-medium">{name(p.debtorId)} → {name(p.creditorId)}</p>
+        <p className="text-xs text-muted-foreground">{copy.relation}</p>
+        <strong className="block text-lg tabular-nums">{money(p.availableMinor)}</strong>
+        <p className="text-xs text-muted-foreground">
+          {p.allocationCount} khoản nợ nguồn · Số tiền khả dụng
+        </p>
+        <Link href={`/groups/${groupId}/cycles/${cycleId}?view=sources`}
+          className="inline-flex min-h-11 items-center text-sm underline underline-offset-4">
+          Xem các khoản nợ nguồn
+        </Link>
+        {BigInt(p.pendingMinor)>0n&&<aside role="note"
+          className="space-y-2 rounded-xl bg-amber-500/5 p-3 text-sm">
+          <p className="font-semibold">Tiền đang chờ xác nhận: {money(p.pendingMinor)}</p>
+          <p className="text-muted-foreground">
+            Khoản đang chờ không được tính là đã trả và không thể dùng để bù nợ.
+            Hãy xử lý yêu cầu cũ trước khi tạo yêu cầu mới cho phần tiền đó.
+          </p>
+          <Link href={`/groups/${groupId}/settlements`} className="underline underline-offset-4">
+            Xem yêu cầu đang chờ
+          </Link>
+        </aside>}
+        {opposite&&<p className="text-sm text-muted-foreground">
+          Hai người có nợ ngược chiều. Nên{" "}
+          <Link className="underline underline-offset-4"
+            href={`/groups/${groupId}/cycles/${cycleId}?view=settle`}>
+            bù nợ trước
+          </Link>{" "}để giảm số lần chuyển tiền.
+        </p>}
+        <DisabledAction kind="batch" canUse={enabled} label={copy.label}
+          onClick={()=>{key.current=null;setAccepted(false);setSelected(p);}}/>
+      </article>;
+    })}
+    {selected&&<div className="space-y-2">
+      <p className="text-sm font-semibold">
+        {name(selected.debtorId)} → {name(selected.creditorId)}
+        {" · "}{money(selected.availableMinor)}
       </p>
-      <DisabledAction kind="batch" canUse={enabled}
-        onClick={()=>{key.current=null;setAccepted(false);setSelected(p);}}/>
-    </div>)}
-    {selected&&<Consent kind="batch" checked={accepted} onChange={setAccepted}
-      busy={sending} onConfirm={()=>void submit()}
-      onCancel={()=>{setSelected(null);setAccepted(false);}}/>}
+      <p className="text-sm text-muted-foreground">
+        Áp dụng cho toàn bộ {selected.allocationCount} khoản nợ nguồn hiện còn khả dụng.
+      </p>
+      <Consent kind="batch" checked={accepted} onChange={setAccepted}
+        title={cashActionCopy(selected.debtorId,selected.creditorId,userId).label}
+        description={cashActionCopy(selected.debtorId,selected.creditorId,userId).explanation}
+        busy={sending} onConfirm={()=>void submit()}
+        onCancel={()=>{setSelected(null);setAccepted(false);}}/>
+    </div>}
   </section>;
 }
 
@@ -452,7 +594,6 @@ export function SettlementCycleFinancePanel({groupId,cycleId,
   counterparts:Member[];requestedEnabled:boolean;bilateralEnabled:boolean;
   financialEngineEnabled:boolean;mode?:"bilateral"|"cash";
 }){
-  const [other,setOther]=useState(counterparts[0]?.id??"");
   const people=[{id:currentUserId,name:currentUserName},...counterparts];
   const financeReady=financialEngineEnabled&&requestedEnabled;
   return <section aria-labelledby="bilateral-cycle-heading"
@@ -469,23 +610,11 @@ export function SettlementCycleFinancePanel({groupId,cycleId,
     {mode==="bilateral"&&!bilateralEnabled&&<p className="rounded-xl bg-secondary p-3 text-sm">
       Nhóm chưa bật bù nợ.
     </p>}
-    {mode==="bilateral"&&bilateralEnabled&&counterparts.length>0&&<>
-      <label className="block space-y-2 text-sm font-semibold" htmlFor="cycle-pair-member">
-        Chọn người
-      </label>
-      {/* WebKit/iOS was 25px in RR-002; enforce a 48px touch target
-          even if utility styles load late or a native select style wins. */}
-      <select id="cycle-pair-member" value={other} onChange={e=>setOther(e.target.value)}
-        style={{height:"48px",minHeight:"48px"}}
-        className="h-12 min-h-12 w-full rounded-xl border bg-background px-3 text-base">
-        {counterparts.map(member=><option key={member.id} value={member.id}>
-          {member.name}
-        </option>)}
-      </select>
-      {other&&<BilateralWorkbench key={other} groupId={groupId}
-        cycleId={cycleId} me={currentUserId} other={other}
-        people={people} enabled={financeReady&&bilateralEnabled}/>}
-    </>}
+    {mode==="bilateral"&&bilateralEnabled&&counterparts.length>0&&
+      <BilateralPairList groupId={groupId} cycleId={cycleId} me={currentUserId}
+        counterparts={counterparts} people={people}
+        enabled={financeReady&&bilateralEnabled}/>}
+
     {mode==="bilateral"&&bilateralEnabled&&counterparts.length===0&&
       <p className="text-sm text-muted-foreground">
         Cần thêm một thành viên khác để xem công nợ hai chiều.
