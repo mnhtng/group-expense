@@ -191,11 +191,11 @@ async function transaction<T>(work:(client:PoolClient)=>Promise<T>):Promise<T>{
   }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
 }
 export async function previewBilateralResidual(groupId:string,cycleId:string,
-  applicationId:string,actorId:string){
+  applicationId:string,actorId:string,externalClient?:PoolClient){
   ids(groupId,cycleId,applicationId);
-  const client=await pool.connect();
+  const client=externalClient??await pool.connect();
   try{
-    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    if(!externalClient)await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     await activeGroup(client,groupId,actorId,false);
     const app=await applied(client,groupId,cycleId,applicationId,actorId);
     await cycle(client,groupId,cycleId,false);
@@ -204,12 +204,12 @@ export async function previewBilateralResidual(groupId:string,cycleId:string,
     const featureEnabled=await enabled(client,groupId);
     const access=await readEngineAccess(client,groupId);
     result.preview.financialEngineEnabled=access.bilateralEnabled;
-    await client.query("COMMIT");
+    if(!externalClient)await client.query("COMMIT");
     return {preview:result.preview,history:attempts,
       financialEngineEnabled:access.bilateralEnabled,
       writable:access.bilateralEnabled||(isResidualCashTestWritable()&&featureEnabled)};
-  }catch(e){await client.query("ROLLBACK");throw e;}
-  finally{client.release();}
+  }catch(e){if(!externalClient)await client.query("ROLLBACK");throw e;}
+  finally{if(!externalClient)client.release();}
 }
 
 /** Residual money is never netted through a third party; one fully
