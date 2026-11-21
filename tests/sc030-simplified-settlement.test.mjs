@@ -49,6 +49,18 @@ test("auto close executes only AFTER confirmed cash or committed noncash, not pe
   assert.match(sql,/origin='automatic' AND actor_id IS NULL AND triggered_by IS NOT NULL/);
   assert.doesNotMatch(sql,/DROP TABLE|TRUNCATE|DELETE FROM/i);
 });
+test("completed setoff list badge is grounded in a committed noncash document",()=>{
+  const preview=read("lib/settlement-cycles/proposals.ts");
+  const projection=read("lib/settlement-cycles/finance-ux.ts");
+  assert.match(preview,/FROM group_settlement_bilateral_applications/);
+  assert.match(preview,/completedSetoff:applied\.rows\[0\]/);
+  assert.match(projection,/hasCompletedSetoff/);
+  assert.match(projection,/preview\.completedSetoff/);
+  assert.match(ui,/aria-label="Đã bù nợ"/);
+  assert.match(ui,/Đã bù \{money\(s\.appliedSetoffMinor\)\} mỗi chiều/);
+  assert.match(ui,/Còn \{name\(s\.debtorId\)\} trả/);
+  assert.match(ui,/if\(aDone!==bDone\)return aDone\?1:-1/);
+});
 test("mobile UI remains readable, no technical identifiers or duplicate explanatory panels",()=>{
   assert.match(ui,/function BilateralPairList/);
   assert.match(ui,/counterparts\[cursor\+\+\]/);
