@@ -109,7 +109,7 @@ export async function getBilateralApplication(groupId:string,cycleId:string,
  * Pair and source hashes are compared to live money before any insert.
  */
 export async function applyBilateralNoncash(groupId:string,cycleId:string,
-  proposalId:string,actorId:string,input:ApplyBilateralInput){
+  proposalId:string,actorId:string,input:ApplyBilateralInput,externalClient?:PoolClient){
   ids(groupId,cycleId,proposalId);
   if(!input||!Number.isSafeInteger(input.expectedVersion)||
     input.expectedVersion<1||!SHA.test(input.expectedFingerprint)||
@@ -121,7 +121,7 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
   ])).digest("hex");
 
   try{
-    return await transact(async client=>{
+    const work=async (client:PoolClient)=>{
       // Exactly the original lock order: GROUP -> CYCLE -> HEAD/PROPOSAL
       // -> immutable original obligations. The group lock serializes
       // settlement cash confirmations and source reservation changes.
@@ -232,7 +232,8 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
       return {application:toDocument(saved.rows[0]),alreadyApplied:false,
         autoCompletedCount:autoCompleted.length,
         financialEngineEnabled:access.bilateralEnabled};
-    });
+    };
+    return await (externalClient?work(externalClient):transact(work));
   }catch(e){
     if(e instanceof SettlementError)throw e;
     if(e&&typeof e==="object"&&"code" in e&&
