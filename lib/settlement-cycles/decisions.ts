@@ -23,7 +23,7 @@ export type DecisionStatus="pending"|"partially_approved"|"agreed"|
 type Proposal={
   id:string;groupId:string;cycleId:string;partyLow:string;partyHigh:string;
   version:number;sourceFingerprint:string;snapshotFingerprint:string;
-  createdAt:Date;headId:string|null;
+  createdAt:Date;headId:string|null;flowOrigin:string;
 };
 type EventRow={
   id:string;eventType:string;actorId:string|null;requestKey:string;
@@ -53,7 +53,8 @@ async function selectProposal(client:PoolClient,groupId:string,cycleId:string,
       p.party_low AS "partyLow",p.party_high AS "partyHigh",
       p.version,p.source_fingerprint AS "sourceFingerprint",
       p.snapshot_fingerprint AS "snapshotFingerprint",
-      p.created_at AS "createdAt",h.current_proposal_id AS "headId"
+      p.created_at AS "createdAt",p.flow_origin AS "flowOrigin",
+      h.current_proposal_id AS "headId"
     FROM group_settlement_bilateral_proposals p
     JOIN group_settlement_bilateral_heads h
       ON h.group_id=p.group_id AND h.cycle_id=p.cycle_id
@@ -147,6 +148,10 @@ export async function getBilateralDecisions(groupId:string,cycleId:string,
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     await activeGroup(client,groupId,actorId,false);
     const p=await selectProposal(client,groupId,cycleId,proposalId,false);
+    // Public legacy approval API must NEVER alter a paired-cash intent:
+    // the two cash attestations are the only accepted consent path.
+    if(p.flowOrigin==="paired_cash"&&!externalClient)
+      throw error(409,"Khoản trả chỉ được xác nhận tại màn thanh toán.");
     if(actorId!==p.partyLow&&actorId!==p.partyHigh)
       throw error(403,"Chỉ hai bên được xem xác nhận bù trừ.");
     const model=await readModel(client,p,actorId,false);
