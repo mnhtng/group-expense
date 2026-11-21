@@ -11,6 +11,7 @@ type Direction={
 type BilateralPreview={
   calculation:{offsetMinor:string;aOwesB:Direction;bOwesA:Direction};
   current:{id:string}|null;
+  completedSetoff?:{amountMinor:string;appliedAt:string}|null;
 };
 export function summarizeBilateralPreview(preview:BilateralPreview){
   const {aOwesB:a,bOwesA:b,offsetMinor}=preview.calculation;
@@ -27,8 +28,14 @@ export function summarizeBilateralPreview(preview:BilateralPreview){
     afterAMinor:afterA.toString(),afterBMinor:afterB.toString(),
     pendingMinor:pending.toString(),residualMinor:residual.toString(),
     debtorId,creditorId,canOffset:offset>0n,
-    // Preserve access to pending/conflicted and historical proposal details.
-    show:offset>0n||pending>0n||preview.current!==null,
+    // A completed noncash application is proof; no inference from zero balance.
+    completedSetoff:preview.completedSetoff??null,
+    hasCompletedSetoff:preview.completedSetoff!==null&&preview.completedSetoff!==undefined,
+    appliedSetoffMinor:preview.completedSetoff?.amountMinor??null,
+    // Keep completed pairs visible even when there is no remaining two-way debt
+    // or a later proposal head is absent.
+    show:offset>0n||pending>0n||preview.current!==null||
+      preview.completedSetoff!==null&&preview.completedSetoff!==undefined,
   };
 }
 export function cashActionCopy(debtorId:string,creditorId:string,actorId:string){
