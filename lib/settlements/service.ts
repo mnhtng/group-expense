@@ -168,7 +168,7 @@ export async function resolveSettlement(groupId:string,settlementId:string,actor
     }
     const next: SettlementStatus=action==="confirm"?"confirmed":action==="reject"?"rejected":"cancelled";
     await client.query(
-      `UPDATE settlements SET status=$2,resolved_at=now(),resolved_by=$3 WHERE id=$1`,
+      `UPDATE settlements SET status=$2,resolved_at=clock_timestamp(),resolved_by=$3 WHERE id=$1`,
       [settlementId,next,actorId],
     );
     await client.query(
