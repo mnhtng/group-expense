@@ -8,6 +8,7 @@ import type {DecisionView} from "@/lib/settlement-cycles/decisions";
 import type {AppliedNoncashDocument} from "@/lib/settlement-cycles/applications";
 import type {ResidualPreview} from "@/lib/settlement-cycles/residual-repayments";
 import type {BatchPairPreview} from "@/lib/settlement-cycles/repayments";
+import {summarizeBilateralPreview,cashActionCopy} from "@/lib/settlement-cycles/finance-ux";
 
 type Member={id:string;name:string};
 type Attempt={id:string;status:"pending"|"confirmed"|"rejected"|"cancelled";
@@ -29,7 +30,7 @@ const commandName:Record<Command,string>={
   proposal:"Gửi đề xuất bù nợ",approve:"Đồng ý bù nợ",
   reject:"Từ chối đề xuất",revoke:"Thu hồi đồng ý",
   apply:"Bù nợ ngay",residual:"Yêu cầu trả phần còn lại",
-  batch:"Gộp tiền cần trả",
+  batch:"Yêu cầu thanh toán",
 };
 const explain:Record<Command,string>={
   proposal:"Gửi cho người này để cùng xác nhận.",
@@ -38,7 +39,7 @@ const explain:Record<Command,string>={
   revoke:"Rút lại đồng ý của bạn.",
   apply:"Giảm nợ hai chiều. Không chuyển tiền.",
   residual:"Gửi yêu cầu, chờ người kia xác nhận.",
-  batch:"Gộp các khoản cùng người, cùng chiều.",
+  batch:"Ghi nhận tiền đã trao ngoài ứng dụng; bên kia phải xác nhận trước khi công nợ giảm.",
 };
 
 async function getJson<T>(url:string,signal?:AbortSignal):Promise<T>{
@@ -64,14 +65,15 @@ async function postJson(url:string,data:Record<string,unknown>):Promise<void>{
     throw Object.assign(Error(error),{status:response.status});
   }
 }
-function Consent({kind,checked,onChange,onConfirm,onCancel,busy}:{
+function Consent({kind,checked,onChange,onConfirm,onCancel,busy,title,description}:{
   kind:Command;checked:boolean;onChange:(v:boolean)=>void;
   onConfirm:()=>void;onCancel:()=>void;busy:boolean;
+  title?:string;description?:string;
 }){
-  return <div role="group" aria-label={commandName[kind]}
+  return <div role="group" aria-label={title??commandName[kind]}
     className="space-y-3 rounded-2xl border bg-secondary/60 p-4">
-    <strong className="block text-sm">{commandName[kind]}</strong>
-    <p className="text-sm text-muted-foreground">{explain[kind]}</p>
+    <strong className="block text-sm">{title??commandName[kind]}</strong>
+    <p className="text-sm text-muted-foreground">{description??explain[kind]}</p>
     <label className="flex min-h-11 items-start gap-3 text-sm">
       <input type="checkbox" checked={checked} disabled={busy}
         onChange={e=>onChange(e.target.checked)}
@@ -89,19 +91,19 @@ function Consent({kind,checked,onChange,onConfirm,onCancel,busy}:{
     </div>
   </div>;
 }
-function DisabledAction({kind,canUse,onClick}:{
-  kind:Command;canUse:boolean;onClick:()=>void;
+function DisabledAction({kind,canUse,onClick,label}:{
+  kind:Command;canUse:boolean;onClick:()=>void;label?:string;
 }){
   return <button type="button" disabled={!canUse} onClick={onClick}
-    aria-label={commandName[kind]} title={!canUse?"Nhóm chưa mở quyết toán":undefined}
+    aria-label={label??commandName[kind]} title={!canUse?"Nhóm chưa mở quyết toán":undefined}
     className="min-h-12 w-full rounded-xl border px-3 py-2 text-sm font-semibold text-left disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
-    {commandName[kind]}
+    {label??commandName[kind]}
   </button>;
 }
 
-function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
+function BilateralWorkbench({groupId,cycleId,me,other,people,enabled,onUpdated}:{
   groupId:string;cycleId:string;me:string;other:string;
-  people:Member[];enabled:boolean;
+  people:Member[];enabled:boolean;onUpdated?:()=>void;
 }){
   const router=useRouter();
   const pairUrl=`/api/groups/${groupId}/settlement-cycle/cycles/${cycleId}`;
@@ -152,6 +154,7 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
   const decision=state?.decision;
   const app=state?.application;
   const residual=state?.residual;
+  const summary=live?summarizeBilateralPreview(live):null;
   const refresh=()=>{
     setBusy(true);setState(null);setIntent(null);setAccepted(false);
     setRevision(x=>x+1);
@@ -191,6 +194,7 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
       keyRef.current=null;
       setInfo("Đã ghi nhận yêu cầu. Đang cập nhật dữ liệu mới nhất.");
       refresh();
+      onUpdated?.();
       if(intent==="apply"||intent==="residual")router.refresh();
     }catch(e){
       if(e&&typeof e==="object"&&"status" in e&&e.status===409){
@@ -210,22 +214,63 @@ function BilateralWorkbench({groupId,cycleId,me,other,people,enabled}:{
       {live.staleCurrent&&<p role="alert" className="rounded-xl border p-3 text-sm">
         Công nợ đã thay đổi từ lúc lập đề xuất. Cần kiểm tra và lập phiên bản mới.
       </p>}
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          [`${name(live.calculation.aOwesB.debtorId)} → ${name(live.calculation.aOwesB.creditorId)}`,
-            live.calculation.aOwesB.availableBeforeMinor],
-          [`${name(live.calculation.bOwesA.debtorId)} → ${name(live.calculation.bOwesA.creditorId)}`,
-            live.calculation.bOwesA.availableBeforeMinor],
-        ].map(([label,amount])=><div key={label} className="rounded-2xl bg-secondary/60 p-3">
-          <p className="break-words text-xs text-muted-foreground">{label}</p>
-          <p className="mt-1 break-all text-sm font-semibold tabular-nums">{money(amount)}</p>
-        </div>)}
-      </div>
-      <div className="rounded-2xl border p-4 space-y-1">
-        <p className="text-xs text-muted-foreground">Có thể bù nợ (mỗi chiều)</p>
-        <strong className="block break-all text-2xl tabular-nums">{money(live.calculation.offsetMinor)}</strong>
-
-      </div>
+      <section aria-label="Dự tính trước và sau bù nợ" className="space-y-3 rounded-2xl border p-4">
+        <h3 className="text-sm font-semibold">Trước khi bù · Số dư khả dụng</h3>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            [live.calculation.aOwesB,summary?.beforeAMinor??"0"],
+            [live.calculation.bOwesA,summary?.beforeBMinor??"0"],
+          ].map(([direction,amount])=><div key={(direction as typeof live.calculation.aOwesB).debtorId}
+            className="rounded-xl bg-secondary/60 p-3">
+            <p className="text-xs text-muted-foreground">
+              {name((direction as typeof live.calculation.aOwesB).debtorId)}
+              {" → "}{name((direction as typeof live.calculation.aOwesB).creditorId)}
+            </p>
+            <p className="mt-1 font-semibold tabular-nums">
+              {money(amount as string)}
+            </p>
+          </div>)}
+        </div>
+        <div className="rounded-xl bg-secondary/60 p-3">
+          <p className="text-xs text-muted-foreground">Có thể bù nợ (mỗi chiều)</p>
+          <strong className="block break-all text-2xl tabular-nums">{money(live.calculation.offsetMinor)}</strong>
+          <p className="text-xs text-muted-foreground">Không chuyển tiền khi bù nợ.</p>
+        </div>
+        <h3 className="text-sm font-semibold">Sau khi bù · Dự kiến</h3>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            [live.calculation.aOwesB,summary?.afterAMinor??"0"],
+            [live.calculation.bOwesA,summary?.afterBMinor??"0"],
+          ].map(([direction,amount])=><div key={(direction as typeof live.calculation.aOwesB).debtorId}
+            className="rounded-xl border p-3">
+            <p className="text-xs text-muted-foreground">
+              {name((direction as typeof live.calculation.aOwesB).debtorId)}
+              {" → "}{name((direction as typeof live.calculation.aOwesB).creditorId)}
+            </p>
+            <p className="mt-1 font-semibold tabular-nums">{money(amount as string)}</p>
+          </div>)}
+        </div>
+        {summary&&summary.debtorId&&summary.creditorId&&<p className="text-sm font-semibold">
+          Chênh lệch còn lại: {name(summary.debtorId)} → {name(summary.creditorId)}
+          {" · "}{money(summary.residualMinor)}
+        </p>}
+        <p className="text-xs text-muted-foreground">
+          Đây là dự kiến trên số dư khả dụng; công nợ chưa giảm cho tới khi cả hai
+          đồng ý và có bút toán bù nợ được áp dụng.
+        </p>
+      </section>
+      {summary&&BigInt(summary.pendingMinor)>0n&&<aside role="note"
+        className="space-y-2 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+        <p className="font-semibold">Đang chờ xác nhận: {money(summary.pendingMinor)}</p>
+        <p className="text-muted-foreground">
+          Tiền đang chờ được giữ riêng, chưa được tính là đã thanh toán và không
+          thể dùng để bù nợ. Hãy xác nhận, từ chối hoặc hủy yêu cầu liên quan để
+          tính lại công nợ khả dụng.
+        </p>
+        <Link href={`/groups/${groupId}/settlements`} className="underline underline-offset-4">
+          Xem các yêu cầu chờ xác nhận
+        </Link>
+      </aside>}
       <div className="rounded-2xl border p-3">
         <button type="button" aria-expanded={showSources}
           aria-controls="cycle-noncash-source-lines"
