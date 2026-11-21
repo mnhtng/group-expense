@@ -758,6 +758,23 @@ async function scenario(engine,project,options,actors){
     // Real SC-028 gate: group OWNER enables Financial Engine via the signed
     // owner-only API. Legacy global rollout/cohort no longer grant writes.
     const activationUrl='/api/groups/'+groupId+'/settlement-cycle/owner-activation';
+    const toggleOwnerEngine=async(current,enabled)=>{
+      const payload={enabled,expectedEnabled:current.enabled,
+        expectedSettingsVersion:current.settingsVersion};
+      try{
+        return await must(owner,'PATCH',activationUrl,payload);
+      }catch(e){
+        // Only reconcile transport reset, never swallow a real HTTP 403/409.
+        // PATCH may already have COMMITTED before the response was lost.
+        if(!/ECONNRESET|ECONNREFUSED|socket hang up/.test(String(e)))throw e;
+        await sleep(400);
+        const observed=await must(owner,'GET',activationUrl);
+        if(observed.enabled===enabled)return observed;
+        if(observed.enabled!==current.enabled||
+          observed.settingsVersion!==current.settingsVersion)throw e;
+        return await must(owner,'PATCH',activationUrl,payload);
+      }
+    };
     const beforeActivation=await must(owner,'GET',activationUrl);
     assert.equal(beforeActivation.enabled,false);
     assert.equal(beforeActivation.emergencyPaused,false);
@@ -767,10 +784,7 @@ async function scenario(engine,project,options,actors){
     });
     assert.equal(forbiddenActivation.response.status(),403,
       'a regular group member cannot enable Financial Engine');
-    const activated=await must(owner,'PATCH',activationUrl,{
-      enabled:true,expectedEnabled:false,
-      expectedSettingsVersion:beforeActivation.settingsVersion,
-    });
+    const activated=await toggleOwnerEngine(beforeActivation,true);
     assert.equal(activated.enabled,true);
     try{
       const openPair=async(user,counterparty)=>{
@@ -823,10 +837,7 @@ async function scenario(engine,project,options,actors){
       // API, preserving audit and leaving global emergency controls intact.
       const current=await must(owner,'GET',activationUrl);
       if(current.enabled){
-        const disabled=await must(owner,'PATCH',activationUrl,{
-          enabled:false,expectedEnabled:true,
-          expectedSettingsVersion:current.settingsVersion,
-        });
+        const disabled=await toggleOwnerEngine(current,false);
         assert.equal(disabled.enabled,false);
       }
     }
