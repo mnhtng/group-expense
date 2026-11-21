@@ -46,6 +46,11 @@ export type BilateralProposalPreview={
   currentVersion:number;
   current:ProposalSummary|null;
   staleCurrent:boolean;
+  /** Actual immutable, committed noncash setoff; never infer completion from
+   * a proposal, two votes, or the current available amount being zero.
+   * This may exist even if the current proposal head later changes.
+   */
+  completedSetoff:{amountMinor:string;appliedAt:string}|null;
 };
 export type BilateralProposalInput={
   partyAId:string;partyBId:string;expectedVersion:number;
@@ -258,13 +263,24 @@ export async function previewBilateralProposal(groupId:string,cycleId:string,
     const writable=await enabled(client,groupId);
     const version=await state(client,groupId,cycleId,low,high,false);
     const current=await currentProposal(client,groupId,cycleId,low,high);
+    const applied=await client.query<{amountMinor:string;appliedAt:Date}>(
+      `SELECT offset_minor::text AS "amountMinor",created_at AS "appliedAt"
+       FROM group_settlement_bilateral_applications
+       WHERE group_id=$1 AND cycle_id=$2 AND party_low=$3 AND party_high=$4
+       ORDER BY created_at DESC,id DESC LIMIT 1`,
+      [groupId,cycleId,low,high],
+    );
     const live=await computed(client,groupId,cycleId,c,low,high,false);
     await client.query("COMMIT");
     return {fingerprint:live.fingerprint,snapshotFingerprint:c.snapshotFingerprint,
       calculation:live.calculation,eligibleSourceCount:live.sources.length,
       writable,currentVersion:version,
       current:current?summary(current):null,
-      staleCurrent:current!==null&&current.sourceFingerprint!==live.fingerprint};
+      staleCurrent:current!==null&&current.sourceFingerprint!==live.fingerprint,
+      completedSetoff:applied.rows[0]?{
+        amountMinor:applied.rows[0].amountMinor,
+        appliedAt:applied.rows[0].appliedAt.toISOString(),
+      }:null};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
 }
