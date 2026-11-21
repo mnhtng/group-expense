@@ -52,7 +52,7 @@ async function getJson<T>(url:string,signal?:AbortSignal):Promise<T>{
       : `Không tải được dữ liệu (HTTP ${response.status}).`);
   return body as T;
 }
-async function postJson(url:string,data:Record<string,unknown>):Promise<void>{
+async function postJson<T=unknown>(url:string,data:Record<string,unknown>):Promise<T>{
   const response=await fetch(url,{method:"POST",credentials:"same-origin",
     cache:"no-store",headers:{"content-type":"application/json"},
     body:JSON.stringify(data)});
@@ -64,6 +64,7 @@ async function postJson(url:string,data:Record<string,unknown>):Promise<void>{
       : `Thao tác bị từ chối (HTTP ${response.status}).`;
     throw Object.assign(Error(error),{status:response.status});
   }
+  return body as T;
 }
 function Consent({kind,checked,onChange,onConfirm,onCancel,busy,title,description}:{
   kind:Command;checked:boolean;onChange:(v:boolean)=>void;
@@ -512,6 +513,7 @@ function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
   const [accepted,setAccepted]=useState(false);
   const [sending,setSending]=useState(false);
   const [revision,setRevision]=useState(0);
+  const [lastCreatedId,setLastCreatedId]=useState<string|null>(null);
   const key=useRef<string|null>(null);
   const name=(id:string)=>people.find(p=>p.id===id)?.name??"Thành viên";
   useEffect(()=>{
@@ -528,9 +530,10 @@ function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
     if(!key.current)key.current=crypto.randomUUID();
     setSending(true);setError("");
     try{
-      await postJson(url,{expectedCycleVersion:3,requestKey:key.current,
-        debtorId:selected.debtorId,creditorId:selected.creditorId,
-        expectedFingerprint:selected.fingerprint});
+      const response=await postJson<{id:string}>(url,{expectedCycleVersion:3,
+        requestKey:key.current,debtorId:selected.debtorId,
+        creditorId:selected.creditorId,expectedFingerprint:selected.fingerprint});
+      setLastCreatedId(response.id);
       key.current=null;setSelected(null);setAccepted(false);
       setLoading(true);setRevision(x=>x+1);
       router.refresh();
@@ -549,9 +552,25 @@ function BatchCashPanel({groupId,cycleId,userId,people,enabled}:{
     </p>
     {loading&&<p role="status" className="text-sm">Đang tải yêu cầu thanh toán…</p>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
-    {!loading&&pairs.length===0&&<p className="text-sm text-muted-foreground">
-      Không có khoản khả dụng để yêu cầu thanh toán trong kỳ này.
-    </p>}
+    {!loading&&pairs.length===0&&<div className="space-y-2 rounded-xl bg-secondary p-3 text-sm">
+      <p>Không còn khoản khả dụng để tạo yêu cầu mới trong kỳ này.</p>
+      <p className="text-muted-foreground">
+        Nếu có tiền đang chờ xác nhận, hãy xử lý yêu cầu hiện tại trước khi tiếp tục.
+      </p>
+      <Link href={`/groups/${groupId}/settlements`}
+        className="inline-flex min-h-11 items-center underline underline-offset-4">
+        Xem lịch sử và yêu cầu chờ
+      </Link>
+    </div>}
+    {lastCreatedId&&<div role="status"
+      className="space-y-2 rounded-xl bg-secondary p-3 text-sm">
+      <p className="font-semibold">Đã tạo yêu cầu thanh toán · Chờ bên kia xác nhận</p>
+      <p>Công nợ chưa giảm. Việc tạo yêu cầu không thực hiện chuyển tiền.</p>
+      <Link href={`/groups/${groupId}/settlements/${lastCreatedId}`}
+        className="inline-flex min-h-11 items-center underline underline-offset-4">
+        Xem yêu cầu vừa tạo
+      </Link>
+    </div>}
     {!loading&&pairs.map(p=>{
       const copy=cashActionCopy(p.debtorId,p.creditorId,userId);
       const opposite=pairs.some(other=>other.debtorId===p.creditorId&&
