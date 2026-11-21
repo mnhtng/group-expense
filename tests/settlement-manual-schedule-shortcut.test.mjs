@@ -50,6 +50,6 @@ test("Schedule navigation makes effective calendar versus disabled financial wri
   assert.match(period,/\bonClick=\{createManual\}/);
   assert.match(period,/Chuyển sang chờ kiểm tra/);
   assert.match(period,/Xác nhận xóa kỳ/);
-  assert.match(read("lib/settlement-cycles/engine.ts"),/reason=!row\?\.enabled\?"paused"/);
+  assert.match(read("lib/settlement-cycles/engine.ts"),/reason=!row\|\|row\.emergency_paused\?"paused"/);
   assert.doesNotMatch(schedule,/method:"POST"|method:"DELETE"|method:"PUT"/);
 });
