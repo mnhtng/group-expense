@@ -106,13 +106,19 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
   </div>;
   const {proposal,decision,application,residual}=data;
   const p=summarizeBilateralPreview(proposal);
+  const completed=proposal.completedSetoff;
   const active=enabled&&proposal.writable&&!proposal.staleCurrent;
   const approved=decision?.approvedBy.includes(me)??false;
   const finished=decision&&["rejected","revoked","expired","invalidated","superseded"].includes(decision.status);
-  const canAgree=!application&&p.canOffset&&active&&
+  const canAgree=!completed&&!application&&p.canOffset&&active&&
     (!proposal.current||finished||decision?.canApprove||decision?.status==="agreed");
-  const canReject=active&&Boolean(decision?.canReject)&&!application;
+  const canReject=!completed&&active&&Boolean(decision?.canReject)&&!application;
   return <div className="space-y-3 border-t pt-3">
+    {completed&&<p className="text-sm text-muted-foreground">
+      Đã bù {money(completed.amountMinor)} mỗi chiều
+      {" · "}{new Intl.DateTimeFormat("vi-VN",{day:"numeric",month:"numeric",year:"numeric"})
+        .format(new Date(completed.appliedAt))}
+    </p>}
     <div className="grid grid-cols-2 gap-2">
       <div className="rounded-xl bg-secondary/60 p-3">
         <p className="text-xs text-muted-foreground">{name(proposal.calculation.aOwesB.debtorId)} → {name(proposal.calculation.aOwesB.creditorId)}</p>
@@ -124,8 +130,8 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
       </div>
     </div>
     <div className="flex items-center justify-between gap-3">
-      <p className="text-sm">Bù mỗi chiều</p>
-      <strong className="text-lg tabular-nums">{money(p.offsetMinor)}</strong>
+      <p className="text-sm">{completed?"Đã bù mỗi chiều":"Có thể bù mỗi chiều"}</p>
+      <strong className="text-lg tabular-nums">{money(completed?.amountMinor??p.offsetMinor)}</strong>
     </div>
     {p.debtorId&&p.creditorId&&<div className="flex items-center justify-between gap-3 rounded-xl bg-secondary/60 p-3">
       <p className="text-sm">Còn {name(p.debtorId)} trả {name(p.creditorId)}</p>
@@ -138,13 +144,13 @@ function PairDetail({groupId,cycleId,me,member,people,enabled,onUpdated}:{
     {proposal.staleCurrent&&<p role="alert" className="text-sm text-destructive">
       Công nợ đã thay đổi. Tải lại để kiểm tra.
     </p>}
-    {application?<p className="text-sm font-medium text-money-in">Đã bù nợ thành công</p>
+    {completed?null
       :approved&&decision?.status==="partially_approved"
         ?<p className="text-sm font-medium">Bạn đã đồng ý · Chờ {member.name}</p>
         :decision?.status==="agreed"
           ?<p className="text-sm font-medium">Đã đồng ý hai bên · Đang hoàn tất bù nợ</p>
           :finished?<p className="text-sm text-muted-foreground">Lần bù trước đã kết thúc</p>:null}
-    {!application&&<div className="flex flex-wrap gap-2">
+    {!completed&&!application&&<div className="flex flex-wrap gap-2">
       {canAgree&&<button type="button" disabled={saving}
         onClick={()=>void run("agree")}
         className="min-h-12 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
@@ -213,6 +219,9 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
       .then(()=>{
         if(ctrl.signal.aborted)return;
         found.sort((a,b)=>{
+          // Keep unfinished pairs first, committed noncash entries afterwards.
+          const aDone=Boolean(a.preview.completedSetoff),bDone=Boolean(b.preview.completedSetoff);
+          if(aDone!==bDone)return aDone?1:-1;
           const aa=BigInt(a.preview.calculation.offsetMinor),
                 bb=BigInt(b.preview.calculation.offsetMinor);
           return aa>bb?-1:aa<bb?1:a.member.name.localeCompare(b.member.name,"vi");
@@ -241,13 +250,23 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
     </p>}
     {!busy&&visible.map(({member,preview})=>{
       const s=summarizeBilateralPreview(preview),other=member.id,open=selected===other;
-      return <article key={other} className="rounded-2xl border bg-card p-3">
+      return <article key={other}
+        className={"rounded-2xl border p-3 "+(s.hasCompletedSetoff?"bg-secondary/20":"bg-card")}>
         <button type="button" aria-expanded={open}
           aria-controls={"bilateral-pair-"+other}
           onClick={()=>setSelected(v=>v===other?null:other)}
           className="min-h-12 w-full space-y-1 text-left">
-          <span className="block font-semibold">{name(me)} ↔ {member.name}</span>
-          {s.canOffset&&<span className="block text-base font-semibold tabular-nums">
+          <span className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold">{name(me)} ↔ {member.name}</span>
+            {s.hasCompletedSetoff&&<span aria-label="Đã bù nợ"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+              <span aria-hidden="true">✓</span> Đã bù
+            </span>}
+          </span>
+          {s.hasCompletedSetoff&&s.appliedSetoffMinor&&<span className="block text-sm tabular-nums">
+            Đã bù {money(s.appliedSetoffMinor)} mỗi chiều
+          </span>}
+          {!s.hasCompletedSetoff&&s.canOffset&&<span className="block text-base font-semibold tabular-nums">
             Bù {money(s.offsetMinor)} mỗi chiều
           </span>}
           {s.debtorId&&s.creditorId&&<span className="block text-sm text-muted-foreground">
@@ -256,7 +275,9 @@ function BilateralPairList({groupId,cycleId,me,counterparts,people,enabled}:{
           {BigInt(s.pendingMinor)>0n&&<span className="block text-xs text-amber-700 dark:text-amber-300">
             {money(s.pendingMinor)} đang chờ
           </span>}
-          <span className="block text-xs font-medium text-primary">{open?"Thu gọn":"Xem và xác nhận"}</span>
+          <span className="block text-xs font-medium text-primary">
+            {open?"Thu gọn":s.hasCompletedSetoff?"Xem chi tiết":"Xem và xác nhận"}
+          </span>
         </button>
         {open&&<div id={"bilateral-pair-"+other}>
           <PairDetail key={other} groupId={groupId} cycleId={cycleId}
