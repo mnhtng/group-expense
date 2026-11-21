@@ -78,6 +78,35 @@ test("SC031: immutable locked snapshot plus separate exactly-once completion",as
     await rejects("TRUNCATE group_settlement_cycle_completions");
     assert.equal((await c.query(`SELECT count(*)::int AS n
       FROM group_settlement_cycle_completions WHERE cycle_id=$1`,[cycle])).rows[0].n,1);
+
+    // Backfill is a truthful recognition timestamp, not a fabricated
+    // historical actor or a mutation of the immutable cycle snapshot.
+    const historic=randomUUID();
+    await c.query(`INSERT INTO group_settlement_cycles
+      (id,group_id,schedule_revision_id,source,period_start,period_end,
+       time_zone,start_at,end_at,created_by,request_key)
+      VALUES($1,$2,$3,'manual','2026-08-08','2026-08-15','UTC',
+       '2026-08-08T00:00:00Z','2026-08-15T00:00:00Z',$4,$5)`,
+      [historic,group,schedule,actor,randomUUID()]);
+    await c.query(`UPDATE group_settlement_cycles
+      SET state='review',version=2,reviewed_at=clock_timestamp(),
+          updated_at=clock_timestamp() WHERE id=$1`,[historic]);
+    await c.query(`INSERT INTO group_settlement_cycle_snapshots
+      (cycle_id,group_id,request_key,locked_by,cutoff_at,
+       expense_count,obligation_count,original_minor,confirmed_cash_minor,
+       pending_cash_minor,outstanding_minor,available_minor,fingerprint)
+      VALUES($1,$2,$3,$4,clock_timestamp(),0,0,0,0,0,0,0,$5)`,
+      [historic,group,randomUUID(),actor,"b".repeat(64)]);
+    await c.query(`UPDATE group_settlement_cycles SET state='locked',version=3,
+       locked_at=clock_timestamp(),locked_by=$2,updated_at=clock_timestamp()
+       WHERE id=$1`,[historic,actor]);
+    const backfill=await c.query(`INSERT INTO group_settlement_cycle_completions
+      (cycle_id,group_id,origin,triggered_by)
+      VALUES($1,$2,'backfill',NULL)
+      RETURNING origin,triggered_by,completed_at`,[historic,group]);
+    assert.equal(backfill.rows[0].origin,"backfill");
+    assert.equal(backfill.rows[0].triggered_by,null);
+    assert.ok(backfill.rows[0].completed_at instanceof Date);
   }finally{
     await c.query("ROLLBACK").catch(()=>{});
     c.release();
