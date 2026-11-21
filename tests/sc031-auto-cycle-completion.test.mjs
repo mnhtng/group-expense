@@ -18,7 +18,7 @@ test("completion is append-only, not a new state of the immutable LOCKED snapsho
   assert.doesNotMatch(sql,/ALTER TABLE group_settlement_cycles[\s\S]*?ADD COLUMN state/);
   assert.match(cycle,/settlementCompletedAt/);
   assert.match(cycle,/state:CycleState/);
-  assert.match(history,/cycle\.settlementCompletedAt\?"Hoàn tất"/);
+  assert.match(history,/cycle\.settlementCompletedAt\?"✓ Hoàn tất"/);
 });
 
 test("SQL readiness checks complete frozen source, cash, disputes and incomplete invoices",()=>{
