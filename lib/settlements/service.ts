@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { pool } from "@/lib/db/pool";
 import type { PoolClient } from "pg";
 import { notifySettlement } from "@/lib/notifications/service";
+import { autoCompleteEligibleExpenses } from "@/lib/expenses/service";
 
 export type SettlementStatus = "pending" | "confirmed" | "rejected" | "cancelled";
 export type SettlementAllocationInput = { obligationId: string; amountMinor: string };
@@ -177,7 +178,22 @@ export async function resolveSettlement(groupId:string,settlementId:string,actor
     );
     await notifySettlement(client,settlementId,actorId,`settlement_${next}` as
       "settlement_confirmed"|"settlement_rejected"|"settlement_cancelled");
-    return {id:settlementId,status:next};
+    // Cash exists only after BOTH real counterparties have acknowledged.
+    // Finalize affected invoices in this SAME transaction when no other
+    // original obligations remain. Reject/cancel never auto-finalize.
+    let autoCompleted:string[]=[];
+    if(next==="confirmed"){
+      const sources=await client.query<{expense_id:string}>(
+        `SELECT DISTINCT o.expense_id FROM settlement_allocations a
+         JOIN obligations o ON o.id=a.obligation_id AND o.group_id=a.group_id
+         WHERE a.settlement_id=$1 AND a.group_id=$2 ORDER BY o.expense_id`,
+        [settlementId,groupId],
+      );
+      autoCompleted=await autoCompleteEligibleExpenses(
+        client,groupId,sources.rows.map(r=>r.expense_id),actorId,
+      );
+    }
+    return {id:settlementId,status:next,autoCompletedCount:autoCompleted.length};
   });
 }
 
