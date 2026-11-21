@@ -110,8 +110,8 @@ test("finance UI discovers all counterparts, stays actor-scoped, and preserves s
   assert.match(view,/partyAId:me,partyBId:member\.id/);
   assert.match(view,/summarizeBilateralPreview/);
   assert.match(view,/pendingMinor/);
-  assert.match(view,/beforeAMinor/);
-  assert.match(view,/beforeBMinor/);
+  assert.match(view,/BilateralPairList/);
+  assert.match(view,/Cấn trừ/);
   assert.match(view,/residualMinor/);
   assert.match(view,/\/settlements/);
   assert.match(view,/cashActionCopy/);
