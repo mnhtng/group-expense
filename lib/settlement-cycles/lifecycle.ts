@@ -272,19 +272,30 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
     if(schedule.version!==input.expectedScheduleVersion)
       throw error(409,"Cấu hình lịch đã thay đổi, hãy tải lại.");
     const now=Date.now();
-    const {active,next}=selected(schedule.rules,now);
-    if(!active||active.frequency!=="manual")
-      throw error(409,"Chỉ có thể tạo kỳ thủ công khi lịch thủ công đã có hiệu lực.");
-    if(input.startDate<active.anchorDate)
-      throw error(409,"Ngày bắt đầu nằm trước lịch hiện hành.");
-    const startAt=localMidnightInstant(input.startDate,active.timeZone);
-    const endAt=localMidnightInstant(input.endDate,active.timeZone);
-    // Explicit manual backfill can predate opt-in. Cron stays epoch-bound.
+    // A past MANUAL revision remains valid for an unfilled historic interval,
+    // even if the group now uses WEEKLY/MONTHLY scheduling. The selected
+    // revision must own the requested start; its next revision is a hard
+    // upper boundary. Recurring periods remain reserved for cron.
+    const index=schedule.rules.findLastIndex((rule,i)=>{
+      if(rule.frequency!=="manual"||rule.effectiveAt.getTime()>now||
+         input.startDate<rule.anchorDate)return false;
+      const start=Date.parse(localMidnightInstant(input.startDate,rule.timeZone));
+      const next=schedule.rules[i+1];
+      return start>=rule.effectiveAt.getTime()&&
+        (!next||start<next.effectiveAt.getTime());
+    });
+    if(index<0)
+      throw error(409,"Ngày bắt đầu không thuộc khoảng lịch Thủ công đã có hiệu lực.");
+    const rule=schedule.rules[index],next=schedule.rules[index+1]??null;
+    const startAt=localMidnightInstant(input.startDate,rule.timeZone);
+    const endAt=localMidnightInstant(input.endDate,rule.timeZone);
+    // Explicit historic manual backfill can predate opt-in. Cron stays
+    // epoch-bound; manual intervals must never cross a recurring cutover.
     if(Date.parse(startAt)>now)
       throw error(409,"Kỳ thủ công không được bắt đầu trong tương lai.");
     if(next&&Date.parse(endAt)>next.effectiveAt.getTime())
       throw error(409,"Kỳ thủ công không được cắt qua lần đổi lịch tiếp theo.");
-    return publicCycle(await addCycle(client,groupId,active,"manual",
+    return publicCycle(await addCycle(client,groupId,rule,"manual",
       input.startDate,input.endDate,actorId,input.requestKey));
   });
 }
