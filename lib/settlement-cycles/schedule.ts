@@ -13,8 +13,13 @@ export type ScheduleRevision={
   id:string;version:number;frequency:CycleFrequency;timeZone:string;
   anchorDate:string;effectiveAt:string;
 };
+export type ManualScheduleWindow={
+  startDate:string;
+  endDateExclusive:string|null;
+};
 export type ScheduleView={
   version:number;current:ScheduleRevision|null;pending:ScheduleRevision|null;
+  manualWindows:ManualScheduleWindow[];
   canManage:boolean;effectiveEnabled:boolean;
 };
 export type ScheduleInput={
@@ -80,11 +85,23 @@ export async function getSettlementSchedule(groupId:string,actorId:string):Promi
       "SELECT version FROM group_settlement_schedule_heads WHERE group_id=$1",[groupId]),
     pool.query<DbRevision>(q,[groupId]),
   ]);
-  const periods=split(revs.rows,Date.now());
+  const now=Date.now();
+  const periods=split(revs.rows,now);
+  // Historic MANUAL segments remain available for filling gaps after a
+  // group switches to a recurring schedule. Never expose recurring segments
+  // as writable manual dates; a later cron run must still own those periods.
+  const manualWindows:ManualScheduleWindow[]=revs.rows.flatMap((rule,index)=>{
+    if(rule.frequency!=="manual"||rule.effectiveAt.getTime()>now)return [];
+    return [{
+      startDate:rule.anchorDate,
+      endDateExclusive:revs.rows[index+1]?.anchorDate??null,
+    }];
+  });
   return {
     version:head.rows[0]?.version??0,
     current:periods.current?toView(periods.current):null,
     pending:periods.pending?toView(periods.pending):null,
+    manualWindows,
     canManage:permissions.canManage,
     effectiveEnabled:permissions.effectiveEnabled,
   };
