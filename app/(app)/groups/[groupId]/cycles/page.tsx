@@ -5,6 +5,7 @@ import {getMemberRole,getGroupDetails} from "@/lib/groups/service";
 import {getSettlementSettings} from "@/lib/settlement-cycles/settings";
 import {listSettlementCycleHistoryPage} from "@/lib/settlement-cycles/lifecycle";
 import {formatDateDMY} from "@/lib/date-format";
+import {addCalendarDays} from "@/lib/settlement-cycles/calendar";
 
 const stateText={open:"Đang mở",review:"Chờ kiểm tra",locked:"Đã khóa sổ"};
 export default async function GroupCyclesPage({params,searchParams}:{
@@ -50,7 +51,7 @@ export default async function GroupCyclesPage({params,searchParams}:{
         className="flex min-h-24 items-center justify-between gap-3 rounded-3xl border bg-card p-4 transition-colors hover:bg-secondary/40 active:bg-secondary/60 sm:p-5">
         <div className="min-w-0 space-y-1.5">
           <h3 className="text-base font-semibold">
-            {formatDateDMY(cycle.periodStart)} – trước {formatDateDMY(cycle.periodEnd)}
+            {formatDateDMY(cycle.periodStart)} – {formatDateDMY(addCalendarDays(cycle.periodEnd,-1))}
           </h3>
           <p className="text-xs text-muted-foreground">
             {cycle.source==="manual"?"Kỳ thủ công":"Theo lịch"} · {cycle.timeZone}
