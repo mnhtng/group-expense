@@ -59,8 +59,18 @@ export default async function CycleDetailPage({params,searchParams}:{
         </GroupedList>
       </>:selected.state==="review"?<section className="app-panel space-y-4">
         <h2 className="text-xl font-semibold">Kiểm tra số liệu</h2>
+        <p className="app-caption">
+          {!settings.requestedEnabled
+            ?"Quyết toán đang tắt. Chủ nhóm hoặc người quản lý cần bật lại trong Cài đặt quyết toán."
+            :settings.canManage
+              ?"Kiểm tra và chốt số liệu để mở Bù nợ và Trả tiền theo kỳ."
+              :"Chờ chủ nhóm hoặc người quản lý chốt số liệu để mở Bù nợ và Trả tiền theo kỳ."}
+        </p>
         <SettlementSnapshotPanel groupId={groupId} cycleId={cycleId} version={selected.version} canManage={settings.canManage&&settings.requestedEnabled} locked={false}/>
-      </section>:<ActionLink href={`/groups/${groupId}`}>Xem khoản chi</ActionLink>}
+      </section>:<section className="app-panel space-y-3">
+        <p className="app-caption">Kỳ đang mở. Bù nợ và Trả tiền theo kỳ chỉ mở sau khi kỳ được kiểm tra và chốt số liệu.</p>
+        <ActionLink href={`/groups/${groupId}`}>Xem khoản chi</ActionLink>
+      </section>}
       {settings.canManage&&<ActionLink secondary href={`/groups/${groupId}/manage?section=periods`}>Quản lý kỳ</ActionLink>}
     </>}
     {locked&&view==="sources"&&source&&<SettlementCycleSourceList groupId={groupId} cycleId={cycleId} source={source} members={[...people,{id:user.id,name:me}]}/>}
