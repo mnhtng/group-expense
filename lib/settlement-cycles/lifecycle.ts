@@ -107,6 +107,20 @@ function selected(rules:Rule[],now:number) {
   if(idx===-1)return {active:null,next:rules[0]??null};
   return {active:rules[idx],next:rules[idx+1]??null};
 }
+/** Same-timezone, already-effective MANUAL revisions belong to one historic
+ * period era. Any recurring/future/timezone revision remains a hard cutover. */
+function nextManualBoundary(rules:Rule[],index:number,now:number):Rule|null {
+  const rule=rules[index];
+  return rules.slice(index+1).find(next=>
+    rule.frequency!=="manual"||next.frequency!=="manual"||
+    next.timeZone!==rule.timeZone||next.effectiveAt.getTime()>now)??null;
+}
+async function earliestLiveExpenseDate(client:PoolClient,groupId:string) {
+  const result=await client.query<{firstDate:string|null}>(
+    `SELECT min(occurred_on)::text AS "firstDate" FROM expenses
+     WHERE group_id=$1 AND deleted_at IS NULL`,[groupId]);
+  return result.rows[0]?.firstDate??null;
+}
 async function audit(client:PoolClient,cycle:RawCycle,initiator:"member"|"cron",
   actorId:string|null,event:"created"|"review_requested",details:Record<string,unknown>) {
   await client.query(
@@ -273,10 +287,9 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
     if(schedule.version!==input.expectedScheduleVersion)
       throw error(409,"Cấu hình lịch đã thay đổi, hãy tải lại.");
     const now=Date.now();
-    // A past MANUAL revision remains valid for an unfilled historic interval,
-    // even if the group now uses WEEKLY/MONTHLY scheduling. The selected
-    // revision must own the requested start; its next revision is a hard
-    // upper boundary. Recurring periods remain reserved for cron.
+    // A past MANUAL revision stays eligible after switching to WEEKLY.
+    // Several old MANUAL revisions in the same timezone share one date
+    // interval: they need not divide a customer's historic invoice period.
     const index=schedule.rules.findLastIndex((rule,i)=>{
       if(rule.frequency!=="manual"||rule.effectiveAt.getTime()>now||
          input.startDate<rule.anchorDate)return false;
@@ -289,6 +302,16 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
     // only inside a previously cancelled SCHEDULED cycle (cron tombstone).
     // Cancelling is a separate explicit owner action; never do it implicitly.
     let chosen=index;
+    // The earliest expense can precede the group's first MANUAL schedule.
+    // Allow its explicit historic backfill without rewriting the calendar or
+    // moving the first schedule revision. Never backfill a recurring era.
+    const firstRule=schedule.rules[0];
+    if(chosen<0&&firstRule?.frequency==="manual"&&
+       firstRule.effectiveAt.getTime()<=now&&
+       input.startDate<firstRule.anchorDate){
+      const earliest=await earliestLiveExpenseDate(client,groupId);
+      if(earliest&&input.startDate>=earliest)chosen=0;
+    }
     if(chosen<0){
       const cancelled=await client.query<{revisionId:string}>(`
         SELECT schedule_revision_id AS "revisionId"
@@ -303,7 +326,10 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
     if(chosen<0)
       throw error(409,
         "Ngày đã chọn không thuộc lịch Thủ công hoặc kỳ định kỳ chưa chốt đã hủy.");
-    const rule=schedule.rules[chosen],next=schedule.rules[chosen+1]??null;
+    const rule=schedule.rules[chosen];
+    const next=rule.frequency==="manual"
+      ?nextManualBoundary(schedule.rules,chosen,now)
+      :schedule.rules[chosen+1]??null;
     const startAt=localMidnightInstant(input.startDate,rule.timeZone);
     const endAt=localMidnightInstant(input.endDate,rule.timeZone);
     if(rule.frequency!=="manual"){
@@ -316,8 +342,9 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
       if(!covered.rowCount)
         throw error(409,"Hãy hủy kỳ định kỳ chưa chốt trước khi chia thành kỳ thủ công.");
     }
-    // Explicit historic manual backfill can predate opt-in. Cron stays
-    // epoch-bound; manual intervals must never cross a recurring cutover.
+    // Explicit historic manual backfill can predate first schedule and opt-in
+    // when an earlier invoice exists. Cron stays epoch-bound and any
+    // recurring/future/timezone cutover is still a hard upper boundary.
     if(Date.parse(startAt)>now)
       throw error(409,"Kỳ thủ công không được bắt đầu trong tương lai.");
     if(next&&Date.parse(endAt)>next.effectiveAt.getTime())
@@ -404,8 +431,12 @@ export async function updateManualSettlementCycle(
     const rule=rules.rows[0];
     if(!rule)
       throw error(409,"Không tìm thấy lịch gốc của kỳ này.");
-    if(rule.frequency==="manual"&&input.startDate<rule.anchorDate)
-      throw error(409,"Ngày bắt đầu nằm trước lịch thủ công đã chọn.");
+    if(rule.frequency==="manual"&&input.startDate<rule.anchorDate){
+      const firstRule=(await versions(client,groupId)).rules[0];
+      const earliest=await earliestLiveExpenseDate(client,groupId);
+      if(firstRule?.id!==rule.id||!earliest||input.startDate<earliest)
+        throw error(409,"Ngày bắt đầu nằm trước dữ liệu chi tiêu hợp lệ của nhóm.");
+    }
     const startAt=localMidnightInstant(input.startDate,rule.timeZone);
     const endAt=localMidnightInstant(input.endDate,rule.timeZone);
     if(rule.frequency!=="manual"){
@@ -422,13 +453,12 @@ export async function updateManualSettlementCycle(
       throw error(409,"Ngày bắt đầu kỳ không được ở tương lai.");
     if(old.state==="review"&&Date.parse(endAt)>Date.now())
       throw error(409,"Kỳ Chờ kiểm tra phải có ngày kết thúc trong quá khứ.");
-    const cutover=await client.query<{start:Date|null}>(
-      `SELECT min(effective_at) AS start FROM group_settlement_schedule_revisions
-       WHERE group_id=$1 AND superseded_at IS NULL
-         AND effective_at>$2::timestamptz`,
-      [groupId,rule.effectiveAt]);
-    if(cutover.rows[0]?.start&&Date.parse(endAt)>cutover.rows[0].start.getTime())
-      throw error(409,"Khoảng kỳ cắt qua một lần đổi lịch.");
+    const effectiveRules=(await versions(client,groupId)).rules;
+    const ruleIndex=effectiveRules.findIndex(r=>r.id===rule.id);
+    const cutover=ruleIndex>=0
+      ?nextManualBoundary(effectiveRules,ruleIndex,Date.now()):null;
+    if(cutover&&Date.parse(endAt)>cutover.effectiveAt.getTime())
+      throw error(409,"Khoảng kỳ cắt qua một lần đổi lịch định kỳ, đổi múi giờ hoặc lịch tương lai.");
     const overlap=await client.query(
       `SELECT 1 FROM group_settlement_cycles
        WHERE group_id=$1 AND id<>$2 AND cancelled_at IS NULL
