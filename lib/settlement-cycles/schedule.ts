@@ -82,7 +82,7 @@ function validated(input:ScheduleInput) {
 export async function getSettlementSchedule(groupId:string,actorId:string):Promise<ScheduleView> {
   // Existing SC-001 access gate: archived/outsider groups are never disclosed.
   const permissions=await getSettlementSettings(groupId,actorId);
-  const [head,revs,replacements]=await Promise.all([
+  const [head,revs,replacements,oldestExpense]=await Promise.all([
     pool.query<{version:number}>(
       "SELECT version FROM group_settlement_schedule_heads WHERE group_id=$1",[groupId]),
     pool.query<DbRevision>(q,[groupId]),
@@ -94,17 +94,35 @@ export async function getSettlementSchedule(groupId:string,actorId:string):Promi
        FROM group_settlement_cycles
        WHERE group_id=$1 AND source='scheduled' AND cancelled_at IS NOT NULL
        ORDER BY period_start ASC`,[groupId]),
+    // A group can contain invoices dated earlier than its first saved MANUAL
+    // schedule. Preserve the owner's ability to create a historic period
+    // covering those invoices without modifying any schedule revision.
+    pool.query<{firstDate:string|null}>(
+      `SELECT min(occurred_on)::text AS "firstDate" FROM expenses
+        WHERE group_id=$1 AND deleted_at IS NULL`,[groupId]),
   ]);
   const now=Date.now();
   const periods=split(revs.rows,now);
-  // Historic MANUAL segments remain available for filling gaps after a
-  // group switches to a recurring schedule. Never expose recurring segments
-  // as writable manual dates; a later cron run must still own those periods.
+  // Merge consecutive, already-effective MANUAL revisions in the same
+  // timezone into one date window. They are calendar metadata changes, not
+  // hard boundaries that should split a user's historical expense period.
+  // Recurring cutovers and future revisions remain hard boundaries.
+  const firstExpense=oldestExpense.rows[0]?.firstDate??null;
   const manualWindows:ManualScheduleWindow[]=revs.rows.flatMap((rule,index)=>{
     if(rule.frequency!=="manual"||rule.effectiveAt.getTime()>now)return [];
+    const previous=revs.rows[index-1];
+    if(previous?.frequency==="manual"&&previous.timeZone===rule.timeZone&&
+       previous.effectiveAt.getTime()<=now)return [];
+    let next=index+1;
+    while(next<revs.rows.length&&
+      revs.rows[next].frequency==="manual"&&
+      revs.rows[next].timeZone===rule.timeZone&&
+      revs.rows[next].effectiveAt.getTime()<=now)next++;
+    const firstHistorical= index===0&&firstExpense&&firstExpense<rule.anchorDate
+      ?firstExpense:rule.anchorDate;
     return [{
-      startDate:rule.anchorDate,
-      endDateExclusive:revs.rows[index+1]?.anchorDate??null,
+      startDate:firstHistorical,
+      endDateExclusive:revs.rows[next]?.anchorDate??null,
     }];
   });
   return {

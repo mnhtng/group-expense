@@ -11,7 +11,7 @@ const cycleUi=source("components/groups/settlement-cycle-lifecycle-panel.tsx");
 test("historic manual windows are derived from persisted revision boundaries, not a new schedule",()=>{
   assert.match(calendar,/const manualWindows:ManualScheduleWindow\[\]=revs\.rows\.flatMap/);
   assert.match(calendar,/rule\.frequency!=="manual"\|\|rule\.effectiveAt\.getTime\(\)>now/);
-  assert.match(calendar,/endDateExclusive:revs\.rows\[index\+1\]\?\.anchorDate\?\?null/);
+  assert.match(calendar,/endDateExclusive:revs\.rows\[next\]\?\.anchorDate\?\?null/);
   assert.match(calendar,/manualWindows,/);
   assert.doesNotMatch(calendar,/UPDATE group_settlement_cycles/);
 });
@@ -53,4 +53,23 @@ test("a cancelled recurring slot is explicitly reusable for a manual period, nev
   assert.match(lifecycle,/Không thể sửa ra ngoài khoảng kỳ định kỳ đã hủy/);
   assert.match(lifecycle,/tstzrange\(start_at,end_at,'\[\)'\)/);
   assert.doesNotMatch(cycleUi,/windowIndex|chooseWindow/);
+});
+
+test("historic invoices predate the first manual schedule and consecutive revisions share one time-zone window",()=>{
+  assert.match(calendar,/SELECT min\(occurred_on\)::text AS "firstDate" FROM expenses/);
+  assert.match(calendar,/deleted_at IS NULL/);
+  assert.match(calendar,/previous\?\.frequency==="manual"/);
+  assert.match(calendar,/previous\.timeZone===rule\.timeZone/);
+  assert.match(calendar,/const firstHistorical=/);
+  assert.match(calendar,/index===0&&firstExpense&&firstExpense<rule\.anchorDate/);
+  assert.match(lifecycle,/async function earliestLiveExpenseDate/);
+  assert.match(lifecycle,/chosen<0&&firstRule\?\.frequency==="manual"/);
+  assert.match(lifecycle,/input\.startDate>=earliest\)chosen=0/);
+  assert.match(lifecycle,/nextManualBoundary\(schedule\.rules,chosen,now\)/);
+  assert.match(lifecycle,/next\.frequency!=="manual"/);
+  assert.match(lifecycle,/next\.timeZone!==rule\.timeZone/);
+  assert.match(lifecycle,/next\.effectiveAt\.getTime\(\)>now/);
+  assert.match(lifecycle,/Date\.parse\(endAt\)>next\.effectiveAt\.getTime\(\)/);
+  assert.match(lifecycle,/tstzrange\(start_at,end_at,'\[\)'\)/);
+  // Read-only window derivation is verified by its SELECT query above.
 });
