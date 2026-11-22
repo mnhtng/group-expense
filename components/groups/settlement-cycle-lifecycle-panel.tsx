@@ -23,7 +23,11 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
     try{return currentLocalDate(active?.timeZone??"Asia/Ho_Chi_Minh");}
     catch{return "";}
   })();
-  const manualWindows=schedule.manualWindows;
+  // Cancelled scheduled slots are explicit manager-approved exceptions to
+  // recurring dates. Keep the user-facing form date-only for both cases.
+  const manualWindows=[...schedule.manualWindows,
+    ...schedule.replacementWindows].sort((a,b)=>
+    a.startDate.localeCompare(b.startDate));
   // Default to the latest unfilled day in the most recent historic manual
   // segment. A weekly schedule may still be active after this window ends.
   const guessStart=(index:number)=>{
@@ -149,18 +153,21 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
           {canCreateManual&&<div id="manual-cycle-form" className="scroll-mt-20 space-y-3 rounded-2xl border p-3">
             <p className="text-sm font-medium">Tạo kỳ thủ công</p>
             {!manualActive&&<p className="text-xs text-muted-foreground">
-              Chỉ tạo thêm kỳ thuộc lịch Thủ công cũ. Lịch định kỳ đang hoạt động
-              vẫn được giữ nguyên, và không thể tạo kỳ lấn sang lịch định kỳ.
+              Có thể tạo kỳ trong khoảng lịch Thủ công cũ hoặc trong một kỳ
+              định kỳ chưa chốt đã được chủ nhóm hủy. Để chia nhỏ kỳ định kỳ,
+              hãy hủy kỳ đó trước tại danh sách bên dưới. Kỳ đã chốt không thể
+              thay thế. Lịch định kỳ vẫn hoạt động như cũ.
             </p>}
 
             <DateDMYInput value={start} onChange={editStart} label="Bắt đầu kỳ"/>
             <DateDMYInput value={end} onChange={editEnd} label="Kết thúc kỳ (không bao gồm ngày này)"/>
             {start&&end&&start<end&&!validManualRange&&
               <p role="alert" className="text-xs text-destructive">
-                Ngày đã chọn nằm ngoài thời gian được phép tạo kỳ thủ công.
+                Chỉ được tạo trong lịch Thủ công hoặc khoảng kỳ định kỳ đã hủy
+                và chưa chốt. Không được vượt ranh giới lịch hay chồng kỳ đã có.
               </p>}
             <p className="text-xs text-muted-foreground">
-              Không chồng lấn các kỳ đã lưu. Tạo kỳ không phát sinh khoản chi,
+              Khoảng ngày không được chồng lấn các kỳ đang hoạt động. Tạo kỳ không phát sinh khoản chi,
               bù nợ hoặc thanh toán.
             </p>
             <button type="button" disabled={busy||!validManualRange}
