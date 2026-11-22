@@ -460,6 +460,46 @@ async function scenario(engine,project,options,actors){
       "FROM group_settlement_cycles WHERE id=$1",[weeklyCycleId]);
     assert.deepEqual(persistedTombstone.rows[0],
       {cancelled:true,source:"scheduled",state:"open"});
+    // A previously scheduled interval may be manually split ONLY after
+    // an explicit manager cancellation. The cancelled weekly slot remains
+    // a cron tombstone; all new periods are sourced as MANUAL.
+    const replacementCycle=await must(owner,"POST",cyclesApi,{
+      expectedScheduleVersion:3,requestKey:randomUUID(),
+      startDate:day(-2),endDate:day(-1),
+    },201);
+    assert.equal(replacementCycle.cycle.source,"manual");
+    assert.equal(replacementCycle.cycle.scheduleRevisionId,weeklyRevision);
+    // The server must reject date ranges spanning outside the cancelled slot.
+    const crossingSlot=await must(owner,"POST",cyclesApi,{
+      expectedScheduleVersion:3,requestKey:randomUUID(),
+      startDate:day(-2),endDate:day(5),
+    },409);
+    assert.match(crossingSlot.error,/hủy|khoảng|lịch/i);
+    // Retain overlap protection between manual replacements.
+    const duplicateReplacement=await must(owner,"POST",cyclesApi,{
+      expectedScheduleVersion:3,requestKey:randomUUID(),
+      startDate:day(-2),endDate:day(-1),
+    },409);
+    assert.match(duplicateReplacement.error,/giao nhau|chồng|trùng/i);
+    const updatedReplacement=await must(owner,"PATCH",
+      cyclesApi+"/"+replacementCycle.cycle.id,{
+        expectedVersion:1,expectedDraftRevision:0,
+        startDate:day(-2),endDate:day(0),
+      });
+    assert.equal(updatedReplacement.cycle.draftRevision,1);
+    const rejectedEdit=await must(owner,"PATCH",
+      cyclesApi+"/"+replacementCycle.cycle.id,{
+        expectedVersion:1,expectedDraftRevision:1,
+        startDate:day(-2),endDate:day(5),
+      },409);
+    assert.match(rejectedEdit.error,/hủy|khoảng|lịch/i);
+    const persistedPair=await pool.query(
+      "SELECT source,cancelled_at IS NOT NULL AS cancelled "+
+      "FROM group_settlement_cycles WHERE id=ANY($1::uuid[]) ORDER BY source",
+      [[weeklyCycleId,replacementCycle.cycle.id]]);
+    assert.equal(persistedPair.rows.length,2);
+    assert.equal(persistedPair.rows.filter(x=>x.source==="scheduled"&&x.cancelled).length,1);
+    assert.equal(persistedPair.rows.filter(x=>x.source==="manual"&&!x.cancelled).length,1);
     const draft=(title,payerId,debtorId,amount)=>({
       title,occurredOn:day(-8),payerId,
       items:[{name:"Synthetic expense",quantity:1,
