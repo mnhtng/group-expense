@@ -73,3 +73,20 @@ test("historic invoices predate the first manual schedule and consecutive revisi
   assert.match(lifecycle,/tstzrange\(start_at,end_at,'\[\)'\)/);
   // Read-only window derivation is verified by its SELECT query above.
 });
+
+test("cycle editor accepts inclusive last day but preserves half-open API/DB intervals",()=>{
+  const list=source("app/(app)/groups/[groupId]/cycles/page.tsx");
+  const detail=source("app/(app)/groups/[groupId]/cycles/[cycleId]/page.tsx");
+  assert.equal((cycleUi.match(/label="Ngày cuối cùng của kỳ"/g)??[]).length,2);
+  assert.doesNotMatch(cycleUi,/Kết thúc kỳ \(không bao gồm ngày này\)/);
+  assert.match(cycleUi,/value=\{end\?addCalendarDays\(end,-1\):""\}/);
+  assert.match(cycleUi,/setEnd\(value\?addCalendarDays\(value,1\):""\)/);
+  assert.match(cycleUi,/value=\{editing\.end\?addCalendarDays\(editing\.end,-1\):""\}/);
+  assert.match(cycleUi,/\.\.\.old,end:value\?addCalendarDays\(value,1\):""/);
+  assert.match(cycleUi,/requestKey:keyRef\.current,startDate:start,endDate:end/);
+  assert.match(cycleUi,/startDate:editing!\.start,endDate:editing!\.end/);
+  for(const content of [cycleUi,list,detail]){
+    assert.match(content,/formatDateDMY\(addCalendarDays\((?:cycle|selected)\.periodEnd,-1\)\)/);
+    assert.doesNotMatch(content,/– trước \{formatDateDMY\(/);
+  }
+});

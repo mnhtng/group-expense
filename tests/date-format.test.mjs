@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   formatDateDMY, formatDateTimeDMY, parseDateDMY, todayVietnamISO,
 } from "../lib/date-format.ts";
+import {addCalendarDays} from "../lib/settlement-cycles/calendar.ts";
 
 test("date-only values are always shown as d/m/yyyy, regardless of timezone", () => {
   assert.equal(formatDateDMY("2026-11-04"), "4/11/2026");
@@ -57,4 +58,19 @@ test("all user-facing financial and notification dates use common formatter", ()
   assert.match(input,/placeholder="d\/m\/yyyy"/);
   assert.match(input,/parseDateDMY\(raw\) \?\? ""/);
   assert.match(input,/type="date"/);
+});
+
+test("cycle inclusive last day round-trips to exclusive end across months and leap years",()=>{
+  for(const [start,lastDay,endExclusive] of [
+    ["2026-11-01","2026-11-15","2026-11-16"],
+    ["2026-12-31","2027-01-01","2027-01-02"],
+    ["2024-02-28","2024-02-29","2024-03-01"],
+    ["2026-11-15","2026-11-15","2026-11-16"],
+  ]){
+    assert.ok(start<=lastDay);
+    assert.equal(addCalendarDays(lastDay,1),endExclusive);
+    assert.equal(addCalendarDays(endExclusive,-1),lastDay);
+    assert.notEqual(formatDateDMY(endExclusive),formatDateDMY(lastDay));
+  }
+  assert.equal(formatDateDMY(addCalendarDays("2026-11-16",-1)),"15/11/2026");
 });

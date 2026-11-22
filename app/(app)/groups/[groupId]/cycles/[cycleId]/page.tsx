@@ -6,6 +6,7 @@ import {getSettlementSettings} from "@/lib/settlement-cycles/settings";
 import {getSettlementCycleById} from "@/lib/settlement-cycles/lifecycle";
 import {readCycleSources} from "@/lib/settlement-cycles/ui-read";
 import {formatDateDMY,formatDateTimeDMY} from "@/lib/date-format";
+import {addCalendarDays} from "@/lib/settlement-cycles/calendar";
 import {SettlementSnapshotPanel} from "@/components/groups/settlement-snapshot-panel";
 import {SettlementCycleFinancePanel} from "@/components/groups/settlement-cycle-finance-panel";
 import {SettlementLateInvoicePanel} from "@/components/groups/settlement-late-invoice-panel";
@@ -30,7 +31,7 @@ export default async function CycleDetailPage({params,searchParams}:{
   const panel=q.panel==="disputes"||q.panel==="history"?q.panel:"report";
   return <main className="app-page space-y-6">
     <PageHeader title={titles[view]} context={group.name} backHref={view==="overview"?`/groups/${groupId}/cycles`:base} backLabel={view==="overview"?"Các kỳ":"Quyết toán"}/>
-    <div className="space-y-1"><p className="font-medium">{formatDateDMY(selected.periodStart)} – trước {formatDateDMY(selected.periodEnd)}</p>
+    <div className="space-y-1"><p className="font-medium">{formatDateDMY(selected.periodStart)} – {formatDateDMY(addCalendarDays(selected.periodEnd,-1))}</p>
       <p className="app-caption">{selected.settlementCompletedAt?"Hoàn tất quyết toán":locked?"Đã chốt số liệu":selected.state==="review"?"Chờ kiểm tra":"Đang mở"}</p></div>
     {view==="overview"&&<>
       {locked&&source?<>

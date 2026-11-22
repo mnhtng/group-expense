@@ -15,6 +15,15 @@ Ngày kèm giờ dùng `4/11/2026 07:05` (24 giờ, múi giờ `Asia/Ho_Chi_Minh
 - Kiểm tra ngày nhuận, ngày không tồn tại và đầu/cuối ngày theo múi giờ Việt Nam.
 - Khi thêm màn hình, bộ lọc ngày hoặc form mới, dùng đúng helper và bổ sung regression tests.
 
+## Kỳ quyết toán: chọn ngày cuối cùng được tính vào kỳ
+
+- Trong form **Tạo kỳ thủ công** và **Sửa kỳ**, nhãn **Ngày cuối cùng của kỳ** có nghĩa là ngày này **được tính vào kỳ**.
+- UI hiển thị kỳ bằng hai ngày đã tính: ví dụ `1/11/2026 – 15/11/2026`.
+- API, lịch định kỳ, SQL, snapshot và sổ công nợ **vẫn dùng khoảng nửa mở** `[periodStart,periodEnd)`. Nhập ngày cuối `15/11/2026` thì UI gửi `endDate = 2026-11-16`.
+- Kỳ cũ có `period_end = 2026-11-15` phải được hiển thị `1/11/2026 – 14/11/2026` (không thay đổi dữ liệu gốc). Không có migration hoặc cập nhật lại ngày lưu trước đây.
+- Dùng `addCalendarDays(endExclusive,-1)` khi **hiển thị** và `addCalendarDays(lastIncludedDay,1)` khi **gửi tạo/sửa**; hàm thao tác trên date-only, không phụ thuộc timezone máy khách.
+- Không áp dụng chuyển đổi này cho input cấu hình **ngày bắt đầu lịch**, các báo cáo backend, hay truy vấn tài chính: chúng giữ nguyên semantics.
+
 ## Ví dụ
 
 | Dữ liệu gốc | Hiển thị |

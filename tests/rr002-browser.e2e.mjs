@@ -1037,18 +1037,56 @@ async function scenario(engine,project,options,actors){
       startDate:day(-24),endDate:day(-4),
     },409);
     assert.match(crossingRecurring.error,/cắt qua|đổi lịch|ranh giới/);
-    const preAnchor=await must(owner,"POST",historicalApi,{
-      expectedScheduleVersion:3,requestKey:randomUUID(),
-      startDate:day(-24),endDate:day(-6),
-    },201);
+    // UI accepts an INCLUSIVE last day, while the API persists exclusive end.
+    // A user selecting day(-7) must include that day's invoices: DB end day(-6).
+    const asDMY=iso=>{
+      const [year,month,dayValue]=iso.split("-");
+      return Number(dayValue)+"/"+Number(month)+"/"+year;
+    };
+    await owner.page.getByRole("textbox",{name:"Bắt đầu kỳ",exact:true})
+      .first().fill(asDMY(day(-24)));
+    await owner.page.getByRole("textbox",{name:"Ngày cuối cùng của kỳ",exact:true})
+      .first().fill(asDMY(day(-7)));
+    assert.equal(await historicForm.isEnabled(),true);
+    const createResponse=await observeBrowserPost(owner.page,historicalApi,
+      ()=>historicForm.click());
+    assert.equal(createResponse.status(),201);
+    const preAnchor=await createResponse.json();
     assert.equal(preAnchor.cycle.source,"manual");
     assert.equal(preAnchor.cycle.scheduleRevisionId,eraOne);
-    const modified=await must(owner,"PATCH",
-      historicalApi+"/"+preAnchor.cycle.id,{
-        expectedVersion:1,expectedDraftRevision:0,
-        startDate:day(-23),endDate:day(-6),
-      });
+    assert.equal(preAnchor.cycle.periodStart,day(-24));
+    assert.equal(preAnchor.cycle.periodEnd,day(-6),
+      "inclusive input must become exclusive end exactly one day later");
+    const expectedLabel=asDMY(day(-24))+" – "+asDMY(day(-7));
+    // Server mutation triggers Next.js router.refresh(). Wait for the freshly
+    // created period to appear in the management list before navigating away;
+    // otherwise WebKit can interrupt a page.goto with the late refresh.
+    await owner.page.getByText(expectedLabel,{exact:true}).waitFor();
+    await owner.page.goto(ORIGIN+"/groups/"+historicalGroup+"/cycles");
+    await owner.page.getByText(expectedLabel,{exact:true}).waitFor();
+    await owner.page.goto(ORIGIN+"/groups/"+historicalGroup+
+      "/cycles/"+preAnchor.cycle.id);
+    await owner.page.getByText(expectedLabel,{exact:true}).waitFor();
+    await owner.page.goto(ORIGIN+"/groups/"+historicalGroup+
+      "/manage?section=periods");
+    await owner.page.getByRole("button",{name:"Sửa kỳ",exact:true}).click();
+    const editEnd=owner.page.getByRole("textbox",{
+      name:"Ngày cuối cùng của kỳ",exact:true}).last();
+    assert.equal(await editEnd.inputValue(),asDMY(day(-7)),
+      "edit form must show the actual last day, not the exclusive bound");
+    await owner.page.getByRole("textbox",{name:"Bắt đầu kỳ",exact:true})
+      .last().fill(asDMY(day(-23)));
+    const editResponsePromise=owner.page.waitForResponse(response=>
+      response.request().method()==="PATCH"&&
+      new URL(response.url()).pathname===
+        historicalApi+"/"+preAnchor.cycle.id,{timeout:20000});
+    await owner.page.getByRole("button",{name:"Lưu thay đổi"}).click();
+    const editResponse=await editResponsePromise;
+    assert.equal(editResponse.status(),200);
+    const modified=await editResponse.json();
     assert.equal(modified.cycle.draftRevision,1);
+    assert.equal(modified.cycle.periodStart,day(-23));
+    assert.equal(modified.cycle.periodEnd,day(-6));
     const noLaterCutover=await must(owner,"PATCH",
       historicalApi+"/"+preAnchor.cycle.id,{
         expectedVersion:1,expectedDraftRevision:1,

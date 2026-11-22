@@ -62,7 +62,8 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
     (!matchingWindow.endDateExclusive||end<=matchingWindow.endDateExclusive)&&
     start<=today);
   function editStart(value:string) {setStart(value);keyRef.current=null;}
-  function editEnd(value:string) {setEnd(value);keyRef.current=null;}
+  // Date input is inclusive for people; API and DB remain half-open [start,end).
+  function editEnd(value:string) {setEnd(value?addCalendarDays(value,1):"");keyRef.current=null;}
   async function call(url:string,body:Record<string,unknown>){
     if(busy)return;
     setBusy(true);setError("");setMessage("");
@@ -170,7 +171,8 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
             </p>}
 
             <DateDMYInput value={start} onChange={editStart} label="Bắt đầu kỳ"/>
-            <DateDMYInput value={end} onChange={editEnd} label="Kết thúc kỳ (không bao gồm ngày này)"/>
+            <DateDMYInput value={end?addCalendarDays(end,-1):""}
+              onChange={editEnd} label="Ngày cuối cùng của kỳ"/>
             {start&&end&&start<end&&!validManualRange&&
               <p role="alert" className="text-xs text-destructive">
                 Chỉ được tạo trong lịch Thủ công hoặc khoảng kỳ định kỳ đã hủy
@@ -198,7 +200,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
         className="scroll-mt-24 space-y-2 rounded-2xl border p-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-medium">
-            {formatDateDMY(cycle.periodStart)} – trước {formatDateDMY(cycle.periodEnd)}
+            {formatDateDMY(cycle.periodStart)} – {formatDateDMY(addCalendarDays(cycle.periodEnd,-1))}
           </span>
           <span className={cycle.settlementCompletedAt
             ?"rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300"
@@ -229,8 +231,10 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
               </p>
               <DateDMYInput label="Bắt đầu kỳ" value={editing.start}
                 onChange={value=>setEditing(old=>old&&old.id===cycle.id?{...old,start:value}:old)}/>
-              <DateDMYInput label="Kết thúc kỳ (không bao gồm ngày này)" value={editing.end}
-                onChange={value=>setEditing(old=>old&&old.id===cycle.id?{...old,end:value}:old)}/>
+              <DateDMYInput label="Ngày cuối cùng của kỳ"
+                value={editing.end?addCalendarDays(editing.end,-1):""}
+                onChange={value=>setEditing(old=>old&&old.id===cycle.id?
+                  {...old,end:value?addCalendarDays(value,1):""}:old)}/>
               <div className="flex flex-wrap gap-2">
                 <button type="button" disabled={busy||!editing.start||!editing.end}
                   onClick={()=>void changeDraft(cycle,"edit")}
