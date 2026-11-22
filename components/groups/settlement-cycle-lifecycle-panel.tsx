@@ -36,7 +36,6 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
     const earliest=lastEnd??window.startDate;
     return !window.endDateExclusive&&today>earliest?today:earliest;
   };
-  const [windowIndex,setWindowIndex]=useState(Math.max(0,manualWindows.length-1));
   const [start,setStart]=useState(()=>guessStart(Math.max(0,manualWindows.length-1)));
   const [end,setEnd]=useState(()=>addCalendarDays(
     guessStart(Math.max(0,manualWindows.length-1)),1));
@@ -50,19 +49,14 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
   const root=`/api/groups/${groupId}/settlement-cycle/cycles`;
   const manualActive=active?.frequency==="manual";
   const canCreateManual=manualWindows.length>0;
-  const selectedWindow=manualWindows[windowIndex]??null;
-  const validManualRange=Boolean(selectedWindow&&start&&end&&start<end&&
-    start>=selectedWindow.startDate&&
-    (!selectedWindow.endDateExclusive||end<=selectedWindow.endDateExclusive)&&
+  // The user chooses dates, not a persisted schedule revision.
+  // Derive the matching historic MANUAL window from the start date; the server
+  // independently enforces the same boundaries and rejects overlapping cycles.
+  const matchingWindow=manualWindows.find(window=>start>=window.startDate&&
+    (!window.endDateExclusive||start<window.endDateExclusive));
+  const validManualRange=Boolean(matchingWindow&&start&&end&&start<end&&
+    (!matchingWindow.endDateExclusive||end<=matchingWindow.endDateExclusive)&&
     start<=today);
-  function chooseWindow(value:string){
-    const index=Number(value);
-    if(!Number.isSafeInteger(index)||!manualWindows[index])return;
-    const chosen=guessStart(index);
-    setWindowIndex(index);
-    setStart(chosen);setEnd(addCalendarDays(chosen,1));
-    keyRef.current=null;
-  }
   function editStart(value:string) {setStart(value);keyRef.current=null;}
   function editEnd(value:string) {setEnd(value);keyRef.current=null;}
   async function call(url:string,body:Record<string,unknown>){
@@ -158,26 +152,13 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
               Chỉ tạo thêm kỳ thuộc lịch Thủ công cũ. Lịch định kỳ đang hoạt động
               vẫn được giữ nguyên, và không thể tạo kỳ lấn sang lịch định kỳ.
             </p>}
-            {manualWindows.length>1&&<label className="block space-y-1 text-sm">
-              <span className="font-medium">Khoảng lịch Thủ công</span>
-              <select value={windowIndex} onChange={e=>chooseWindow(e.target.value)}
-                disabled={busy} className="min-h-12 w-full rounded-xl border bg-background p-3">
-                {manualWindows.map((window,index)=><option key={index} value={index}>
-                  {formatDateDMY(window.startDate)}
-                  {window.endDateExclusive
-                    ?` – trước ${formatDateDMY(window.endDateExclusive)}`
-                    :" – hiện tại"}
-                </option>)}
-              </select>
-            </label>}
-            {selectedWindow&&<p className="text-xs text-muted-foreground">
-              Khoảng hợp lệ: từ {formatDateDMY(selectedWindow.startDate)}
-              {selectedWindow.endDateExclusive
-                ?` đến trước ${formatDateDMY(selectedWindow.endDateExclusive)}`
-                :" đến hiện tại (ngày bắt đầu không ở tương lai)"}.
-            </p>}
+
             <DateDMYInput value={start} onChange={editStart} label="Bắt đầu kỳ"/>
             <DateDMYInput value={end} onChange={editEnd} label="Kết thúc kỳ (không bao gồm ngày này)"/>
+            {start&&end&&start<end&&!validManualRange&&
+              <p role="alert" className="text-xs text-destructive">
+                Ngày đã chọn nằm ngoài thời gian được phép tạo kỳ thủ công.
+              </p>}
             <p className="text-xs text-muted-foreground">
               Không chồng lấn các kỳ đã lưu. Tạo kỳ không phát sinh khoản chi,
               bù nợ hoặc thanh toán.

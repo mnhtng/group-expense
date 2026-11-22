@@ -29,8 +29,12 @@ test("weekly UI exposes only allowed historic manual dates and keeps recurring r
   assert.match(scheduleUi,/initial\.canManage&&historicManual/);
   assert.match(scheduleUi,/Tạo kỳ thủ công từ lịch cũ/);
   assert.match(cycleUi,/canCreateManual&&<div id="manual-cycle-form"/);
-  assert.match(cycleUi,/validManualRange=Boolean\(selectedWindow/);
-  assert.match(cycleUi,/end<=selectedWindow\.endDateExclusive/);
+  assert.match(cycleUi,/manualWindows\.find\(window=>start>=window\.startDate/);
+  assert.match(cycleUi,/start<window\.endDateExclusive/);
+  assert.match(cycleUi,/validManualRange=Boolean\(matchingWindow/);
+  assert.match(cycleUi,/end<=matchingWindow\.endDateExclusive/);
+  assert.doesNotMatch(cycleUi,/Khoảng lịch Thủ công|windowIndex|chooseWindow/);
+  assert.match(cycleUi,/Ngày đã chọn nằm ngoài thời gian được phép tạo kỳ thủ công/);
   assert.match(cycleUi,/Không chồng lấn các kỳ đã lưu/);
   assert.match(cycleUi,/!manualActive&&<button/);
   assert.match(cycleUi,/expectedScheduleVersion:schedule\.version/);
