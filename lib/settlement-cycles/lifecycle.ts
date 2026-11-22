@@ -402,6 +402,7 @@ export async function updateManualSettlementCycle(
       `UPDATE group_settlement_cycles
        SET period_start=$3::date,period_end=$4::date,
            start_at=$5::timestamptz,end_at=$6::timestamptz,
+           reviewed_at=CASE WHEN state='review' THEN clock_timestamp() ELSE reviewed_at END,
            draft_revision=draft_revision+1,updated_at=clock_timestamp()
        WHERE group_id=$1 AND id=$2 AND state IN('open','review') AND source='manual'
          AND cancelled_at IS NULL AND version=$7 AND draft_revision=$8
