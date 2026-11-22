@@ -13,7 +13,7 @@ import {
 
 /** SC-003/026/032 metadata-only lifecycle:
  * MANUAL OPEN/REVIEW cycles may be edited; any unlocked cycle may be cancelled
- * with audited draft revisions; never write to money tables. */
+ * with audited draft revisions; never write to money tables.
  * OPEN -> REVIEW -> LOCKED remains the immutable financial lifecycle.
  * Never infer financial-engine permission from a group opt-in.
  */
