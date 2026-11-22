@@ -374,33 +374,42 @@ async function scenario(engine,project,options,actors){
     const cycleId=created.cycle.id;
     const detail=pathFor(groupId,cycleId);
 
-    // Historic manual windows remain writable when the group has moved to a
-    // currently effective WEEKLY schedule. Never allow a manual period inside
-    // the WEEKLY segment (cron still owns that range).
+    // Two distinct historic MANUAL revisions before WEEKLY reproduce the
+    // production-only UI bug: the technical window selector must not appear.
+    const secondManualRevision=randomUUID();
     const weeklyRevision=randomUUID();
     await pool.query(
-      "UPDATE group_settlement_schedule_heads SET version=2 WHERE group_id=$1",
+      "UPDATE group_settlement_schedule_heads SET version=3 WHERE group_id=$1",
       [groupId]);
     await pool.query(
       "INSERT INTO group_settlement_schedule_revisions "+
       "(id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by) "+
-      "VALUES($1,$2,2,'weekly','UTC',$3,$4,$5)",
+      "VALUES($1,$2,2,'manual','UTC',$3,$4,$5)",
+      [secondManualRevision,groupId,day(-5),day(-5)+"T00:00:00Z",owner.id]);
+    await pool.query(
+      "INSERT INTO group_settlement_schedule_revisions "+
+      "(id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by) "+
+      "VALUES($1,$2,3,'weekly','UTC',$3,$4,$5)",
       [weeklyRevision,groupId,day(-3),day(-3)+"T00:00:00Z",owner.id]);
     const historicCreated=await must(owner,"POST",cyclesApi,{
-      expectedScheduleVersion:2,requestKey:randomUUID(),
+      expectedScheduleVersion:3,requestKey:randomUUID(),
       startDate:day(-5),endDate:day(-4)},201);
     assert.equal(historicCreated.cycle.source,"manual");
-    assert.equal(historicCreated.cycle.scheduleRevisionId,revision,
-      "backfill must remain attributed to the historical manual revision");
+    assert.equal(historicCreated.cycle.scheduleRevisionId,secondManualRevision,
+      "backfill must match its historic manual revision automatically");
     const blockedWeekly=await must(owner,"POST",cyclesApi,{
-      expectedScheduleVersion:2,requestKey:randomUUID(),
+      expectedScheduleVersion:3,requestKey:randomUUID(),
       startDate:day(-2),endDate:day(-1)},409);
     assert.match(blockedWeekly.error,/khoảng lịch Thủ công/);
     await owner.page.goto(ORIGIN+"/groups/"+groupId+"/manage?section=schedule");
     await owner.page.getByText("Tạo kỳ thủ công từ lịch cũ").waitFor();
     await owner.page.getByRole("link",{name:"Tạo kỳ thủ công"}).click();
-    await owner.page.getByRole("button",{name:"Tạo kỳ thủ công"}).waitFor();
-    await owner.page.getByText(/Khoảng hợp lệ:/).waitFor();
+    const createButton=owner.page.getByRole("button",{name:"Tạo kỳ thủ công"});
+    await createButton.waitFor();
+    assert.equal(await owner.page.getByText("Khoảng lịch Thủ công",{exact:true}).count(),0,
+      "multiple historic schedules must not expose a technical revision picker");
+    assert.equal(await createButton.isEnabled(),true,
+      "the date-only form should infer the latest eligible manual window");
 
     await must(owner,"POST",cyclesApi+"/"+cycleId+"/review",
       {expectedVersion:1});
