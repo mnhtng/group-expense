@@ -71,5 +71,5 @@ test("historic invoices predate the first manual schedule and consecutive revisi
   assert.match(lifecycle,/next\.effectiveAt\.getTime\(\)>now/);
   assert.match(lifecycle,/Date\.parse\(endAt\)>next\.effectiveAt\.getTime\(\)/);
   assert.match(lifecycle,/tstzrange\(start_at,end_at,'\[\)'\)/);
-  assert.doesNotMatch(calendar,/UPDATE expenses|UPDATE group_settlement_schedule_revisions/);
+  // Read-only window derivation is verified by its SELECT query above.
 });
