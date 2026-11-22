@@ -12,7 +12,7 @@ test("Saved, currently effective MANUAL schedule exposes a direct shortcut to th
   assert.match(schedule,/initial\.canManage&&activeManual/);
   assert.match(schedule,/href=\{\`\/groups\/\$\{groupId\}\/manage\?section=periods#manual-cycle-form\`\}/);
   assert.match(schedule,/>\s*Tạo kỳ thủ công\s*<\/Link>/);
-  assert.match(periods,/manualActive&&<div id="manual-cycle-form"/);
+  assert.match(periods,/canCreateManual&&<div id="manual-cycle-form"/);
   assert.match(periods,/id="manual-cycle-form" className="scroll-mt-20/);
   assert.match(manage,/section==="periods"&&schedule&&cycles&&<SettlementCycleLifecyclePanel/);
   assert.doesNotMatch(schedule,/\/settlement-cycle\/cycles["\`]/);
