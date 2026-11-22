@@ -85,7 +85,8 @@ test("Unfinalized manual/scheduled edits and cancellations are audited and ledge
       [second],"Invalid cycle state transition");
     const revised=await c.query("UPDATE group_settlement_cycles SET "+
       "period_end='2026-09-16',end_at='2026-09-16T00:00:00Z',"+
-      "draft_revision=draft_revision+1,updated_at=clock_timestamp() WHERE id=$1 "+
+      "reviewed_at=clock_timestamp(),draft_revision=draft_revision+1,"+
+      "updated_at=clock_timestamp() WHERE id=$1 "+
       "RETURNING version,draft_revision,state,period_end::text AS ending",[second]);
     assert.deepEqual(revised.rows[0],
       {version:2,draft_revision:1,state:"review",ending:"2026-09-16"});
