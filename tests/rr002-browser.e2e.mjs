@@ -404,6 +404,53 @@ async function scenario(engine,project,options,actors){
 
     await must(owner,"POST",cyclesApi+"/"+cycleId+"/review",
       {expectedVersion:1});
+    // Before the snapshot is sealed, REVIEW manual dates can still be edited.
+    const previewBeforeEdit=await must(owner,"GET",
+      cyclesApi+"/"+cycleId+"/snapshot",undefined);
+    assert.equal(previewBeforeEdit.snapshot?.state,"review");
+    const revisedPeriod=await must(owner,"PATCH",cyclesApi+"/"+cycleId,{
+      expectedVersion:2,expectedDraftRevision:0,
+      startDate:day(-10),endDate:day(-5),
+    });
+    assert.equal(revisedPeriod.cycle.state,"review");
+    assert.equal(revisedPeriod.cycle.draftRevision,1);
+    await must(owner,"POST",cyclesApi+"/"+cycleId+"/snapshot",{
+      expectedVersion:2,expectedDraftRevision:0,requestKey:randomUUID(),
+      expectedFingerprint:previewBeforeEdit.snapshot.fingerprint,
+    },409); // unchanged money fingerprint is NOT enough; draft revision matters
+
+    // All unlocked periods may be cancelled, with a tombstone and audit.
+    const historicalId=historicCreated.cycle.id;
+    await must(owner,"POST",cyclesApi+"/"+historicalId+"/review",
+      {expectedVersion:1});
+    await must(other,"DELETE",cyclesApi+"/"+historicalId,{
+      expectedVersion:2,expectedDraftRevision:0,
+    },403);
+    const deletedHistoric=await must(owner,"DELETE",
+      cyclesApi+"/"+historicalId,{
+        expectedVersion:2,expectedDraftRevision:0,
+      });
+    assert.equal(deletedHistoric.cancelled,true);
+    const weeklyCycleId=randomUUID();
+    await pool.query(
+      "INSERT INTO group_settlement_cycles "+
+      "(id,group_id,schedule_revision_id,source,period_start,period_end,"+
+      "time_zone,start_at,end_at) "+
+      "VALUES($1,$2,$3,'scheduled',$4::date,$5::date,'UTC',"+
+      "$4::date::timestamptz,$5::date::timestamptz)",
+      [weeklyCycleId,groupId,weeklyRevision,day(-3),day(4)]);
+    await owner.page.goto(ORIGIN+"/groups/"+groupId+"/manage?section=periods");
+    await owner.page.getByRole("button",{name:"Sửa kỳ"}).first().waitFor();
+    await owner.page.getByRole("button",{name:"Hủy kỳ theo lịch"}).waitFor();
+    const deletedWeekly=await must(owner,"DELETE",cyclesApi+"/"+weeklyCycleId,{
+      expectedVersion:1,expectedDraftRevision:0,
+    });
+    assert.equal(deletedWeekly.cancelled,true);
+    const persistedTombstone=await pool.query(
+      "SELECT cancelled_at IS NOT NULL AS cancelled,source,state "+
+      "FROM group_settlement_cycles WHERE id=$1",[weeklyCycleId]);
+    assert.deepEqual(persistedTombstone.rows[0],
+      {cancelled:true,source:"scheduled",state:"open"});
     const draft=(title,payerId,debtorId,amount)=>({
       title,occurredOn:day(-8),payerId,
       items:[{name:"Synthetic expense",quantity:1,

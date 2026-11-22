@@ -11,8 +11,9 @@ import {
   type CycleFrequency,
 } from "@/lib/settlement-cycles/calendar";
 
-/** SC-003/026 calendar lifecycle: ordinary changes are metadata-only.
- * MANUAL OPEN cycles may be edited/cancelled with audited draft revisions;
+/** SC-003/026/032 metadata-only lifecycle:
+ * MANUAL OPEN/REVIEW cycles may be edited; any unlocked cycle may be cancelled
+ * with audited draft revisions; never write to money tables.
  * OPEN -> REVIEW -> LOCKED remains the immutable financial lifecycle.
  * Never infer financial-engine permission from a group opt-in.
  */
@@ -306,16 +307,33 @@ type ManualDraftInput={
 type ManualCancelInput={expectedVersion:number;expectedDraftRevision:number};
 
 function validateDraftVersion(input:ManualCancelInput) {
-  if(!input||input.expectedVersion!==1||
+  if(!input||![1,2].includes(input.expectedVersion)||
      !Number.isSafeInteger(input.expectedDraftRevision)||input.expectedDraftRevision<0)
-    throw error(400,"Phiên bản bản nháp không hợp lệ.");
+    throw error(400,"Phiên bản kỳ chưa chốt không hợp lệ.");
 }
-function assertEditableManual(c:RawCycle,input:ManualCancelInput) {
-  if(c.source!=="manual"||c.state!=="open")
-    throw error(409,"Chỉ sửa hoặc xóa được kỳ thủ công còn Đang mở.");
+function assertUnfinalized(c:RawCycle,input:ManualCancelInput) {
+  if(!["open","review"].includes(c.state))
+    throw error(409,"Kỳ đã chốt số liệu, không được sửa hoặc xóa.");
   if(c.version!==input.expectedVersion||
      c.draftRevision!==input.expectedDraftRevision)
-    throw error(409,"Khoảng kỳ đã thay đổi. Vui lòng tải lại.");
+    throw error(409,"Kỳ đã thay đổi. Vui lòng tải lại.");
+}
+function assertEditableManual(c:RawCycle,input:ManualCancelInput) {
+  assertUnfinalized(c,input);
+  if(c.source!=="manual")
+    throw error(409,"Kỳ theo lịch định kỳ không thể sửa ngày riêng; hãy chỉnh lịch quyết toán.");
+}
+/** Reject mutation of any cycle linked to a snapshot or immutable adjustment. */
+async function assertNoFinancialArtifacts(client:PoolClient,cycleId:string) {
+  const linked=await client.query(
+    `SELECT 1 FROM group_settlement_cycle_snapshots
+       WHERE cycle_id=$1
+       UNION ALL
+       SELECT 1 FROM group_settlement_cycle_adjustments
+       WHERE origin_cycle_id=$1 OR target_cycle_id=$1
+       LIMIT 1`,[cycleId]);
+  if(linked.rowCount)
+    throw error(409,"Kỳ có chứng từ hoặc điều chỉnh tài chính, không thể sửa hay xóa.");
 }
 async function draftAudit(client:PoolClient,cycle:RawCycle,actorId:string,
   type:"period_updated"|"period_cancelled",old:RawCycle) {
@@ -351,6 +369,7 @@ export async function updateManualSettlementCycle(
     assertEditableManual(old,input);
     if(old.periodStart===input.startDate&&old.periodEnd===input.endDate)
       return publicCycle(old);
+    await assertNoFinancialArtifacts(client,cycleId);
     const rules=await client.query<Rule>(
       `SELECT id,version,frequency,time_zone AS "timeZone",
         anchor_date::text AS "anchorDate",effective_at AS "effectiveAt"
@@ -363,6 +382,8 @@ export async function updateManualSettlementCycle(
     const endAt=localMidnightInstant(input.endDate,rule.timeZone);
     if(Date.parse(startAt)>Date.now())
       throw error(409,"Ngày bắt đầu kỳ không được ở tương lai.");
+    if(old.state==="review"&&Date.parse(endAt)>Date.now())
+      throw error(409,"Kỳ Chờ kiểm tra phải có ngày kết thúc trong quá khứ.");
     const cutover=await client.query<{start:Date|null}>(
       `SELECT min(effective_at) AS start FROM group_settlement_schedule_revisions
        WHERE group_id=$1 AND superseded_at IS NULL
@@ -381,8 +402,9 @@ export async function updateManualSettlementCycle(
       `UPDATE group_settlement_cycles
        SET period_start=$3::date,period_end=$4::date,
            start_at=$5::timestamptz,end_at=$6::timestamptz,
+           reviewed_at=CASE WHEN state='review' THEN clock_timestamp() ELSE reviewed_at END,
            draft_revision=draft_revision+1,updated_at=clock_timestamp()
-       WHERE group_id=$1 AND id=$2 AND state='open' AND source='manual'
+       WHERE group_id=$1 AND id=$2 AND state IN('open','review') AND source='manual'
          AND cancelled_at IS NULL AND version=$7 AND draft_revision=$8
        RETURNING id,group_id AS "groupId",
          schedule_revision_id AS "scheduleRevisionId",source,
@@ -398,7 +420,8 @@ export async function updateManualSettlementCycle(
   });
 }
 
-/** Cancelling is a reversible-calendar (not historical) soft deletion. */
+/** Cancelling is an audited soft deletion of an unlocked period.
+ * Scheduled tombstones stay in the cron cursor to prevent re-generation. */
 export async function cancelManualSettlementCycle(
   groupId:string,cycleId:string,actorId:string,input:ManualCancelInput,
 ):Promise<{cancelled:true;cycleId:string}>{
@@ -409,12 +432,13 @@ export async function cancelManualSettlementCycle(
       [groupId,cycleId]);
     const old=found.rows[0];
     if(!old)throw error(404,"Kỳ đã hủy hoặc không tồn tại.");
-    assertEditableManual(old,input);
+    assertUnfinalized(old,input);
+    await assertNoFinancialArtifacts(client,cycleId);
     const updated=await client.query<RawCycle>(
       `UPDATE group_settlement_cycles
        SET cancelled_at=clock_timestamp(),cancelled_by=$3,
            draft_revision=draft_revision+1,updated_at=clock_timestamp()
-       WHERE group_id=$1 AND id=$2 AND state='open' AND source='manual'
+       WHERE group_id=$1 AND id=$2 AND state IN('open','review')
          AND cancelled_at IS NULL AND version=$4 AND draft_revision=$5
        RETURNING id,group_id AS "groupId",
          schedule_revision_id AS "scheduleRevisionId",source,
@@ -462,7 +486,7 @@ async function workCyclesForGroup(client:PoolClient,groupId:string,cap:number):P
   const now=nowResult.rows[0].time.getTime();
   const scheduledReview=await client.query<RawCycle>(
     `${qCycle} WHERE group_id=$1 AND source='scheduled' AND state='open'
-      AND end_at<=clock_timestamp()
+      AND cancelled_at IS NULL AND end_at<=clock_timestamp()
       ORDER BY end_at,id LIMIT $2 FOR UPDATE`,[groupId,cap]);
   let reviewed=0;
   for(const cycle of scheduledReview.rows) {

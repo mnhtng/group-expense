@@ -11,8 +11,8 @@ const asVnd=(value:string)=>new Intl.NumberFormat("vi-VN")
  * preview -> inspect -> lock the exact same data. Any intervening invoice
  * edit/confirmed cash/pending reservation MUST yield 409 on the server.
  */
-export function SettlementSnapshotPanel({groupId,cycleId,version,canManage,
-  locked}:{groupId:string;cycleId:string;version:number;
+export function SettlementSnapshotPanel({groupId,cycleId,version,draftRevision=0,canManage,
+  locked}:{groupId:string;cycleId:string;version:number;draftRevision?:number;
     canManage:boolean;locked:boolean}) {
   const router=useRouter();
   const [data,setData]=useState<Display|null>(null);
@@ -56,7 +56,7 @@ export function SettlementSnapshotPanel({groupId,cycleId,version,canManage,
         method:"POST",credentials:"same-origin",cache:"no-store",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          expectedVersion:version,requestKey:requestKey.current,
+          expectedVersion:version,expectedDraftRevision:draftRevision,requestKey:requestKey.current,
           expectedFingerprint:data.fingerprint,
         }),
       });

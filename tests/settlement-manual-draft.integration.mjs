@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import pg from "pg";
 
-test("OPEN manual draft edit/cancel is audited, non-overlapping and ledger-neutral",async()=>{
+test("Unfinalized manual/scheduled edits and cancellations are audited and ledger-neutral",async()=>{
   if(!process.env.DATABASE_URL)throw Error("Requires isolated migrated PG17");
   const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,max:1});
   const c=await pool.connect();
@@ -77,17 +77,67 @@ test("OPEN manual draft edit/cancel is audited, non-overlapping and ledger-neutr
       "state='review',version=version+1,reviewed_at=clock_timestamp(),"+
       "updated_at=clock_timestamp() WHERE id=$1 RETURNING version,state",[second]);
     assert.deepEqual(reviewed.rows[0],{version:2,state:"review"});
-    await reject("UPDATE group_settlement_cycles SET "+
-      "cancelled_at=clock_timestamp(),cancelled_by=$2,"+
-      "draft_revision=draft_revision+1,updated_at=clock_timestamp() WHERE id=$1",
-      [second,owner],"Invalid cycle state transition");
+    // REVIEW is not LOCKED: a manager can adjust the unsealed dates, but
+    // the immutable lifecycle version stays 2 and the draft revision advances.
     await reject("UPDATE group_settlement_cycles SET "+
       "period_end='2026-09-16',end_at='2026-09-16T00:00:00Z',"+
-      "draft_revision=draft_revision+1,updated_at=clock_timestamp() WHERE id=$1",
+      "updated_at=clock_timestamp() WHERE id=$1",
       [second],"Invalid cycle state transition");
+    const revised=await c.query("UPDATE group_settlement_cycles SET "+
+      "period_end='2026-09-16',end_at='2026-09-16T00:00:00Z',"+
+      "reviewed_at=clock_timestamp(),draft_revision=draft_revision+1,"+
+      "updated_at=clock_timestamp() WHERE id=$1 "+
+      "RETURNING version,draft_revision,state,period_end::text AS ending",[second]);
+    assert.deepEqual(revised.rows[0],
+      {version:2,draft_revision:1,state:"review",ending:"2026-09-16"});
+    await c.query("INSERT INTO group_settlement_cycle_draft_events "+
+      "(id,group_id,cycle_id,draft_revision,actor_id,event_type,"+
+      "old_period_start,old_period_end,new_period_start,new_period_end) "+
+      "VALUES($1,$2,$3,1,$4,'period_updated','2026-09-08','2026-09-15',"+
+      "'2026-09-08','2026-09-16')",[randomUUID(),group,second,owner]);
+    const reviewCancel=await c.query("UPDATE group_settlement_cycles SET "+
+      "cancelled_at=clock_timestamp(),cancelled_by=$2,"+
+      "draft_revision=draft_revision+1,updated_at=clock_timestamp() WHERE id=$1 "+
+      "RETURNING state,version,draft_revision,cancelled_at",[second,owner]);
+    assert.equal(reviewCancel.rows[0].state,"review");
+    assert.equal(reviewCancel.rows[0].version,2);
+    assert.equal(reviewCancel.rows[0].draft_revision,2);
+    assert.ok(reviewCancel.rows[0].cancelled_at);
+    await c.query("INSERT INTO group_settlement_cycle_draft_events "+
+      "(id,group_id,cycle_id,draft_revision,actor_id,event_type,"+
+      "old_period_start,old_period_end) "+
+      "VALUES($1,$2,$3,2,$4,'period_cancelled','2026-09-08','2026-09-16')",
+      [randomUUID(),group,second,owner]);
+    const scheduledId=randomUUID(),weeklyRevision=randomUUID();
+    await c.query("INSERT INTO group_settlement_schedule_revisions "+
+      "(id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by) "+
+      "VALUES($1,$2,2,'weekly','UTC','2026-09-21','2026-09-21T00:00:00Z',$3)",
+      [weeklyRevision,group,owner]);
+    await c.query("UPDATE group_settlement_schedule_heads SET version=2 WHERE group_id=$1",[group]);
+    await c.query("INSERT INTO group_settlement_cycles "+
+      "(id,group_id,schedule_revision_id,source,period_start,period_end,"+
+      "time_zone,start_at,end_at,created_by,request_key) "+
+      "VALUES($1,$2,$3,'scheduled','2026-09-21','2026-09-28','UTC',"+
+      "'2026-09-21T00:00:00Z','2026-09-28T00:00:00Z',NULL,NULL)",
+      [scheduledId,group,weeklyRevision]);
+    await reject("UPDATE group_settlement_cycles SET "+
+      "period_end='2026-09-29',end_at='2026-09-29T00:00:00Z',"+
+      "draft_revision=draft_revision+1,updated_at=clock_timestamp() WHERE id=$1",
+      [scheduledId],"Invalid cycle state transition");
+    await c.query("UPDATE group_settlement_cycles SET state='review',version=2,"+
+      "reviewed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1",[scheduledId]);
+    await c.query("UPDATE group_settlement_cycles SET cancelled_at=clock_timestamp(),"+
+      "cancelled_by=$2,draft_revision=draft_revision+1,"+
+      "updated_at=clock_timestamp() WHERE id=$1",[scheduledId,owner]);
+    // The scheduled row persists for the recurring cursor; the read view
+    // excludes it. No payments, obligations or expense data have moved.
+    const tombstone=await c.query("SELECT cancelled_at IS NOT NULL AS cancelled,"+
+      "source,state FROM group_settlement_cycles WHERE id=$1",[scheduledId]);
+    assert.deepEqual(tombstone.rows[0],
+      {cancelled:true,source:"scheduled",state:"review"});
     const visible=await c.query("SELECT count(*)::int AS n "+
       "FROM group_settlement_cycles WHERE group_id=$1 AND cancelled_at IS NULL",[group]);
-    assert.equal(visible.rows[0].n,2);
+    assert.equal(visible.rows[0].n,1);
     for(const table of ["expenses","obligations","settlements","settlement_allocations"]){
       const count=await c.query("SELECT count(*)::int AS n FROM "+
         table+" WHERE group_id=$1",[group]);

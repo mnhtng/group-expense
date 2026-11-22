@@ -7,7 +7,7 @@ import {
 
 type Context={params:Promise<{groupId:string;cycleId:string}>};
 
-// An OPEN manual draft may be edited. REVIEW and LOCKED never are.
+// Only MANUAL periods in OPEN/REVIEW can be edited. LOCKED never can.
 export const PATCH=withAuthenticatedApi<Context>(async(request,{params},user)=>{
   try{
     const {groupId,cycleId}=await params;
@@ -23,8 +23,8 @@ export const PATCH=withAuthenticatedApi<Context>(async(request,{params},user)=>{
   }catch(cause){return settlementError(cause);}
 });
 
-// "Delete" is an append-only audited cancellation; the historical record
-// remains intact and no previously reviewed/locked period can be cancelled.
+// "Delete" is a soft, append-only audited cancellation for OPEN/REVIEW.
+// Scheduled tombstones persist; LOCKED and any financial evidence are protected.
 export const DELETE=withAuthenticatedApi<Context>(async(request,{params},user)=>{
   try{
     const {groupId,cycleId}=await params;

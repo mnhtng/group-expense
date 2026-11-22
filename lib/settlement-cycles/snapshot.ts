@@ -17,7 +17,7 @@ const validUUID=(s:unknown):s is string=>typeof s==="string"&&
 const fail=(status:400|403|404|409,message:string)=>
   new SettlementSettingsError(status,message);
 
-type DbCycle={id:string;groupId:string;state:string;version:number;
+type DbCycle={id:string;groupId:string;state:string;version:number;draftRevision:number;
   startDate:string;endDate:string;endAt:Date;lockedAt:Date|null};
 type DbCashRow={
   obligationId:string;expenseId:string;expenseVersion:number;
@@ -87,7 +87,7 @@ const candidateExpenses=`
     AND e.created_at <= $4::timestamptz
 `;
 const selectCycle=`SELECT c.id,c.group_id AS "groupId",
-  c.state,c.version,c.period_start::text AS "startDate",
+  c.state,c.version,c.draft_revision AS "draftRevision",c.period_start::text AS "startDate",
   c.period_end::text AS "endDate",c.end_at AS "endAt",
   c.locked_at AS "lockedAt"
   FROM group_settlement_cycles c WHERE c.group_id=$1 AND c.id=$2
@@ -196,9 +196,10 @@ export async function inspectCycleSnapshot(groupId:string,cycleId:string,
  */
 export async function lockCycleSnapshot(groupId:string,cycleId:string,
   actorId:string,expectedVersion:number,requestKey:string,
-  expectedFingerprint:string):Promise<LockedSnapshot>{
+  expectedFingerprint:string,expectedDraftRevision=0):Promise<LockedSnapshot>{
   if(!validUUID(groupId)||!validUUID(cycleId)||!validUUID(requestKey)||
      !Number.isSafeInteger(expectedVersion)||expectedVersion!==2||
+     !Number.isSafeInteger(expectedDraftRevision)||expectedDraftRevision<0||
      typeof expectedFingerprint!=="string"||
      !/^[0-9a-f]{64}$/.test(expectedFingerprint))
     throw fail(400,"Mã yêu cầu hoặc phiên bản kỳ không hợp lệ.");
@@ -224,8 +225,9 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
       [groupId]);
     if(setting.rows[0]?.requested_enabled!==true)
       throw fail(409,"Nhóm đã tắt chế độ quyết toán; không thể khóa kỳ.");
-    if(c.state!=="review"||c.version!==expectedVersion)
-      throw fail(409,"Kỳ không còn chờ rà soát hoặc phiên bản đã thay đổi.");
+    if(c.state!=="review"||c.version!==expectedVersion||
+       c.draftRevision!==expectedDraftRevision)
+      throw fail(409,"Kỳ hoặc ngày quyết toán đã thay đổi. Hãy kiểm tra số liệu lại.");
     const clock=await client.query<{now:Date}>(
       "SELECT clock_timestamp() AS now");
     const cutoff=clock.rows[0].now;
@@ -335,8 +337,9 @@ export async function lockCycleSnapshot(groupId:string,cycleId:string,
        SET state='locked',version=version+1,
          locked_at=clock_timestamp(),locked_by=$3,updated_at=clock_timestamp()
        WHERE group_id=$1 AND id=$2 AND state='review' AND version=$4
+         AND draft_revision=$5
        RETURNING id`,
-      [groupId,cycleId,actorId,expectedVersion],
+      [groupId,cycleId,actorId,expectedVersion,expectedDraftRevision],
     );
     if(changed.rowCount!==1)throw fail(409,"Kỳ đã thay đổi, không thể khóa.");
     await client.query(
