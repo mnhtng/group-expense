@@ -32,8 +32,8 @@ BEGIN
   -- SC-032: OPEN and REVIEW are unlocked; immutable financial snapshots,
   -- late adjustments, and previous cancellation prevent modifications.
   -- Editing a REVIEW period keeps version 2 and reviewed_at for the immutable
-  -- review event, but increments draft_revision so concurrent clients must
-  -- refresh their preview fingerprint before any lock is allowed.
+  -- review event, but refreshes reviewed_at and increments draft_revision
+  -- so concurrent clients must refresh their preview before any lock is allowed.
   IF OLD.cancelled_at IS NOT NULL THEN
     RAISE EXCEPTION 'A cancelled cycle is immutable';
   END IF;
@@ -52,11 +52,17 @@ BEGIN
       AND NEW.cancelled_at IS NULL AND NEW.cancelled_by IS NULL
       AND (NEW.period_start<>OLD.period_start OR NEW.period_end<>OLD.period_end)
       AND NEW.period_start<NEW.period_end AND NEW.start_at<NEW.end_at
-      AND (OLD.state='open' OR NEW.end_at<=clock_timestamp())
+      AND (
+        (OLD.state='open' AND NEW.reviewed_at IS NULL)
+        OR (OLD.state='review' AND NEW.end_at<=clock_timestamp()
+          AND NEW.reviewed_at IS NOT NULL
+          AND NEW.reviewed_at>=NEW.end_at
+          AND NEW.reviewed_at>=OLD.reviewed_at)
+      )
       AND (to_jsonb(NEW)-'period_start'-'period_end'-'start_at'
-        -'end_at'-'draft_revision'-'updated_at')
+        -'end_at'-'reviewed_at'-'draft_revision'-'updated_at')
         = (to_jsonb(OLD)-'period_start'-'period_end'-'start_at'
-        -'end_at'-'draft_revision'-'updated_at')
+        -'end_at'-'reviewed_at'-'draft_revision'-'updated_at')
     THEN RETURN NEW;
     END IF;
     -- Soft cancellation of either MANUAL or SCHEDULED unlocked periods.
