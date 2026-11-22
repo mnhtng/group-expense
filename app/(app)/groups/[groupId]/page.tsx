@@ -20,7 +20,7 @@ export default async function GroupPage({params,searchParams}:{
   return <main className="app-page space-y-6">
     <PageHeader title={group.name} backHref="/groups" backLabel="Nhóm" action={
       <Link href={`${base}/manage`} aria-label="Quản lý nhóm" className="flex size-12 items-center justify-center rounded-full bg-card"><AppIcon name="more"/></Link>}/>
-    <SegmentedNav label="Trong nhóm" items={[{href:base,label:"Chi tiêu",active:true},{href:base+"/debts",label:"Công nợ",active:false}]}/>
+    <SegmentedNav label="Trong nhóm" items={[{href:base,label:"Chi tiêu",active:true},{href:base+"/debts",label:"Công nợ",active:false},{href:base+"/cycles",label:"Quyết toán",active:false}]}/>
     <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">Khoản chi</h2>
       <ActionLink href={base+"/expenses/new"}><AppIcon name="add"/>Thêm khoản</ActionLink></div>
     <SegmentedNav label="Lọc khoản chi" items={[
