@@ -274,7 +274,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
         {(cycle.state==="review"||cycle.state==="locked")&&
           <SettlementSnapshotPanel key={cycle.id+"-"+cycle.draftRevision}
             groupId={groupId} cycleId={cycle.id} version={cycle.version}
-            canManage={requestedEnabled&&schedule.canManage}
+            draftRevision={cycle.draftRevision} canManage={requestedEnabled&&schedule.canManage}
             locked={cycle.state==="locked"}/>}
 
       </div>)}
