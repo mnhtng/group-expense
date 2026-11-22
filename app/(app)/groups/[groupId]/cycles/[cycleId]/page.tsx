@@ -66,12 +66,14 @@ export default async function CycleDetailPage({params,searchParams}:{
               ?"Kiểm tra và chốt số liệu để mở Bù nợ và Trả tiền theo kỳ."
               :"Chờ chủ nhóm hoặc người quản lý chốt số liệu để mở Bù nợ và Trả tiền theo kỳ."}
         </p>
-        <SettlementSnapshotPanel groupId={groupId} cycleId={cycleId} version={selected.version} canManage={settings.canManage&&settings.requestedEnabled} locked={false}/>
+        <SettlementSnapshotPanel key={selected.id+"-"+selected.draftRevision} groupId={groupId} cycleId={cycleId} version={selected.version} draftRevision={selected.draftRevision} canManage={settings.canManage&&settings.requestedEnabled} locked={false}/>
       </section>:<section className="app-panel space-y-3">
         <p className="app-caption">Kỳ đang mở. Bù nợ và Trả tiền theo kỳ chỉ mở sau khi kỳ được kiểm tra và chốt số liệu.</p>
         <ActionLink href={`/groups/${groupId}`}>Xem khoản chi</ActionLink>
       </section>}
-      {settings.canManage&&<ActionLink secondary href={`/groups/${groupId}/manage?section=periods`}>Quản lý kỳ</ActionLink>}
+      {settings.canManage&&<ActionLink secondary href={`/groups/${groupId}/manage?section=periods#cycle-${cycleId}`}>
+        {locked?"Quản lý kỳ":selected.source==="manual"?"Sửa hoặc xóa kỳ":"Hủy kỳ chưa chốt"}
+      </ActionLink>}
     </>}
     {locked&&view==="sources"&&source&&<SettlementCycleSourceList groupId={groupId} cycleId={cycleId} source={source} members={[...people,{id:user.id,name:me}]}/>}
     {locked&&view==="settle"&&selected.settlementCompletedAt&&

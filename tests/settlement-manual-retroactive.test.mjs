@@ -22,14 +22,16 @@ test("Manual creation can backfill past dates and cannot start in future or over
   assert.match(lifecycle,/input\.endDate\)-Date\.parse\(input\.startDate/);
   assert.doesNotMatch(lifecycle,/Date\.parse\(startAt\)<await activationEpoch\(client,groupId\)/);
 });
-test("Manual edits/deletion require owner/delegate, OPEN state, real draft version and audit",()=>{
+test("Unlocked cycle edits/deletion require owner/delegate, draft version and audit",()=>{
   const lifecycle=read("lib/settlement-cycles/lifecycle.ts");
   const route=read("app/api/groups/[groupId]/settlement-cycle/cycles/[cycleId]/route.ts");
   const schema=read("db/migrations/026_manual_cycle_drafts.sql");
   for(const name of ["updateManualSettlementCycle","cancelManualSettlementCycle"])
     assert.match(lifecycle,new RegExp(`export async function ${name}`));
   assert.match(lifecycle,/withAuthorizedCycleManager\(groupId,actorId/);
-  assert.match(lifecycle,/c\.source!=="manual"\|\|c\.state!=="open"/);
+  assert.match(lifecycle,/if\(!\["open","review"\]\.includes\(c\.state\)\)/);
+  assert.match(lifecycle,/if\(c\.source!=="manual"\)/);
+  assert.match(lifecycle,/assertNoFinancialArtifacts\(client,cycleId\)/);
   assert.match(lifecycle,/c\.draftRevision!==input\.expectedDraftRevision/);
   assert.match(lifecycle,/FOR UPDATE/);
   assert.match(lifecycle,/group_settlement_cycle_draft_events/);
@@ -55,7 +57,8 @@ test("Review rejects stale draft edits without changing old 1->2->3 lifecycle mo
   assert.match(lifecycle,/expectedDraftRevision=0/);
   assert.match(review,/expectedDraftRevision===undefined\?0/);
   assert.match(ui,/expectedDraftRevision:cycle\.draftRevision/);
-  assert.match(ui,/cycle\.state==="open"&&cycle\.source==="manual"/);
+  assert.match(ui,/cycle\.state!=="locked"&&schedule\.canManage/);
+  assert.match(ui,/cycle\.source==="manual"&&<button/);
   assert.match(ui,/Xác nhận xóa kỳ/);
   assert.match(ui,/Chuyển sang chờ kiểm tra/);
   assert.match(read("lib/settlement-cycles/snapshot.ts"),/cycle\.version|c\.version/);
