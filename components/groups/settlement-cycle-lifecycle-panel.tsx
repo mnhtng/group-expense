@@ -119,9 +119,18 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
         "error" in payload&&typeof (payload as {error?:unknown}).error==="string"
         ? (payload as {error:string}).error:"Không cập nhật được kỳ.");
       setEditing(null);setConfirmCancel(null);
+      if(action==="cancel"&&cycle.source==="scheduled"){
+        // The next step is the owner's manual replacement, never an automatic
+        // financial/calendar write. Preserve the explicit period boundary.
+        setStart(cycle.periodStart);
+        setEnd(addCalendarDays(cycle.periodStart,1));
+        keyRef.current=null;
+      }
       setMessage(action==="edit"
         ?"Đã cập nhật kỳ chưa chốt. Hãy kiểm tra lại số liệu trước khi chốt."
-        :"Đã hủy kỳ chưa chốt; lịch sử vẫn được lưu để kiểm toán.");
+        :cycle.source==="scheduled"
+          ?"Đã hủy kỳ theo lịch. Kỳ này sẽ không tự sinh lại; hãy tạo các kỳ thủ công cần thiết."
+          :"Đã hủy kỳ chưa chốt; lịch sử vẫn được lưu để kiểm toán.");
       router.refresh();
     }catch(cause){
       setError(cause instanceof Error?cause.message:"Lỗi kết nối.");
@@ -155,8 +164,9 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
             {!manualActive&&<p className="text-xs text-muted-foreground">
               Có thể tạo kỳ trong khoảng lịch Thủ công cũ hoặc trong một kỳ
               định kỳ chưa chốt đã được chủ nhóm hủy. Để chia nhỏ kỳ định kỳ,
-              hãy hủy kỳ đó trước tại danh sách bên dưới. Kỳ đã chốt không thể
-              thay thế. Lịch định kỳ vẫn hoạt động như cũ.
+              hãy hủy kỳ đó trước tại danh sách bên dưới. Kỳ đó sẽ không tự
+              sinh lại, kể cả phần ngày chưa được tạo kỳ thủ công. Kỳ đã chốt
+              không thể thay thế; các kỳ định kỳ khác không thay đổi.
             </p>}
 
             <DateDMYInput value={start} onChange={editStart} label="Bắt đầu kỳ"/>
