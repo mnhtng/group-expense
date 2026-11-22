@@ -41,3 +41,16 @@ test("weekly UI exposes only allowed historic manual dates and keeps recurring r
   assert.match(cycleUi,/cycle\.state!=="locked"&&schedule\.canManage/);
   assert.match(cycleUi,/cycle\.source==="manual"&&<button/);
 });
+
+test("a cancelled recurring slot is explicitly reusable for a manual period, never silently overwritten",()=>{
+  assert.match(calendar,/replacementWindows:replacements\.rows/);
+  assert.match(calendar,/source='scheduled' AND cancelled_at IS NOT NULL/);
+  assert.match(cycleUi,/\.\.\.schedule\.replacementWindows/);
+  assert.match(cycleUi,/hủy kỳ đó trước/);
+  assert.match(lifecycle,/schedule\.rules\.findIndex\(rule=>rule\.id===cancelled/);
+  assert.match(lifecycle,/source='scheduled' AND cancelled_at IS NOT NULL/);
+  assert.match(lifecycle,/Hãy hủy kỳ định kỳ chưa chốt trước khi chia thành kỳ thủ công/);
+  assert.match(lifecycle,/Không thể sửa ra ngoài khoảng kỳ định kỳ đã hủy/);
+  assert.match(lifecycle,/tstzrange\(start_at,end_at,'\[\)'\)/);
+  assert.doesNotMatch(cycleUi,/windowIndex|chooseWindow/);
+});
