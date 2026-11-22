@@ -5,7 +5,7 @@ import { SettlementSettingsError } from "@/lib/settlement-cycles/settings";
 type RecordBody = Record<string, unknown>;
 const maxBytes=4096;
 export async function settlementBody(
-  request: Request, requiredKeys: readonly string[],
+  request: Request, requiredKeys: readonly string[], optionalKeys:readonly string[]=[],
 ): Promise<RecordBody> {
   const type=request.headers.get("content-type") ?? "";
   if (!/^application\/json(?:;|$)/i.test(type)) {
@@ -23,8 +23,9 @@ export async function settlementBody(
     throw new SettlementSettingsError(400, "Dữ liệu phải là đối tượng JSON.");
   }
   const obj=body as RecordBody;
-  if(Object.keys(obj).length!==requiredKeys.length ||
-     Object.keys(obj).some(key=>!requiredKeys.includes(key)) ||
+  if(Object.keys(obj).length<requiredKeys.length ||
+     Object.keys(obj).length>requiredKeys.length+optionalKeys.length ||
+     Object.keys(obj).some(key=>!requiredKeys.includes(key)&&!optionalKeys.includes(key)) ||
      requiredKeys.some(key=>!Object.prototype.hasOwnProperty.call(obj,key))) {
     throw new SettlementSettingsError(400, "Các trường cấu hình không hợp lệ.");
   }

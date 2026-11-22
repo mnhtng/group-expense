@@ -7,10 +7,11 @@ type Context={params:Promise<{groupId:string;cycleId:string}>};
 export const POST=withAuthenticatedApi<Context>(async(request,{params},user)=>{
   try {
     const {groupId,cycleId}=await params;
-    const body=await settlementBody(request,["expectedVersion"]);
+    const body=await settlementBody(request,["expectedVersion"],["expectedDraftRevision"]);
     return NextResponse.json({
       cycle:await submitSettlementCycleReview(
-        groupId,cycleId,user.id,body.expectedVersion as number),
+        groupId,cycleId,user.id,body.expectedVersion as number,
+        body.expectedDraftRevision===undefined?0:body.expectedDraftRevision as number),
     });
   }catch(cause){return settlementError(cause);}
 });

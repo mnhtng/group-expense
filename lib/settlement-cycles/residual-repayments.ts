@@ -191,11 +191,11 @@ async function transaction<T>(work:(client:PoolClient)=>Promise<T>):Promise<T>{
   }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
 }
 export async function previewBilateralResidual(groupId:string,cycleId:string,
-  applicationId:string,actorId:string){
+  applicationId:string,actorId:string,externalClient?:PoolClient){
   ids(groupId,cycleId,applicationId);
-  const client=await pool.connect();
+  const client=externalClient??await pool.connect();
   try{
-    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    if(!externalClient)await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     await activeGroup(client,groupId,actorId,false);
     const app=await applied(client,groupId,cycleId,applicationId,actorId);
     await cycle(client,groupId,cycleId,false);
@@ -204,12 +204,12 @@ export async function previewBilateralResidual(groupId:string,cycleId:string,
     const featureEnabled=await enabled(client,groupId);
     const access=await readEngineAccess(client,groupId);
     result.preview.financialEngineEnabled=access.bilateralEnabled;
-    await client.query("COMMIT");
+    if(!externalClient)await client.query("COMMIT");
     return {preview:result.preview,history:attempts,
       financialEngineEnabled:access.bilateralEnabled,
       writable:access.bilateralEnabled||(isResidualCashTestWritable()&&featureEnabled)};
-  }catch(e){await client.query("ROLLBACK");throw e;}
-  finally{client.release();}
+  }catch(e){if(!externalClient)await client.query("ROLLBACK");throw e;}
+  finally{if(!externalClient)client.release();}
 }
 
 /** Residual money is never netted through a third party; one fully
@@ -217,7 +217,8 @@ export async function previewBilateralResidual(groupId:string,cycleId:string,
  * real counterparty confirms through the existing settlements route.
  */
 export async function createBilateralResidual(groupId:string,cycleId:string,
-  applicationId:string,actorId:string,input:CreateResidualInput){
+  applicationId:string,actorId:string,input:CreateResidualInput,
+  externalClient?:PoolClient,options?:{suppressPendingNotification?:boolean}){
   ids(groupId,cycleId,applicationId);
   const note=validated(input);
   const digest=createHash("sha256").update(JSON.stringify([
@@ -225,7 +226,7 @@ export async function createBilateralResidual(groupId:string,cycleId:string,
     actorId,input.expectedCycleVersion,input.expectedFingerprint,note,
   ])).digest("hex");
   try{
-    return await transaction(async client=>{
+    const work=async (client:PoolClient)=>{
       // Same lock order as original cash + BN-004: group -> cycle -> originals.
       await activeGroup(client,groupId,actorId,true);
       const app=await applied(client,groupId,cycleId,applicationId,actorId);
@@ -290,13 +291,15 @@ export async function createBilateralResidual(groupId:string,cycleId:string,
       await client.query(`INSERT INTO settlement_events
         (id,settlement_id,actor_id,event_type,note)
         VALUES($1,$2,$3,'created',$4)`,[randomUUID(),sid,actorId,note]);
-      await notifySettlement(client,sid,actorId,"settlement_requested");
+      if(!options?.suppressPendingNotification)
+        await notifySettlement(client,sid,actorId,"settlement_requested");
       return {id:sid,alreadyCreated:false,applicationId,cycleId,
         amountMinor:preview.amountMinor,allocationCount:allocations.length,
         debtorId:preview.debtorId,creditorId:preview.creditorId,
         status:"pending" as const,cash:true,noncash:false,
         financialEngineEnabled:access.bilateralEnabled};
-    });
+    };
+    return await (externalClient?work(externalClient):transaction(work));
   }catch(e){
     if(e instanceof SettlementError)throw e;
     if(e&&typeof e==="object"&&"code" in e&&

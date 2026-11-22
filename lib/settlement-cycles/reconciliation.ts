@@ -19,6 +19,7 @@ export type CycleReconciliation={
   unresolvedDisputes:number;pendingCashRequests:number;
   uncompletedInvoices:number;currentProposals:number;
   readyForManualReview:boolean;financialEngineEnabled:boolean;
+  settlementCompletedAt:string|null;settlementCompletionOrigin:"automatic"|"backfill"|null;
 };
 export type CycleAuditEvent={
   id:string;kind:string;eventType:string;actorId:string|null;
@@ -31,6 +32,11 @@ const auditUnion=`
     'Thay đổi trạng thái kỳ' AS description
  FROM group_settlement_cycle_events ev
  WHERE ev.group_id=$1 AND ev.cycle_id=$2
+ UNION ALL
+ SELECT done.cycle_id,'cycle_completed',done.origin,done.triggered_by,
+   done.completed_at,done.cycle_id::text,'Kỳ quyết toán đã hoàn tất'
+ FROM group_settlement_cycle_completions done
+ WHERE done.group_id=$1 AND done.cycle_id=$2
  UNION ALL
  SELECT p.id,'proposal','created',p.created_by,p.created_at,
     p.id::text,'Đề xuất bù trừ phi tiền mặt'
@@ -86,7 +92,7 @@ async function withRead<T>(groupId:string,cycleId:string,actorId:string,
       JOIN groups g ON g.id=cy.group_id AND g.archived_at IS NULL
       JOIN group_members m ON m.group_id=cy.group_id
         AND m.user_id=$3 AND m.status='active'
-      WHERE cy.group_id=$1 AND cy.id=$2`,[groupId,cycleId,actorId]);
+      WHERE cy.group_id=$1 AND cy.id=$2 AND cy.cancelled_at IS NULL`,[groupId,cycleId,actorId]);
     if(!r.rows[0])throw fail(404,"Không tìm thấy kỳ hoặc bạn không thuộc nhóm.");
     const value=await work(c,r.rows[0].state);
     await c.query("COMMIT");return value;
@@ -145,7 +151,14 @@ export async function readCycleReconciliation(groupId:string,cycleId:string,acto
               ('reject','revoke','invalidated','expired')))
          AS "currentProposals"`,[groupId,cycleId]);
     const v=checks.rows[0];
+    const completion=await c.query<{completedAt:Date;origin:"automatic"|"backfill"}>(
+      `SELECT completed_at AS "completedAt",origin
+       FROM group_settlement_cycle_completions
+       WHERE group_id=$1 AND cycle_id=$2`,[groupId,cycleId]);
+    const done=completion.rows[0];
     return {cycleId,state,...money,...v,
+      settlementCompletedAt:done?.completedAt.toISOString()??null,
+      settlementCompletionOrigin:done?.origin??null,
       readyForManualReview:state==="locked"&&
         asMoney(money.outstandingMinor)===0n&&v.unresolvedDisputes===0&&
         v.pendingCashRequests===0&&v.uncompletedInvoices===0&&

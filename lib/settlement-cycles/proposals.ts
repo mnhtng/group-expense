@@ -46,10 +46,29 @@ export type BilateralProposalPreview={
   currentVersion:number;
   current:ProposalSummary|null;
   staleCurrent:boolean;
+  /** Actual immutable, committed noncash setoff; never infer completion from
+   * a proposal, two votes, or the current available amount being zero.
+   * This may exist even if the current proposal head later changes.
+   */
+  completedSetoff:{amountMinor:string;appliedAt:string}|null;
+  cashIntent:{
+    id:string;initiatedBy:string;debtorId:string|null;
+    creditorId:string|null;amountMinor:string;status:string;
+  }|null;
+  /** Cash actually confirmed for original debts within THIS locked period and
+   * pair. Pending cash and noncash offset are NEVER counted as money paid.
+   */
+  cashStatus:{
+    paidMinor:string;
+    remainingMinor:string;
+    pendingMinor:string;
+    lowToHighRemainingMinor:string;
+    highToLowRemainingMinor:string;
+  };
 };
 export type BilateralProposalInput={
   partyAId:string;partyBId:string;expectedVersion:number;
-  expectedFingerprint:string;requestKey:string;
+  expectedFingerprint:string;requestKey:string;flowOrigin?:"paired_cash";
 };
 const selectCycle=`SELECT c.id,c.version,c.state,
   c.period_start::text AS "startDate",c.period_end::text AS "endDate",
@@ -258,13 +277,59 @@ export async function previewBilateralProposal(groupId:string,cycleId:string,
     const writable=await enabled(client,groupId);
     const version=await state(client,groupId,cycleId,low,high,false);
     const current=await currentProposal(client,groupId,cycleId,low,high);
+    const applied=await client.query<{amountMinor:string;appliedAt:Date}>(
+      `SELECT offset_minor::text AS "amountMinor",created_at AS "appliedAt"
+       FROM group_settlement_bilateral_applications
+       WHERE group_id=$1 AND cycle_id=$2 AND party_low=$3 AND party_high=$4
+       ORDER BY created_at DESC,id DESC LIMIT 1`,
+      [groupId,cycleId,low,high],
+    );
+
+    const cashIntent=await client.query<{
+      id:string;initiatedBy:string;debtorId:string|null;
+      creditorId:string|null;amountMinor:string;status:string;
+    }>(
+      `SELECT id,initiated_by AS "initiatedBy",
+         debtor_id AS "debtorId",creditor_id AS "creditorId",
+         amount_minor::text AS "amountMinor",status
+       FROM group_settlement_bilateral_cash_intents
+       WHERE group_id=$1 AND cycle_id=$2 AND party_low=$3 AND party_high=$4
+       ORDER BY (status='pending') DESC,created_at DESC,id DESC LIMIT 1`,
+      [groupId,cycleId,low,high],
+    );
     const live=await computed(client,groupId,cycleId,c,low,high,false);
+    // Same authenticated repeatable-read snapshot as the noncash application.
+    // Use the existing complete frozen original-source set, not a subset of
+    // "remaining" obligations or the amount in a noncash receipt. No extra
+    // ledger mutation or transfer is implied by this read-only calculation.
+    let paid=0n,pending=0n,lowOwesHigh=0n,highOwesLow=0n;
+    for(const src of live.sources){
+      const cash=BigInt(src.confirmedCashMinor);
+      const remaining=BigInt(src.originalMinor)-cash-
+        BigInt(src.confirmedSetoffMinor);
+      paid+=cash;
+      pending+=BigInt(src.pendingCashMinor);
+      if(src.debtorId===low&&src.creditorId===high)lowOwesHigh+=remaining;
+      else if(src.debtorId===high&&src.creditorId===low)highOwesLow+=remaining;
+    }
     await client.query("COMMIT");
     return {fingerprint:live.fingerprint,snapshotFingerprint:c.snapshotFingerprint,
       calculation:live.calculation,eligibleSourceCount:live.sources.length,
       writable,currentVersion:version,
       current:current?summary(current):null,
-      staleCurrent:current!==null&&current.sourceFingerprint!==live.fingerprint};
+      staleCurrent:current!==null&&current.sourceFingerprint!==live.fingerprint,
+      completedSetoff:applied.rows[0]?{
+        amountMinor:applied.rows[0].amountMinor,
+        appliedAt:applied.rows[0].appliedAt.toISOString(),
+      }:null,
+      cashIntent:cashIntent.rows[0]??null,
+      cashStatus:{
+        paidMinor:paid.toString(),
+        remainingMinor:(lowOwesHigh+highOwesLow).toString(),
+        pendingMinor:pending.toString(),
+        lowToHighRemainingMinor:lowOwesHigh.toString(),
+        highToLowRemainingMinor:highOwesLow.toString(),
+      }};
   }catch(e){await client.query("ROLLBACK");throw e;}
   finally{client.release();}
 }
@@ -274,7 +339,7 @@ export async function previewBilateralProposal(groupId:string,cycleId:string,
  * serialize two simultaneous participants. No APPROVAL or reservation occurs.
  */
 export async function createBilateralProposal(groupId:string,cycleId:string,
-  actorId:string,input:BilateralProposalInput){
+  actorId:string,input:BilateralProposalInput,externalClient?:PoolClient){
   const [low,high]=scoped(groupId,cycleId,input?.partyAId,input?.partyBId);
   if(!input||!Number.isSafeInteger(input.expectedVersion)||
      input.expectedVersion<0||!UUID.test(input.requestKey)||
@@ -285,11 +350,11 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
     "bn002-request-v1",groupId,cycleId,low,high,input.expectedVersion,
     input.expectedFingerprint,
   ])).digest("hex");
-  return transact(async client=>{
+  const work=async (client:PoolClient)=>{
     await activeGroup(client,groupId,actorId,true);
-    const prior=await client.query<ProposalRow & {requestDigest:string}>(
+    const prior=await client.query<ProposalRow & {requestDigest:string;flowOrigin:string}>(
       `SELECT id,version,request_digest AS "requestDigest",
-        party_low AS "partyLow",party_high AS "partyHigh",
+        flow_origin AS "flowOrigin",party_low AS "partyLow",party_high AS "partyHigh",
         created_by AS "createdBy",offset_minor::text AS "offsetMinor",
         source_fingerprint AS "sourceFingerprint",
         snapshot_fingerprint AS "snapshotFingerprint",
@@ -300,7 +365,8 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
       [groupId,actorId,input.requestKey]);
     if(prior.rows[0]){
       const p=prior.rows[0];
-      if(p.requestDigest!==requestDigest||p.partyLow!==low||p.partyHigh!==high||
+      if(p.flowOrigin!==(input.flowOrigin??"manual")||
+          p.requestDigest!==requestDigest||p.partyLow!==low||p.partyHigh!==high||
          p.sourceFingerprint!==input.expectedFingerprint)
         throw err(409,"Mã yêu cầu đã được dùng cho đề xuất khác.");
       return {proposal:summary(p),alreadyCreated:true};
@@ -357,11 +423,12 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
       `INSERT INTO group_settlement_bilateral_proposals
        (id,group_id,cycle_id,party_low,party_high,version,
         request_key,request_digest,source_fingerprint,snapshot_fingerprint,
-        created_by,offset_minor,source_count,allocation_count)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        created_by,offset_minor,source_count,allocation_count,flow_origin)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [id,groupId,cycleId,low,high,next,input.requestKey,
         requestDigest,live.fingerprint,c.snapshotFingerprint,
-        actorId,live.calculation.offsetMinor,live.sources.length,allocations]);
+        actorId,live.calculation.offsetMinor,live.sources.length,allocations,
+         input.flowOrigin??"manual"]);
     const inserted=await client.query(
       `INSERT INTO group_settlement_bilateral_sources
        (proposal_id,group_id,cycle_id,party_low,party_high,
@@ -392,5 +459,6 @@ export async function createBilateralProposal(groupId:string,cycleId:string,
     const result=await currentProposal(client,groupId,cycleId,low,high);
     if(!result||result.id!==id)throw err(409,"Không thể đối soát phiên bản đề xuất.");
     return {proposal:summary(result),alreadyCreated:false};
-  });
+  };
+  return externalClient?work(externalClient):transact(work);
 }

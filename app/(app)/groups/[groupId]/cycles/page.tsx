@@ -55,8 +55,10 @@ export default async function GroupCyclesPage({params,searchParams}:{
           <p className="text-xs text-muted-foreground">
             {cycle.source==="manual"?"Kỳ thủ công":"Theo lịch"} · {cycle.timeZone}
           </p>
-          <span className="inline-flex rounded-full bg-secondary px-2.5 py-1 text-xs font-medium">
-            {stateText[cycle.state]}
+          <span className={cycle.settlementCompletedAt
+            ?"inline-flex rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300"
+            :"inline-flex rounded-full bg-secondary px-2.5 py-1 text-xs font-medium"}>
+            {cycle.settlementCompletedAt?"✓ Hoàn tất":stateText[cycle.state]}
           </span>
         </div>
         <span aria-hidden="true" className="text-muted-foreground">→</span>

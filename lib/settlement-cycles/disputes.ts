@@ -1,4 +1,5 @@
 import "server-only";
+import {recordEligibleCycleCompletions} from "@/lib/settlement-cycles/completion";
 import {readEngineAccess} from "@/lib/settlement-cycles/engine";
 import {randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
@@ -168,6 +169,10 @@ export async function actOnCycleDispute(groupId:string,cycleId:string,
       VALUES($1,$2,$3,$4,$5,$6)`,
       [randomUUID(),disputeId,actorId,input.eventType,body,input.requestKey]);
     const currentState=await c.query<Row>(readSql+" WHERE d.id=$1",[disputeId]);
+    // Resolving/withdrawing the final dispute can be the LAST blocker even
+    // when all cash settled earlier. Finish without an owner confirmation.
+    if(["resolved","withdrawn"].includes(currentState.rows[0].status))
+      await recordEligibleCycleCompletions(c,groupId,[cycleId],actorId);
     return {dispute:await projection(c,currentState.rows[0],actorId),alreadyRecorded:false};
   });}catch(e){return sqlError(e);}
 }

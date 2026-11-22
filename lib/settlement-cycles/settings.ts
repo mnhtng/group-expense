@@ -5,8 +5,8 @@ import { pool } from "@/lib/db/pool";
 import {readEngineAccess} from "@/lib/settlement-cycles/engine";
 
 /**
- * Group opt-in is distinct from operator-controlled financial rollout.
- * A stored preference alone never authorizes a financial write.
+ * Configuring settlement is distinct from the group-owned financial toggle.
+ * New financial transactions also require emergency_paused=false.
  */
 
 export class SettlementSettingsError extends Error {
@@ -163,11 +163,18 @@ export async function updateSettlementSettings(
     }
     const existing = await client.query<{
       version: number; requested_enabled: boolean; requested_bilateral_netting: boolean;
+      financial_engine_enabled:boolean;
     }>(
-      `SELECT version,requested_enabled,requested_bilateral_netting
+      `SELECT version,requested_enabled,requested_bilateral_netting,financial_engine_enabled
        FROM group_settlement_settings WHERE group_id=$1 FOR UPDATE`, [groupId],
     );
     const old = existing.rows[0];
+    // Delegated period managers may edit the schedule/opt-in, but cannot
+    // indirectly revoke the owner's active financial engine permission.
+    if(old?.financial_engine_enabled && !input.requestedEnabled &&
+      group.owner_id!==actorId)
+      throw new SettlementSettingsError(403,
+        "Chỉ chủ nhóm được tắt quyết toán khi Financial Engine đang bật.");
     const version = old?.version ?? 0;
     if (input.expectedVersion !== version) {
       throw new SettlementSettingsError(409, "Cấu hình đã thay đổi. Vui lòng tải lại trước khi lưu.");
@@ -183,7 +190,9 @@ export async function updateSettlementSettings(
     if (old) {
       await client.query(
         `UPDATE group_settlement_settings SET requested_enabled=$2,
-         requested_bilateral_netting=$3,version=$4,updated_by=$5,updated_at=now()
+         requested_bilateral_netting=$3,
+         financial_engine_enabled=CASE WHEN $2 THEN financial_engine_enabled ELSE false END,
+         version=$4,updated_by=$5,updated_at=now()
          WHERE group_id=$1`,
         [groupId, input.requestedEnabled, input.requestedBilateralNetting, nextVersion, actorId],
       );
@@ -200,6 +209,7 @@ export async function updateSettlementSettings(
         bilateral: old?.requested_bilateral_netting ?? false, version },
       after: { enabled: input.requestedEnabled,
         bilateral: input.requestedBilateralNetting, version: nextVersion },
+      financialEngineAutoDisabled:!!old?.financial_engine_enabled&&!input.requestedEnabled,
     });
     return { version: nextVersion, requestedEnabled: input.requestedEnabled,
       requestedBilateralNetting: input.requestedBilateralNetting,

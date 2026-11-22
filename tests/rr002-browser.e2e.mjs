@@ -172,8 +172,17 @@ async function originalBalance(groupId){
 }
 async function capture(page,project,label){
   await mkdir("rr002-artifacts",{recursive:true});
+  // Playwright images cannot exceed 32767 physical pixels in either
+  // dimension. The 55-source ledger can be very tall on a DPR=3 iPhone.
+  // Preserve a useful viewport screenshot instead of failing the test.
+  const size=await page.evaluate(()=>({
+    height:Math.max(document.documentElement.scrollHeight,document.body.scrollHeight),
+    width:Math.max(document.documentElement.scrollWidth,document.body.scrollWidth),
+    dpr:window.devicePixelRatio||1,
+  }));
+  const fullPage=size.height*size.dpr<30000&&size.width*size.dpr<30000;
   await page.screenshot({path:"rr002-artifacts/"+project+"-"+label+".png",
-    fullPage:true,animations:"disabled",timeout:20000});
+    fullPage,animations:"disabled",timeout:20000});
 }
 // Read-only hit-test probe for the focus/overlay hypothesis. It never
 // changes navigation, click dispatch, keyboard focus, browser auth or money.
@@ -591,22 +600,20 @@ async function scenario(engine,project,options,actors){
     await page2.getByRole("link",{name:"Trước"}).click();
     await owner.page.waitForURL(url=>url.searchParams.get("page")==="1");
 
-    // Pair dropdown permits selecting exactly one counterparty. The
-    // financial call-to-action remains truly disabled, not CSS-only.
+    // Signed sent/received controls remain truly disabled until the
+    // group owner enables Financial Engine, without showing approval UI.
     await owner.page.goto(ORIGIN+detail+"?view=settle");
     const selector=owner.page.getByLabel("Chọn người");
     await selector.selectOption({label:other.name});
     await assertTapTarget(selector,"counterparty selector");
-    const proposal=owner.page.getByRole("button",{name:"Gửi đề xuất bù nợ"});
-    await proposal.waitFor();
-    assert.equal(await proposal.isDisabled(),true);
-    await assertTapTarget(proposal,"disabled proposal");
-    const originals=owner.page.getByRole("button",{
-      name:"Xem các khoản bù nợ"});
+    const sent=owner.page.getByRole("button",{name:"Đã nhận tiền",exact:true});
+    await sent.waitFor();
+    assert.equal(await sent.isDisabled(),true);
+    await assertTapTarget(sent,"disabled cash attestation");
+    const originals=owner.page.getByRole("link",{name:"Xem hóa đơn trong kỳ"});
     await originals.focus();
     await owner.page.keyboard.press("Enter");
-    assert.equal(await owner.page.getByRole("button",{name:"Ẩn khoản nợ gốc"}).getAttribute("aria-expanded"),"true");
-    await owner.page.getByRole("heading",{name:"Chiều 1"}).waitFor();
+    await owner.page.waitForURL(url=>url.searchParams.get("view")==="sources");
     await noHorizontalOverflow(owner.page,project+" locked detail");
     if(project.includes("phone"))await capture(owner.page,project,"locked-cycle");
 
@@ -749,51 +756,93 @@ async function scenario(engine,project,options,actors){
       [groupId]);
     assert.equal(noFinance.rows[0].n,0);
 
-    // Real gate, not a finance test flag: exercise the newly admitted group's
-    // consent controls with two independent browser sessions in every profile.
-    await pool.query('INSERT INTO settlement_cycle_engine_cohort(group_id) VALUES($1)',[groupId]);
+    // Real SC-028 gate: group OWNER enables Financial Engine via the signed
+    // owner-only API. Legacy global rollout/cohort no longer grant writes.
+    const activationUrl='/api/groups/'+groupId+'/settlement-cycle/owner-activation';
+    const toggleOwnerEngine=async(current,enabled)=>{
+      const payload={enabled,expectedEnabled:current.enabled,
+        expectedSettingsVersion:current.settingsVersion};
+      try{
+        return await must(owner,'PATCH',activationUrl,payload);
+      }catch(e){
+        // Only reconcile transport reset, never swallow a real HTTP 403/409.
+        // PATCH may already have COMMITTED before the response was lost.
+        if(!/ECONNRESET|ECONNREFUSED|socket hang up/.test(String(e)))throw e;
+        await sleep(400);
+        const observed=await must(owner,'GET',activationUrl);
+        if(observed.enabled===enabled)return observed;
+        if(observed.enabled!==current.enabled||
+          observed.settingsVersion!==current.settingsVersion)throw e;
+        return await must(owner,'PATCH',activationUrl,payload);
+      }
+    };
+    const beforeActivation=await must(owner,'GET',activationUrl);
+    assert.equal(beforeActivation.enabled,false);
+    assert.equal(beforeActivation.emergencyPaused,false);
+    const forbiddenActivation=await send(other,'PATCH',activationUrl,{
+      enabled:true,expectedEnabled:false,
+      expectedSettingsVersion:beforeActivation.settingsVersion,
+    });
+    assert.equal(forbiddenActivation.response.status(),403,
+      'a regular group member cannot enable Financial Engine');
+    const activated=await toggleOwnerEngine(beforeActivation,true);
+    assert.equal(activated.enabled,true);
     try{
-      await pool.query('UPDATE settlement_cycle_engine_control SET enabled=true');
       const openPair=async(user,counterparty)=>{
         await user.page.goto(ORIGIN+detail+"?view=settle");
         assert.equal((await must(user,'GET','/api/groups/'+groupId+'/settlement-cycle/settings')).effectiveEnabled,true);
         await user.page.getByLabel('Chọn người').selectOption({label:counterparty.name});
       };
-      const consentPost=async(user,label,path)=>{
-        await user.page.getByRole('button',{name:label,exact:true}).click();
-        const form=user.page.getByRole('group',{name:label,exact:true});
-        const commit=form.getByRole('button',{name:'Xác nhận thao tác',exact:true});
-        assert.equal(await commit.isDisabled(),true,'fresh explicit consent is required');
-        await form.getByRole('checkbox').check();
-        const result=await observeBrowserPost(user.page,path,()=>commit.click());
-        assert.equal(result.status(),201,label+' must commit through a real signed browser POST');
-        return result.json();
+      const pairCashPath=apiFor(groupId,cycleId)+'/pair-cash';
+      const cashTap=async(user,label)=>{
+        const button=user.page.getByRole('button',{name:label,exact:true});
+        await button.waitFor();
+        const response=await observeBrowserPost(user.page,pairCashPath,()=>button.click());
+        assert.equal(response.status(),200,'signed money attestation must POST exactly once');
+        return response.json();
       };
       await openPair(owner,other);
-      const proposalPath=apiFor(groupId,cycleId)+'/bilateral-proposals';
-      let created=await consentPost(owner,'Gửi đề xuất bù nợ',proposalPath);
-      let decisionsPath=proposalPath+'/'+created.proposal.id+'/decisions';
-      await consentPost(owner,'Đồng ý bù nợ',decisionsPath);
-      await consentPost(owner,'Thu hồi đồng ý',decisionsPath);
-      created=await consentPost(owner,'Gửi đề xuất bù nợ',proposalPath);
-      assert.equal(created.proposal.version,2,'closed proposal requires a new immutable version');
-      decisionsPath=proposalPath+'/'+created.proposal.id+'/decisions';
-      await consentPost(owner,'Đồng ý bù nợ',decisionsPath);
+      const first=await cashTap(owner,'Đã nhận tiền');
+      assert.equal(first.state,'pending','one side cannot discharge either debt');
+      assert.ok(BigInt(first.amountMinor)>0n,'the cycle has an actual cash difference');
+      const beforeSecond=await originalBalance(groupId);
+      assert.equal(beforeSecond.noncash_docs,0);
+      assert.equal(beforeSecond.cash_requests,0);
+      const pending=await pool.query(
+        'SELECT count(*)::int AS n FROM group_settlement_bilateral_cash_intents WHERE group_id=$1 AND status=\'pending\'',
+        [groupId]);
+      assert.equal(pending.rows[0].n,1);
       await openPair(other,owner);
-      await consentPost(other,'Đồng ý bù nợ',decisionsPath);
-      await openPair(owner,other);
-      const applied=await consentPost(owner,'Bù nợ ngay',
-        proposalPath+'/'+created.proposal.id+'/applications');
-      await owner.page.getByRole('heading',{name:'Đã bù nợ'}).waitFor();
-      const cash=await consentPost(owner,'Yêu cầu trả phần còn lại',
-        apiFor(groupId,cycleId)+'/bilateral-applications/'+applied.application.id+'/residual');
-      assert.equal(cash.status,'pending','requesting CASH never confirms a transfer');
-      await other.page.goto(ORIGIN+'/groups/'+groupId+'/settlements/'+cash.id);
-      await other.page.getByRole('button',{name:'Xác nhận đã thanh toán',exact:true}).click();
-      const confirmed=other.page.waitForResponse(r=>r.request().method()==='PATCH'&&
-        new URL(r.url()).pathname==='/api/groups/'+groupId+'/settlements/'+cash.id);
-      await other.page.getByRole('button',{name:'Xác nhận',exact:true}).click();
-      assert.equal((await confirmed).status(),200,'the actual counterparty confirms synthetic CASH');
+      const second=await cashTap(other,'Đã chuyển tiền');
+      assert.equal(second.state,'confirmed',
+        'second actor attestation applies exact bilateral setoff and real cash atomically');
+      assert.equal(second.amountMinor,first.amountMinor,
+        'confirmed cash must equal the precise transfer the first actor saw');
+      const intentResult=await pool.query(
+        'SELECT status,application_id,settlement_id FROM group_settlement_bilateral_cash_intents WHERE group_id=$1',
+        [groupId]);
+      assert.equal(intentResult.rows[0].status,'confirmed');
+      assert.equal(intentResult.rows[0].application_id,second.applicationId);
+      assert.equal(intentResult.rows[0].settlement_id,second.settlementId);
+      const settled=await pool.query(
+        'SELECT status,initiated_by,resolved_by,amount_minor::text FROM settlements WHERE id=$1',
+        [second.settlementId]);
+      assert.equal(settled.rows[0].status,'confirmed');
+      assert.equal(settled.rows[0].initiated_by,owner.id);
+      assert.equal(settled.rows[0].resolved_by,other.id);
+      assert.equal(settled.rows[0].amount_minor,first.amountMinor);
+      await owner.page.goto(ORIGIN+detail+"?view=settle");
+      // The new final cycle state suppresses another payment CTA and shows
+      // a single clear read-only link to the report, not a third approval.
+      await owner.page.getByText('✓ Đã quyết toán xong!',{exact:true}).waitFor();
+      assert.equal(await owner.page.getByRole('button',{name:'Đã chuyển tiền',exact:true}).count(),0);
+      const proof=await must(owner,'GET',apiFor(groupId,cycleId)+'/reconciliation');
+      assert.ok(proof.settlementCompletedAt,'cycle completes on the second signature');
+      assert.equal(proof.state,'locked','snapshot state must never change');
+      assert.equal(proof.outstandingMinor,'0');
+      assert.equal(proof.pendingCashMinor,'0');
+      await owner.page.getByRole('link',{name:'Xem tổng kết kỳ'}).click();
+      await owner.page.getByText('✓ Kỳ đã hoàn tất quyết toán.').waitFor();
       const remaining=await pool.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId]);
       assert.ok(remaining.rows.every(r=>r.outstanding_minor==='0'&&r.pending_cash_minor==='0'));
       const finished=await originalBalance(groupId);
@@ -803,8 +852,13 @@ async function scenario(engine,project,options,actors){
       assert.equal(finished.cash_requests,1);
       await noHorizontalOverflow(owner.page,project+' activated finance');
     }finally{
-      await pool.query('UPDATE settlement_cycle_engine_control SET enabled=false');
-      await pool.query('UPDATE settlement_cycle_engine_cohort SET admitted=false WHERE group_id=$1',[groupId]);
+      // Disable only this throwaway group's engine through the same owner
+      // API, preserving audit and leaving global emergency controls intact.
+      const current=await must(owner,'GET',activationUrl);
+      if(current.enabled){
+        const disabled=await toggleOwnerEngine(current,false);
+        assert.equal(disabled.enabled,false);
+      }
     }
     if(project.includes("phone")){
       const manifest=await owner.context.request.get(ORIGIN+"/manifest.webmanifest");

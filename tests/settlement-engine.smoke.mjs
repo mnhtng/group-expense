@@ -11,7 +11,7 @@ import {fixtureDatabaseUrl} from '../db/rr004-local-runtime.mjs';
 
 const base='postgresql://test:test@localhost:5432/group_expense';
 const origin='http://localhost:3103';
-test('SC025 real signed HTTP: default OFF, scoped rollout, dual approval, pause/retry and residual CASH without test bypasses',
+test('SC028 real signed HTTP: per-group owner activation, 2-party approval, emergency pause/retry and residual CASH',
  {timeout:90000},async()=>{
   assert.equal(process.env.CI,'true');assert.equal(process.env.DATABASE_URL,base);
   const adminUrl=fixtureDatabaseUrl(process.env);
@@ -74,7 +74,7 @@ test('SC025 real signed HTTP: default OFF, scoped rollout, dual approval, pause/
     const made=await req('POST',cycles,{expectedScheduleVersion:1,requestKey:randomUUID(),startDate:date(-3),endDate:date(-1)},a);
     assert.equal(made.status,201,made.text);const cycleId=made.body.cycle.id;
     assert.equal((await req('POST',cycles+'/'+cycleId+'/review',{expectedVersion:1},a)).status,200);
-    for(const [payer,participant,amount]of [[a,b,'130000'],[b,a,'100000'],[a,third,'7000']]){
+    for(const [payer,participant,amount]of [[a,b,'130000'],[b,a,'100000'],[a,third,'7000'],[third,a,'3000']]){
       const bill=await req('POST',root+'/expenses',{title:'SC025 original bill',occurredOn:date(-2),payerId:payer.id,
         items:[{name:'Original source',quantity:1,unitPriceMinor:amount,participants:[participant.id]}]},payer);
       assert.equal(bill.status,201,bill.text);
@@ -84,6 +84,11 @@ test('SC025 real signed HTTP: default OFF, scoped rollout, dual approval, pause/
     const snap=await req('GET',snapshotUrl,undefined,a);assert.equal(snap.status,200,snap.text);
     const locked=await req('POST',snapshotUrl,{expectedVersion:2,expectedFingerprint:snap.body.snapshot.fingerprint,requestKey:randomUUID()},a);
     assert.equal(locked.status,200,locked.text);
+    const completionRows=()=>owner.query(
+      'SELECT cycle_id,origin,triggered_by FROM group_settlement_cycle_completions WHERE group_id=$1 AND cycle_id=$2',
+      [groupId,cycleId]);
+    assert.equal((await completionRows()).rows.length,0,
+      'cycle must remain open to settlement while debts are outstanding');
     const proposals=cycles+'/'+cycleId+'/bilateral-proposals';
     const preview=await req('GET',proposals+'?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,a);
     assert.equal(preview.status,200,preview.text);
@@ -94,10 +99,34 @@ test('SC025 real signed HTTP: default OFF, scoped rollout, dual approval, pause/
     const decision=()=>({action:'approve',expectedVersion:proposal.version,expectedFingerprint:proposal.sourceFingerprint,requestKey:randomUUID()});
     let apply={expectedVersion:proposal.version,expectedFingerprint:proposal.sourceFingerprint,requestKey:randomUUID()};
     assert.equal((await req('POST',applyUrl,apply,a)).status,409,'default OFF blocks real writes');
-    await owner.query('INSERT INTO settlement_cycle_engine_cohort(group_id) VALUES($1)',[groupId]);
-    assert.equal((await req('POST',applyUrl,apply,a)).status,409,'admission without global enable is insufficient');
-    await owner.query('UPDATE settlement_cycle_engine_control SET enabled=true');
-    assert.equal((await req('GET',settings,undefined,a)).body.effectiveEnabled,true);
+    const activation=root+'/settlement-cycle/owner-activation';
+    assert.equal((await req('GET',activation,undefined,b)).status,403,
+      'members cannot view owner-only financial activation');
+    assert.equal((await req('PATCH',activation,{
+      enabled:true,expectedEnabled:false,expectedSettingsVersion:2},third)).status,403,
+      'group admin cannot enable group financial writes');
+    const ownerState=await req('GET',activation,undefined,a);
+    assert.equal(ownerState.status,200,ownerState.text);
+    assert.equal(ownerState.body.enabled,false);
+    assert.equal(ownerState.body.emergencyPaused,false);
+    assert.equal(ownerState.body.settingsVersion,2);
+    const activated=await req('PATCH',activation,{
+      enabled:true,expectedEnabled:false,expectedSettingsVersion:2},a);
+    assert.equal(activated.status,200,activated.text);
+    assert.equal(activated.body.enabled,true);
+    assert.equal((await req('GET',settings,undefined,a)).body.effectiveEnabled,true,
+      'owner activation alone grants financial writes without global/cohort rollout');
+    assert.equal((await owner.query('SELECT enabled FROM settlement_cycle_engine_control WHERE id=1')).rows[0].enabled,false,
+      'legacy global enabled remains OFF');
+    const grant=await req('POST',root+'/settlement-cycle/managers',
+      {memberId:b.id,action:'grant'},a);
+    assert.equal(grant.status,200,grant.text);
+    assert.equal((await req('PATCH',activation,{
+      enabled:false,expectedEnabled:true,expectedSettingsVersion:3},b)).status,403,
+      'delegated manager cannot disable owner financial engine');
+    assert.equal((await req('PATCH',settings,{
+      expectedVersion:3,requestedEnabled:false,requestedBilateralNetting:false},b)).status,403,
+      'delegated manager cannot indirectly disable an owner-enabled financial engine');
     const outside=randomUUID();
     await owner.query('INSERT INTO groups(id,owner_id,name) VALUES($1,$2,$3)',[outside,a.id,'SC025 outside cohort']);
     await owner.query("INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'owner')",[outside,a.id]);
@@ -105,9 +134,14 @@ test('SC025 real signed HTTP: default OFF, scoped rollout, dual approval, pause/
       expectedVersion:0,requestedEnabled:true,requestedBilateralNetting:true},a);
     assert.equal(outsideSetting.status,200,outsideSetting.text);
     assert.equal(outsideSetting.body.effectiveEnabled,false,'global enable never enrolls another opted-in group');
-    assert.equal((await req('PATCH',settings,{expectedVersion:2,requestedEnabled:false,requestedBilateralNetting:false},a)).body.effectiveEnabled,false);
+    assert.equal((await req('PATCH',settings,{expectedVersion:3,requestedEnabled:false,requestedBilateralNetting:false},a)).body.effectiveEnabled,false);
     assert.equal((await req('POST',applyUrl,apply,a)).status,409,'group opt-out independently blocks writes');
-    assert.equal((await req('PATCH',settings,{expectedVersion:3,requestedEnabled:true,requestedBilateralNetting:true},a)).body.effectiveEnabled,true);
+    const reopt=await req('PATCH',settings,{expectedVersion:4,requestedEnabled:true,requestedBilateralNetting:true},a);
+    assert.equal(reopt.body.effectiveEnabled,false,
+      'settlement re-opt-in must not silently re-enable financial writes');
+    assert.equal((await req('PATCH',activation,{
+      enabled:true,expectedEnabled:false,expectedSettingsVersion:5},a)).status,200);
+    assert.equal((await req('GET',settings,undefined,a)).body.effectiveEnabled,true);
     assert.equal((await req('POST',decisionUrl,decision(),a)).status,409,
       'group opt-out permanently invalidates the prior proposal version');
     const refreshed=await req('GET',proposals+'?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,a);
@@ -125,52 +159,174 @@ test('SC025 real signed HTTP: default OFF, scoped rollout, dual approval, pause/
     assert.equal((await req('POST',decisionUrl,decision(),b)).status,201);
     const approved=await req('GET',decisionUrl,undefined,a);
     assert.equal(approved.body.readyForApplication,true);assert.equal(approved.body.financialEngineEnabled,true);
-    await owner.query('UPDATE settlement_cycle_engine_control SET enabled=false');
+    const awaitingApplication=await req('GET',proposals+
+      '?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,a);
+    assert.equal(awaitingApplication.body.completedSetoff,null,
+      'two votes alone are not proof of a committed noncash transaction');
+    await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=true');
     assert.equal((await req('POST',applyUrl,apply,a)).status,409,'pause blocks an otherwise fully approved application');
-    await owner.query('UPDATE settlement_cycle_engine_control SET enabled=true');
+    await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=false');
     const applied=await Promise.all([req('POST',applyUrl,apply,a),req('POST',applyUrl,apply,a)]);
     assert.deepEqual(applied.map(r=>r.status).sort(),[200,201]);
     const application=applied[0].body.application;assert.equal(applied[0].body.financialEngineEnabled,true);
     assert.equal((await owner.query('SELECT count(*)::int AS n FROM group_settlement_bilateral_applications WHERE group_id=$1',[groupId])).rows[0].n,1);
-    await owner.query('UPDATE settlement_cycle_engine_control SET enabled=false');
+    const afterSetoff=await req('GET',proposals+
+      '?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,b);
+    assert.equal(afterSetoff.status,200,afterSetoff.text);
+    assert.equal(afterSetoff.body.completedSetoff.amountMinor,'100000',
+      'pair card badge must display the ACTUAL confirmed setoff amount');
+    assert.ok(Date.parse(afterSetoff.body.completedSetoff.appliedAt)>0);
+    assert.equal(afterSetoff.body.calculation.offsetMinor,'0',
+      'after apply no new two-way amount remains but the completed badge must persist');
+    assert.equal(afterSetoff.body.cashStatus.paidMinor,'0',
+      'noncash setoff never counts as money transferred');
+    assert.equal(afterSetoff.body.cashStatus.remainingMinor,'30000',
+      'cash due remains visible after netting');
+    await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=true');
     const replay=await req('POST',applyUrl,apply,a);assert.equal(replay.status,200);
     assert.equal(replay.body.application.id,application.id);assert.equal(replay.body.financialEngineEnabled,false);
     const residual=cycles+'/'+cycleId+'/bilateral-applications/'+application.id+'/residual';
     assert.equal((await req('GET',residual,undefined,a)).body.writable,false);
-    await owner.query('UPDATE settlement_cycle_engine_control SET enabled=true');
+    await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=false');
     const cashPreview=await req('GET',residual,undefined,a);assert.equal(cashPreview.body.writable,true);
     assert.equal(cashPreview.body.preview.financialEngineEnabled,true);
     assert.equal(cashPreview.body.preview.amountMinor,'30000');
     const cashKey=randomUUID(),cashBody={expectedCycleVersion:3,requestKey:cashKey,expectedFingerprint:cashPreview.body.preview.fingerprint};
     const cash=await req('POST',residual,cashBody,a);assert.equal(cash.status,201,cash.text);
     assert.equal(cash.body.status,'pending');
-    await owner.query('UPDATE settlement_cycle_engine_control SET enabled=false');
+    const pendingPreview=await req('GET',proposals+
+      '?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,a);
+    assert.equal(pendingPreview.body.cashStatus.paidMinor,'0',
+      'a unilateral payment claim must not be displayed as paid');
+    assert.equal(pendingPreview.body.cashStatus.pendingMinor,'30000');
+    assert.equal(pendingPreview.body.cashStatus.remainingMinor,'30000');
+    await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=true');
     const cashRetry=await req('POST',residual,cashBody,a);assert.equal(cashRetry.status,200,cashRetry.text);
     assert.equal(cashRetry.body.id,cash.body.id);
     assert.equal((await req('PATCH',root+'/settlements/'+cash.body.id,{action:'confirm'},a)).status,403);
     assert.equal((await req('PATCH',root+'/settlements/'+cash.body.id,{action:'confirm'},b)).status,200);
-    const batchUrl=cycles+'/'+cycleId+'/repayments';
-    const batchPreview=await req('GET',batchUrl,undefined,third);
-    assert.equal(batchPreview.body.enabled,false);
-    const direction=batchPreview.body.pairs.find(p=>p.debtorId===third.id&&p.creditorId===a.id);
-    assert.equal(direction.availableMinor,'7000');
-    const batchBody={expectedCycleVersion:3,requestKey:randomUUID(),debtorId:third.id,
-      creditorId:a.id,expectedFingerprint:direction.fingerprint};
-    assert.equal((await req('POST',batchUrl,batchBody,third)).status,409,'pause also blocks ordinary cycle CASH');
-    await owner.query('UPDATE settlement_cycle_engine_control SET enabled=true');
-    assert.equal((await req('GET',batchUrl,undefined,third)).body.enabled,true);
-    const batch=await req('POST',batchUrl,batchBody,third);assert.equal(batch.status,201,batch.text);
-    await owner.query('UPDATE settlement_cycle_engine_control SET enabled=false');
-    const batchReplay=await req('POST',batchUrl,batchBody,third);
-    assert.equal(batchReplay.status,200,batchReplay.text);assert.equal(batchReplay.body.id,batch.body.id);
-    assert.equal((await req('PATCH',root+'/settlements/'+batch.body.id,{action:'confirm'},third)).status,403);
-    assert.equal((await req('PATCH',root+'/settlements/'+batch.body.id,{action:'confirm'},a)).status,200);
+    const paidPreview=await req('GET',proposals+
+      '?partyAId='+encodeURIComponent(a.id)+'&partyBId='+encodeURIComponent(b.id),undefined,b);
+    assert.equal(paidPreview.status,200,paidPreview.text);
+    assert.equal(paidPreview.body.cashStatus.paidMinor,'30000',
+      'only real two-party-confirmed cash is displayed as the amount paid');
+    assert.equal(paidPreview.body.cashStatus.remainingMinor,'0');
+    assert.equal(paidPreview.body.cashStatus.pendingMinor,'0');
+    assert.equal(paidPreview.body.completedSetoff.amountMinor,'100000',
+      'applied setoff remains separate historical metadata');
+    // New BN030 mobile workflow: exactly two signed SENT/RECEIVED clicks
+    // replace both the old setoff approval screen and subsequent residual
+    // confirmation. A <-> third has 7000 / 3000, so net cash is 4000.
+    await owner.query('UPDATE settlement_cycle_engine_control SET emergency_paused=false');
+    const pairCashUrl=cycles+'/'+cycleId+'/pair-cash';
+    const pairPreviewUrl=proposals+'?partyAId='+encodeURIComponent(a.id)+
+      '&partyBId='+encodeURIComponent(third.id);
+    const initial=await req('GET',pairPreviewUrl,undefined,a);
+    assert.equal(initial.status,200,initial.text);
+    assert.equal(initial.body.calculation.offsetMinor,'3000');
+    assert.equal(initial.body.cashIntent,null);
+    const startData={action:'start',otherId:third.id,
+      expectedVersion:initial.body.currentVersion,
+      expectedFingerprint:initial.body.fingerprint,
+      requestKey:randomUUID()};
+    const start=await req('POST',pairCashUrl,startData,a);
+    assert.equal(start.status,200,start.text);
+    assert.equal(start.body.state,'pending');
+    assert.equal(start.body.amountMinor,'4000');
+    const firstRepeat=await req('POST',pairCashUrl,startData,a);
+    assert.equal(firstRepeat.status,200,firstRepeat.text);
+    assert.equal(firstRepeat.body.alreadyProcessed,true);
+    const beforeConfirmation=await owner.query(
+      'SELECT count(*)::int AS n FROM group_settlement_bilateral_applications WHERE group_id=$1 AND party_low=$2 AND party_high=$3',
+      [groupId,...[a.id,third.id].sort()]);
+    assert.equal(beforeConfirmation.rows[0].n,0,'first click never discharges money');
+    const awaiting=await req('GET',pairPreviewUrl,undefined,third);
+    assert.equal(awaiting.body.cashStatus.paidMinor,'0');
+    assert.equal(awaiting.body.cashIntent.status,'pending');
+    assert.equal(awaiting.body.cashIntent.initiatedBy,a.id);
+    // The historic APIs cannot approve or commit a paired-cash document
+    // until the actual other person has confirmed the transfer.
+    const awaitingProposal=awaiting.body.current;
+    assert.ok(awaitingProposal?.id);
+    const bypassApproval=await req('POST',
+      proposals+'/'+awaitingProposal.id+'/decisions',{
+        action:'approve',expectedVersion:awaitingProposal.version,
+        expectedFingerprint:awaitingProposal.sourceFingerprint,
+        requestKey:randomUUID(),
+      },third);
+    assert.equal(bypassApproval.status,409,
+      'legacy approval endpoint must not substitute cash receipt');
+    const bypassApply=await req('POST',
+      proposals+'/'+awaitingProposal.id+'/applications',{
+        expectedVersion:awaitingProposal.version,
+        expectedFingerprint:awaitingProposal.sourceFingerprint,
+        requestKey:randomUUID(),
+      },third);
+    assert.equal(bypassApply.status,409,
+      'legacy noncash apply cannot bypass two cash attestations');
+    const unrelated=await req('POST',pairCashUrl,{
+      action:'confirm',otherId:third.id,requestKey:randomUUID(),
+      expectedVersion:awaiting.body.currentVersion,
+      expectedFingerprint:awaiting.body.fingerprint},b);
+    assert.equal(unrelated.status,409,'unrelated pair cannot confirm a payment');
+    const confirmed=await req('POST',pairCashUrl,{
+      action:'confirm',otherId:a.id,requestKey:randomUUID(),
+      expectedVersion:awaiting.body.currentVersion,
+      expectedFingerprint:awaiting.body.fingerprint},third);
+    assert.equal(confirmed.status,200,confirmed.text);
+    assert.equal(confirmed.body.state,'confirmed');
+    assert.equal(confirmed.body.amountMinor,'4000');
+    assert.ok(confirmed.body.applicationId);
+    assert.ok(confirmed.body.settlementId);
+    const committed=await owner.query(
+      'SELECT status,amount_minor::text,initiated_by,resolved_by FROM settlements WHERE id=$1',
+      [confirmed.body.settlementId]);
+    assert.deepEqual(committed.rows[0],{
+      status:'confirmed',amount_minor:'4000',initiated_by:a.id,resolved_by:third.id,
+    });
+    const after=await req('GET',pairPreviewUrl,undefined,a);
+    assert.equal(after.status,200,after.text);
+    assert.equal(after.body.completedSetoff.amountMinor,'3000');
+    assert.equal(after.body.cashStatus.paidMinor,'4000');
+    assert.equal(after.body.cashStatus.remainingMinor,'0');
+    assert.equal(after.body.cashIntent.status,'confirmed');
+    const finalNotice=await owner.query(
+      `SELECT count(*)::int AS n FROM notifications
+        WHERE recipient_id=$1 AND group_id=$2
+          AND event_key=$3 AND kind='setoff_applied'`,
+      [a.id,groupId,'pair-money-confirmed:'+awaiting.body.cashIntent.id]);
+    assert.equal(finalNotice.rows[0].n,1,
+      'first signer receives one durable terminal payment notice');
+    const pairedCashReplay=await req('POST',pairCashUrl,{
+      action:'confirm',otherId:a.id,requestKey:randomUUID(),
+      expectedVersion:awaiting.body.currentVersion,
+      expectedFingerprint:awaiting.body.fingerprint},third);
+    assert.equal(pairedCashReplay.status,200,pairedCashReplay.text);
+    assert.equal(pairedCashReplay.body.alreadyProcessed,true);
+    assert.equal(pairedCashReplay.body.settlementId,confirmed.body.settlementId);
+    assert.equal((await owner.query(
+      'SELECT count(*)::int AS n FROM group_settlement_bilateral_cash_intents WHERE group_id=$1',
+      [groupId])).rows[0].n,1,'cash replay must be idempotent');
     const balances=(await owner.query('SELECT outstanding_minor::text,pending_cash_minor::text FROM bn005_obligation_balances WHERE group_id=$1',[groupId])).rows;
     assert.ok(balances.every(v=>v.outstanding_minor==='0'&&v.pending_cash_minor==='0'));
+    const completedCycle=(await completionRows()).rows;
+    assert.equal(completedCycle.length,1,'the final independent signature auto-finishes the whole cycle');
+    assert.equal(completedCycle[0].origin,'automatic');
+    assert.equal(completedCycle[0].triggered_by,third.id);
+    const historic=await req('GET',cycles,undefined,a);
+    assert.equal(historic.status,200);
+    assert.ok(historic.body.cycles.some(c=>c.id===cycleId&&c.state==='locked'&&c.settlementCompletedAt),
+      'UI must show completed while the immutable snapshot stays LOCKED');
+    const reconcile=await req('GET',cycles+'/'+cycleId+'/reconciliation',undefined,a);
+    assert.equal(reconcile.status,200,reconcile.text);
+    assert.ok(reconcile.body.settlementCompletedAt||reconcile.body.report?.settlementCompletedAt,
+      'member-facing reconciliation must expose the recognized completion');
     assert.deepEqual((await owner.query('SELECT to_jsonb(o)::text AS row FROM obligations o WHERE group_id=$1 ORDER BY id',[groupId])).rows,source);
     for(const[name,sql]of FINANCIAL_AUDIT_QUERIES)assert.equal((await owner.query(sql)).rows.length,0,name);
-    await owner.query('UPDATE settlement_cycle_engine_cohort SET admitted=false WHERE group_id=$1',[groupId]);
-    await owner.query('UPDATE settlement_cycle_engine_control SET enabled=false');
+    assert.equal((await req('PATCH',activation,{
+      enabled:false,expectedEnabled:true,expectedSettingsVersion:6},a)).status,200,
+      'owner may turn off own group financial engine');
+    assert.equal((await req('GET',settings,undefined,a)).body.effectiveEnabled,false);
   }finally{
     if(server){server.kill('SIGTERM');await Promise.race([once(server,'exit'),new Promise(r=>setTimeout(r,3000))]);}
     if(created)await owner.query('DROP OWNED BY "'+role+'"');

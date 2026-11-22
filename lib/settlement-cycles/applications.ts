@@ -1,4 +1,6 @@
 import "server-only";
+import {autoCompleteEligibleExpenses} from "@/lib/expenses/service";
+import {recordEligibleCycleCompletions} from "@/lib/settlement-cycles/completion";
 import {createHash,randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
 import type {PoolClient} from "pg";
@@ -24,7 +26,7 @@ export type ApplyBilateralInput={
 type Proposal={
   id:string;groupId:string;cycleId:string;partyLow:string;partyHigh:string;
   version:number;amount:string;fingerprint:string;snapshotFingerprint:string;
-  headId:string|null;headVersion:number;createdAt:Date;
+  headId:string|null;headVersion:number;createdAt:Date;flowOrigin:string;
 };
 type Stored={
   id:string;proposalId:string;groupId:string;cycleId:string;
@@ -43,7 +45,7 @@ const proposalQuery=`SELECT p.id,p.group_id AS "groupId",p.cycle_id AS "cycleId"
     p.version,p.offset_minor::text AS amount,
     p.source_fingerprint AS fingerprint,
     p.snapshot_fingerprint AS "snapshotFingerprint",
-    p.created_at AS "createdAt",
+    p.created_at AS "createdAt",p.flow_origin AS "flowOrigin",
     h.current_proposal_id AS "headId",h.version AS "headVersion"
   FROM group_settlement_bilateral_proposals p
   JOIN group_settlement_bilateral_heads h
@@ -108,7 +110,7 @@ export async function getBilateralApplication(groupId:string,cycleId:string,
  * Pair and source hashes are compared to live money before any insert.
  */
 export async function applyBilateralNoncash(groupId:string,cycleId:string,
-  proposalId:string,actorId:string,input:ApplyBilateralInput){
+  proposalId:string,actorId:string,input:ApplyBilateralInput,externalClient?:PoolClient){
   ids(groupId,cycleId,proposalId);
   if(!input||!Number.isSafeInteger(input.expectedVersion)||
     input.expectedVersion<1||!SHA.test(input.expectedFingerprint)||
@@ -120,12 +122,15 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
   ])).digest("hex");
 
   try{
-    return await transact(async client=>{
+    const work=async (client:PoolClient)=>{
       // Exactly the original lock order: GROUP -> CYCLE -> HEAD/PROPOSAL
       // -> immutable original obligations. The group lock serializes
       // settlement cash confirmations and source reservation changes.
       await activeGroup(client,groupId,actorId,true);
       const p=await selected(client,groupId,cycleId,proposalId);
+      // No public legacy apply endpoint may bypass the second CASH action.
+      if(p.flowOrigin==="paired_cash"&&!externalClient)
+        throw fail(409,"Khoản trả chỉ được hoàn tất tại màn thanh toán.");
       if(actorId!==p.partyLow&&actorId!==p.partyHigh)
         throw fail(403,"Chỉ hai người trong đề xuất được ghi bù trừ.");
       if(input.expectedVersion!==p.version||
@@ -212,13 +217,29 @@ export async function applyBilateralNoncash(groupId:string,cycleId:string,
       // Force deferred check *before* returning success; all changes
       // still rollback together if conservation fails.
       await client.query("SET CONSTRAINTS bn004_conservation_on_commit IMMEDIATE");
+      // Two independently recorded approvals now back this immutable
+      // noncash discharge. Only then may a fully settled invoice complete.
+      const invoices=await client.query<{expense_id:string}>(
+        `SELECT DISTINCT o.expense_id
+          FROM group_settlement_bilateral_application_allocations a
+          JOIN obligations o ON o.id=a.obligation_id AND o.group_id=a.group_id
+          WHERE a.application_id=$1 AND a.group_id=$2 ORDER BY o.expense_id`,
+        [id,groupId],
+      );
+      const autoCompleted=await autoCompleteEligibleExpenses(
+        client,groupId,invoices.rows.map(r=>r.expense_id),actorId,
+      );
+      // For paired cash, pending intent defers completion until confirmation.
+      await recordEligibleCycleCompletions(client,groupId,[cycleId],actorId);
       const saved=await client.query<Stored>(
         `SELECT ${applicationColumns} FROM group_settlement_bilateral_applications
          WHERE id=$1`,[id]);
       if(!saved.rows[0])throw fail(409,"Không đọc lại được bút toán bù trừ.");
       return {application:toDocument(saved.rows[0]),alreadyApplied:false,
+        autoCompletedCount:autoCompleted.length,
         financialEngineEnabled:access.bilateralEnabled};
-    });
+    };
+    return await (externalClient?work(externalClient):transact(work));
   }catch(e){
     if(e instanceof SettlementError)throw e;
     if(e&&typeof e==="object"&&"code" in e&&

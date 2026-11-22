@@ -58,8 +58,11 @@ function validated(input:ScheduleInput) {
   try {
     validLocalDate(input.anchorDate);
     const effectiveAt=localMidnightInstant(input.anchorDate,input.timeZone);
-    // All schedule starts must be a FULL local day in the future.
-    if(input.anchorDate<=currentLocalDate(input.timeZone)) {
+    // First-time MANUAL setup can intentionally select historic invoices.
+    // Automatic frequencies and revisions of a running schedule remain
+    // future-only to avoid reinterpreting existing automatic boundaries.
+    if(input.frequency!=="manual"&&
+       input.anchorDate<=currentLocalDate(input.timeZone)) {
       throw Error("Ngày bắt đầu phải từ ngày mai trở đi, theo múi giờ đã chọn.");
     }
     return {effectiveAt};
@@ -144,21 +147,21 @@ export async function updateSettlementSchedule(
     // including a cycle created by another delegated manager.
     const intersects=await client.query(
       `SELECT 1 FROM group_settlement_cycles
-       WHERE group_id=$1 AND start_at<$2::timestamptz
+       WHERE group_id=$1 AND cancelled_at IS NULL AND start_at<$2::timestamptz
          AND end_at>$2::timestamptz LIMIT 1`,
       [groupId,effectiveAt],
     );
     if(intersects.rowCount)throw new SettlementSettingsError(409,
       "Không thể thay đổi lịch giữa một kỳ đã tạo. Chọn ranh giới sau khi kỳ kết thúc.");
-    // The above guards run INSIDE the transaction after permission+group locks.
-    // A planned revision can be replaced, but an active/historical one cannot.
-    // Re-check wall-clock time inside the locked transaction. A request that
-    // stalls across local midnight must NEVER backdate a schedule change.
+    // Only an initial/manual configuration may be backdated. A running
+    // schedule, even a manual one, may only change at a future boundary.
+    // All checks run under the same group lock as cycle creation.
     const clock=await client.query<{future:boolean}>(
       "SELECT $1::timestamptz > clock_timestamp() AS future",[effectiveAt],
     );
-    if(!clock.rows[0]?.future)throw new SettlementSettingsError(409,
-      "Thời điểm áp dụng đã qua. Vui lòng tải lại và chọn ngày khác.");
+    if(!clock.rows[0]?.future&&!(input.frequency==="manual"&&!current))
+      throw new SettlementSettingsError(409,
+        "Lịch đang hoạt động chỉ có thể thay đổi từ một ngày trong tương lai.");
     if(pending) {
       const retired=await client.query(
         `UPDATE group_settlement_schedule_revisions

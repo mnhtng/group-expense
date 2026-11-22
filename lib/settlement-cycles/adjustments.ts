@@ -66,7 +66,7 @@ async function earliestUnlocked(client:PoolClient,groupId:string,endDate:string)
     SELECT id,state,period_start::text AS "startDate",
       period_end::text AS "endDate"
     FROM group_settlement_cycles
-    WHERE group_id=$1 AND period_start>=$2::date
+    WHERE group_id=$1 AND cancelled_at IS NULL AND period_start>=$2::date
       AND state IN ('open','review')
     ORDER BY period_start,id LIMIT 1`,[groupId,endDate]);
   return result.rows[0]??null;

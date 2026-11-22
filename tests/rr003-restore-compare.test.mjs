@@ -66,7 +66,9 @@ const baseline=()=>({
 test("RR-003 complete immutable financial comparison passes only exact matches",()=>{
   const a=baseline(),b=structuredClone(a);
   b.branchId="br-rr003-demo-recovery";
-  assert.equal(FINANCIAL_CLASSES.length,55);
+  assert.equal(FINANCIAL_CLASSES.length,58);
+  assert.ok(FINANCIAL_CLASSES.some(([kind,table])=>
+    kind==="bilateral_cash_intents"&&table==="group_settlement_bilateral_cash_intents"));
   assert.deepEqual(compareDigests(a,b),
     {checks:CHECK_NAMES.length,matched:true,releaseApproved:false});
   b.checks.noncash_allocations.sha256="a".repeat(64);

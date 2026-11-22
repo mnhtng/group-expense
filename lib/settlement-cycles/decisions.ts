@@ -1,4 +1,5 @@
 import "server-only";
+import {recordEligibleCycleCompletions} from "@/lib/settlement-cycles/completion";
 import {readEngineAccess} from "@/lib/settlement-cycles/engine";
 import {createHash,randomUUID} from "node:crypto";
 import {pool} from "@/lib/db/pool";
@@ -23,7 +24,7 @@ export type DecisionStatus="pending"|"partially_approved"|"agreed"|
 type Proposal={
   id:string;groupId:string;cycleId:string;partyLow:string;partyHigh:string;
   version:number;sourceFingerprint:string;snapshotFingerprint:string;
-  createdAt:Date;headId:string|null;
+  createdAt:Date;headId:string|null;flowOrigin:string;
 };
 type EventRow={
   id:string;eventType:string;actorId:string|null;requestKey:string;
@@ -53,7 +54,8 @@ async function selectProposal(client:PoolClient,groupId:string,cycleId:string,
       p.party_low AS "partyLow",p.party_high AS "partyHigh",
       p.version,p.source_fingerprint AS "sourceFingerprint",
       p.snapshot_fingerprint AS "snapshotFingerprint",
-      p.created_at AS "createdAt",h.current_proposal_id AS "headId"
+      p.created_at AS "createdAt",p.flow_origin AS "flowOrigin",
+      h.current_proposal_id AS "headId"
     FROM group_settlement_bilateral_proposals p
     JOIN group_settlement_bilateral_heads h
       ON h.group_id=p.group_id AND h.cycle_id=p.cycle_id
@@ -170,7 +172,7 @@ async function appendEvent(client:PoolClient,p:Proposal,kind:string,
  * HTTP 409. Never throw inside a transaction after inserting that event.
  */
 export async function decideBilateralProposal(groupId:string,cycleId:string,
-  proposalId:string,actorId:string,input:DecisionRequest){
+  proposalId:string,actorId:string,input:DecisionRequest,externalClient?:PoolClient){
   validateIds(groupId,cycleId,proposalId);
   if(!input||!["approve","reject","revoke"].includes(input.action)||
     !Number.isSafeInteger(input.expectedVersion)||input.expectedVersion<1||
@@ -178,10 +180,14 @@ export async function decideBilateralProposal(groupId:string,cycleId:string,
     throw error(400,"Hành động, phiên bản hoặc mã yêu cầu không hợp lệ.");
   const digest=sha(["bn003-decision-v1",proposalId,actorId,input.action,
     input.expectedVersion,input.expectedFingerprint]);
-  const result=await transact(async client=>{
+  const work=async (client:PoolClient)=>{
     // Same lock order as all cash writers: group -> cycle -> proposal head.
     await activeGroup(client,groupId,actorId,true);
     const p=await selectProposal(client,groupId,cycleId,proposalId,false);
+    // Only the pair-cash orchestrator can sign its internal consent events.
+    // Legacy decision routes must not bypass the money acknowledgement.
+    if(p.flowOrigin==="paired_cash"&&!externalClient)
+      throw error(409,"Khoản trả chỉ được xác nhận tại màn thanh toán.");
     if(actorId!==p.partyLow&&actorId!==p.partyHigh)
       throw error(403,"Chỉ hai người liên quan mới được quyết định.");
     if(p.version!==input.expectedVersion||
@@ -252,10 +258,13 @@ export async function decideBilateralProposal(groupId:string,cycleId:string,
       throw error(409,"Chỉ người đã xác nhận mới được thu hồi.");
     const decisionId=await appendEvent(client,p,input.action,input.requestKey,
       digest,actorId);
+    if(input.action==="reject"||input.action==="revoke")
+      await recordEligibleCycleCompletions(client,groupId,[cycleId],actorId);
     const after=await readModel(client,p,actorId,false);
     return {decisionId,alreadyRecorded:false,status:after.view.status,
       view:after.view,conflict:false};
-  });
+  };
+  const result=externalClient?await work(externalClient):await transact(work);
   if(result.conflict)throw error(409,result.status==="expired"?
     "Đề xuất đã hết hạn, không thể xác nhận.":"Công nợ hoặc quyền đã thay đổi; xác nhận cũ vô hiệu.");
   return {decisionId:result.decisionId,alreadyRecorded:result.alreadyRecorded,

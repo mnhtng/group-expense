@@ -9,6 +9,8 @@ export const APPEND_ONLY_TABLES=Object.freeze([
   'group_membership_events','group_note_events','group_settlement_config_events',
   'obligation_sources','settlement_allocations','recurring_expense_occurrences',
   'group_settlement_schedule_events','group_settlement_cycle_events',
+  'group_settlement_cycle_draft_events',
+  'group_settlement_cycle_completions',
   'group_settlement_cycle_snapshot_expenses','group_settlement_cycle_snapshot_obligations',
   'group_settlement_cycle_snapshots','group_settlement_cycle_repayments',
   'group_settlement_bilateral_proposals','group_settlement_bilateral_sources',
@@ -22,6 +24,7 @@ export const APPEND_ONLY_TABLES=Object.freeze([
 // no actual identifier update is allowed. Never grant audit-body UPDATE.
 export const LOCK_COLUMNS=Object.freeze({
   group_settlement_cycle_snapshots:'cycle_id',
+  group_settlement_bilateral_cash_intents:'id',
   group_settlement_bilateral_proposals:'id',
   group_settlement_bilateral_decision_events:'id',
   group_settlement_bilateral_applications:'id',
@@ -34,13 +37,30 @@ const deletable=new Set(['user','session','account','verification',
 export const COLUMN_UPDATES=Object.freeze({
   ...Object.fromEntries(Object.entries(LOCK_COLUMNS).map(([t,c])=>[t,[c]])),
   obligations:['voided_at'],settlements:['status','resolved_at','resolved_by'],
+  group_settlement_bilateral_cash_intents:[
+    'id','status','resolved_by','resolved_at','application_id','settlement_id'],
   notifications:['read_at'],
 });
-const guardNames=['sc004_manifest_immutable','bn002_proposal_immutable',
+const guardNames=['sc004_manifest_immutable','bn030_immutable_intent',
+  'bn002_proposal_immutable',
   'bn003_event_immutable','bn004_app_immutable','sc006_adjustment_guard',
   'sc009_dispute_guard','sc009_dispute_event_guard'];
 const guards=Object.entries(LOCK_COLUMNS).map(([table],i)=>({table_name:table,
   trigger_name:guardNames[i],operations:16}));
+guards.push(
+  {table_name:'group_settlement_cycle_completions',
+    trigger_name:'sc031_completion_immutable',operations:24},
+  {table_name:'group_settlement_cycle_completions',
+    trigger_name:'sc031_completion_no_truncate',operations:32},
+  {table_name:'group_settlement_cycle_disputes',
+    trigger_name:'sc031_no_post_completion_dispute',operations:4},
+  {table_name:'group_settlement_bilateral_cash_intents',
+    trigger_name:'bn030_immutable_intent',operations:24},
+  {table_name:'group_settlement_cycle_draft_events',
+    trigger_name:'sc026_draft_events_immutable',operations:24},
+  {table_name:'group_settlement_cycle_draft_events',
+    trigger_name:'sc026_draft_events_no_truncate',operations:32},
+);
 guards.push({table_name:'settlement_cycle_engine_events',trigger_name:'sc025_events_immutable',operations:24},
   {table_name:'settlement_cycle_engine_events',trigger_name:'sc025_events_no_truncate',operations:32});
 for(const [table,prefix,guardOps,auditOps] of [

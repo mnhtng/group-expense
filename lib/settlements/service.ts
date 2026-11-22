@@ -3,6 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { pool } from "@/lib/db/pool";
 import type { PoolClient } from "pg";
 import { notifySettlement } from "@/lib/notifications/service";
+import { autoCompleteEligibleExpenses } from "@/lib/expenses/service";
+import {completeCyclesTouchedByExpenses} from "@/lib/settlement-cycles/completion";
 
 export type SettlementStatus = "pending" | "confirmed" | "rejected" | "cancelled";
 export type SettlementAllocationInput = { obligationId: string; amountMinor: string };
@@ -144,11 +146,11 @@ export async function createSettlement(groupId:string, actorId:string, raw:Creat
   });
 }
 export async function resolveSettlement(groupId:string,settlementId:string,actorId:string,
-  action:"confirm"|"reject"|"cancel",note?:string) {
+  action:"confirm"|"reject"|"cancel",note?:string,externalClient?:PoolClient) {
   if(!validUUID(settlementId)) throw new SettlementError(404,"Không tìm thấy yêu cầu.");
   if(note!==undefined && (typeof note!=="string" || note.length>500))
     throw new SettlementError(400,"Ghi chú tối đa 500 ký tự.");
-  return transaction(async client=>{
+  const work=async (client:PoolClient)=>{
     await memberGate(client,groupId,actorId);
     const result=await client.query<{id:string;status:SettlementStatus;initiated_by:string;
       debtor_id:string;creditor_id:string;}>(
@@ -167,7 +169,7 @@ export async function resolveSettlement(groupId:string,settlementId:string,actor
     }
     const next: SettlementStatus=action==="confirm"?"confirmed":action==="reject"?"rejected":"cancelled";
     await client.query(
-      `UPDATE settlements SET status=$2,resolved_at=now(),resolved_by=$3 WHERE id=$1`,
+      `UPDATE settlements SET status=$2,resolved_at=clock_timestamp(),resolved_by=$3 WHERE id=$1`,
       [settlementId,next,actorId],
     );
     await client.query(
@@ -177,8 +179,28 @@ export async function resolveSettlement(groupId:string,settlementId:string,actor
     );
     await notifySettlement(client,settlementId,actorId,`settlement_${next}` as
       "settlement_confirmed"|"settlement_rejected"|"settlement_cancelled");
-    return {id:settlementId,status:next};
-  });
+    // Cash exists only after BOTH real counterparties have acknowledged.
+    // Finalize affected invoices in this SAME transaction when no other
+    // original obligations remain. Reject/cancel never auto-finalize.
+    let autoCompleted:string[]=[];
+    if(next==="confirmed"){
+      const sources=await client.query<{expense_id:string}>(
+        `SELECT DISTINCT o.expense_id FROM settlement_allocations a
+         JOIN obligations o ON o.id=a.obligation_id AND o.group_id=a.group_id
+         WHERE a.settlement_id=$1 AND a.group_id=$2 ORDER BY o.expense_id`,
+        [settlementId,groupId],
+      );
+      autoCompleted=await autoCompleteEligibleExpenses(
+        client,groupId,sources.rows.map(r=>r.expense_id),actorId,
+      );
+      // Same transaction, group-lock serialised. Paired-cash's pending intent
+      // blocks completion until the other signed action is fully committed.
+      await completeCyclesTouchedByExpenses(
+        client,groupId,sources.rows.map(r=>r.expense_id),actorId);
+    }
+    return {id:settlementId,status:next,autoCompletedCount:autoCompleted.length};
+  };
+  return externalClient?work(externalClient):transaction(work);
 }
 
 const selectSettlement=`

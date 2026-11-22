@@ -1,78 +1,77 @@
 "use client";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { InlineConfirmation } from "@/components/ui/inline-confirmation";
+import {useRouter} from "next/navigation";
+import {useState} from "react";
 
-type Action="confirm"|"reject"|"cancel";
-const labels:Record<Action,{title:string;description:string;confirm:string}>={
-  confirm:{
-    title:"Xác nhận đã thanh toán?",
-    description:"Chỉ xác nhận khi đã thực sự chuyển hoặc nhận tiền.",
-    confirm:"Xác nhận",
-  },
-  reject:{
-    title:"Từ chối yêu cầu thanh toán?",
-    description:"Yêu cầu bị từ chối. Công nợ không thay đổi.",
-    confirm:"Từ chối yêu cầu",
-  },
-  cancel:{
-    title:"Hủy yêu cầu thanh toán?",
-    description:"Yêu cầu bị hủy. Công nợ không thay đổi.",
-    confirm:"Hủy yêu cầu",
-  },
-};
-export function SettlementActions({groupId,settlementId,canConfirm,canCancel}:{
-  groupId:string;settlementId:string;canConfirm:boolean;canCancel:boolean;
+/** The initiator already cast the first acknowledgement.
+ * Only the real other counterparty may approve/reject in one tap.
+ * POST/PATCH still re-authorizes and locks every write in PostgreSQL.
+ */
+export function SettlementActions({groupId,settlementId,canConfirm,canCancel,
+  actorRole}:{groupId:string;settlementId:string;canConfirm:boolean;
+  canCancel:boolean;actorRole:"debtor"|"creditor";
 }){
   const router=useRouter();
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
-  const [confirmation,setConfirmation]=useState<Action|null>(null);
+  const [feedback,setFeedback]=useState("");
   const [note,setNote]=useState("");
-  async function decide(action:Action){
+  const [showNote,setShowNote]=useState(false);
+  const confirmLabel=actorRole==="creditor"?"Xác nhận đã nhận":"Xác nhận đã trả";
+  const run=async(action:"confirm"|"reject"|"cancel")=>{
     if(busy)return;
-    setBusy(true);setError("");
+    setBusy(true);setError("");setFeedback("");
     try{
-      const res=await fetch(`/api/groups/${groupId}/settlements/${settlementId}`,{
-        method:"PATCH",headers:{"Content-Type":"application/json"},
-        credentials:"same-origin",cache:"no-store",body:JSON.stringify({action,note}),
+      const res=await fetch("/api/groups/"+groupId+"/settlements/"+settlementId,{
+        method:"PATCH",headers:{"content-type":"application/json"},
+        credentials:"same-origin",cache:"no-store",
+        body:JSON.stringify({action,note}),
       });
       if(!res.ok){
-        const data=await res.json();
-        setError(data.error??"Không thể xử lý yêu cầu.");
-        router.refresh(); // Reconcile a possibly stale financial state.
-        return;
+        const result:unknown=await res.json().catch(()=>null);
+        const msg=result&&typeof result==="object"&&"error" in result&&
+          typeof result.error==="string"?result.error:"Không thể xử lý.";
+        throw Error(msg);
       }
-      setConfirmation(null);setNote("");
-      router.refresh(); // Intentional update after server-confirmed state change.
-    }catch{setError("Không có kết nối. Vui lòng tải lại và kiểm tra trạng thái.");}
-    finally{setBusy(false)}
-  }
-  return <section className="space-y-3">
+      setNote("");setShowNote(false);
+      setFeedback(action==="confirm"?"Đã xác nhận thanh toán":
+        action==="reject"?"Đã từ chối":"Đã hủy");
+      router.refresh();
+    }catch(e){
+      setError(e instanceof Error?e.message:"Không có kết nối. Vui lòng kiểm tra và thử lại.");
+      router.refresh();
+    }finally{setBusy(false);}
+  };
+  return <section className="space-y-2">
     <div className="flex flex-wrap gap-2">
       {canConfirm&&<>
-        <button type="button" disabled={busy} onClick={()=>{setError("");setConfirmation("confirm");}}
-          className="min-h-11 rounded-xl bg-primary px-4 py-3 text-sm text-primary-foreground disabled:opacity-50">
-          Xác nhận đã thanh toán
+        <button type="button" disabled={busy} onClick={()=>void run("confirm")}
+          title="Chỉ xác nhận khi đã thực sự chuyển hoặc nhận tiền."
+          className="min-h-12 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+          {busy?"Đang xử lý…":confirmLabel}
         </button>
-        <button type="button" disabled={busy} onClick={()=>{setError("");setConfirmation("reject");}}
-          className="min-h-11 rounded-xl border px-4 py-3 text-sm disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={()=>void run("reject")}
+          title="Từ chối yêu cầu: Công nợ không thay đổi."
+          className="min-h-12 rounded-xl border px-4 text-sm font-semibold disabled:opacity-50">
           Từ chối
         </button>
       </>}
-      {canCancel&&<button type="button" disabled={busy}
-        onClick={()=>{setError("");setConfirmation("cancel");}}
-        className="min-h-11 rounded-xl border border-destructive px-4 py-3 text-sm text-destructive disabled:opacity-50">
-        Hủy yêu cầu
+      {canCancel&&<button type="button" disabled={busy} onClick={()=>void run("cancel")}
+        className="min-h-12 rounded-xl border px-4 text-sm disabled:opacity-50">
+        Hủy
       </button>}
     </div>
-    {confirmation&&<InlineConfirmation title={labels[confirmation].title}
-      description={labels[confirmation].description}
-      confirmLabel={labels[confirmation].confirm}
-      danger={confirmation!=="confirm"} busy={busy}
-      note={note} onNoteChange={setNote} noteMaxLength={500}
-      onCancel={()=>{setConfirmation(null);setError("");setNote("");}}
-      onConfirm={()=>void decide(confirmation)}/>}
+    <button type="button" disabled={busy}
+      className="min-h-11 text-sm text-muted-foreground underline underline-offset-4"
+      onClick={()=>setShowNote(v=>!v)}>
+      {showNote?"Ẩn ghi chú":"Thêm ghi chú"}
+    </button>
+    {showNote&&<label className="block space-y-2 text-sm">
+      <span>Ghi chú (không bắt buộc)</span>
+      <textarea value={note} onChange={e=>setNote(e.target.value)}
+        maxLength={500} rows={2}
+        className="w-full rounded-xl border bg-background p-3"/>
+    </label>}
+    {feedback&&<p role="status" className="text-sm text-money-in">{feedback}</p>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
   </section>;
 }

@@ -6,6 +6,8 @@ import {GroupRenameForm} from "@/components/groups/group-rename-form";
 import {GroupArchiveForm} from "@/components/groups/group-archive-form";
 import {GroupInviteForm} from "@/components/groups/group-invite-form";
 import {SettlementCycleSettingsPanel} from "@/components/groups/settlement-cycle-settings-panel";
+import {SettlementOwnerEnginePanel} from "@/components/groups/settlement-owner-engine-panel";
+import {getOwnerEngineActivation} from "@/lib/settlement-cycles/owner-activation";
 import {SettlementSchedulePanel} from "@/components/groups/settlement-schedule-panel";
 import {SettlementCycleLifecyclePanel} from "@/components/groups/settlement-cycle-lifecycle-panel";
 import {getSettlementSchedule} from "@/lib/settlement-cycles/schedule";
@@ -33,6 +35,8 @@ export default async function ManageGroupPage({params,searchParams}:{
   const eligibility=section==="members"?await getExitEligibility(groupId,user.id):null;
   const schedule=section==="schedule"||section==="periods"?await getSettlementSchedule(groupId,user.id):null;
   const cycles=section==="periods"?await listSettlementCycles(groupId,user.id):null;
+  const ownerActivation=section==="cycle"&&role==="owner"
+    ?await getOwnerEngineActivation(groupId,user.id):null;
   const inviteUrl=invite?`${process.env.BETTER_AUTH_URL??"http://localhost:3000"}/invite/${invite}`:undefined;
   return <main className="app-page space-y-6">
     <PageHeader title={section?titles[section]:"Quản lý nhóm"} context={group.name}
@@ -53,10 +57,12 @@ export default async function ManageGroupPage({params,searchParams}:{
     {section==="invite"&&<section className="app-panel"><GroupInviteForm groupId={groupId} groupName={group.name} initialInviteUrl={inviteUrl}/></section>}
     {section==="cycle"&&<>
       <SettlementCycleSettingsPanel key={`${settings.version}-${settings.managerIds.join(",")}`} groupId={groupId} initial={settings} members={members}/>
+      {ownerActivation&&<SettlementOwnerEnginePanel key={`${ownerActivation.settingsVersion}-${ownerActivation.enabled}`} groupId={groupId} initial={ownerActivation}
+        requestedEnabled={settings.requestedEnabled}/>}
       <GroupedList><NavigationRow href={manage+"?section=schedule"} title="Lịch quyết toán"/>
         <NavigationRow href={manage+"?section=periods"} title="Tạo kỳ"/></GroupedList>
     </>}
-    {section==="schedule"&&schedule&&<SettlementSchedulePanel key={schedule.version} groupId={groupId} initial={schedule}/>}
+    {section==="schedule"&&schedule&&<SettlementSchedulePanel key={schedule.version} groupId={groupId} initial={schedule} requestedEnabled={settings.requestedEnabled}/>}
     {section==="periods"&&schedule&&cycles&&<SettlementCycleLifecyclePanel groupId={groupId} requestedEnabled={settings.requestedEnabled} schedule={schedule} cycles={cycles.cycles} renderedAt={new Date().toISOString()}/>}
     {section==="archive"&&<section className="app-panel"><GroupArchiveForm groupId={groupId} groupName={group.name}/></section>}
   </main>;

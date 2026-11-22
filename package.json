@@ -14,6 +14,7 @@
     "db:check": "node --env-file-if-exists=.env.local db/check.mjs",
     "test:integration": "node --env-file-if-exists=.env.local --test tests/*.integration.mjs",
     "db:neon-check": "node --env-file-if-exists=.env.local db/neon-check.mjs",
+    "db:runtime-check": "node --env-file-if-exists=.env.local db/runtime-finance-check.mjs",
     "test:http": "node --test tests/*.smoke.mjs",
     "test:finance:audit": "node db/sc007-audit.mjs"
   },
