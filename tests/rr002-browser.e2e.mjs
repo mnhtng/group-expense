@@ -1058,6 +1058,10 @@ async function scenario(engine,project,options,actors){
     assert.equal(preAnchor.cycle.periodEnd,day(-6),
       "inclusive input must become exclusive end exactly one day later");
     const expectedLabel=asDMY(day(-24))+" – "+asDMY(day(-7));
+    // Server mutation triggers Next.js router.refresh(). Wait for the freshly
+    // created period to appear in the management list before navigating away;
+    // otherwise WebKit can interrupt a page.goto with the late refresh.
+    await owner.page.getByText(expectedLabel,{exact:true}).waitFor();
     await owner.page.goto(ORIGIN+"/groups/"+historicalGroup+"/cycles");
     await owner.page.getByText(expectedLabel,{exact:true}).waitFor();
     await owner.page.goto(ORIGIN+"/groups/"+historicalGroup+
