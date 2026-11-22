@@ -101,8 +101,8 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
   };
 
   async function changeDraft(cycle:CycleRecord,action:"edit"|"cancel"){
-    if(busy||cycle.state!=="open"||cycle.source!=="manual"||!schedule.canManage)return;
-    if(action==="edit"&&(!editing||editing.id!==cycle.id))return;
+    if(busy||cycle.state==="locked"||!schedule.canManage)return;
+    if(action==="edit"&&(cycle.source!=="manual"||!editing||editing.id!==cycle.id))return;
     setBusy(true);setError("");setMessage("");
     try{
       const body=action==="edit"?{
@@ -122,8 +122,8 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
         ? (payload as {error:string}).error:"Không cập nhật được kỳ.");
       setEditing(null);setConfirmCancel(null);
       setMessage(action==="edit"
-        ?"Đã cập nhật ngày của kỳ chưa kiểm tra. Không thay đổi công nợ."
-        :"Đã xóa kỳ chưa kiểm tra khỏi danh sách và lưu lịch sử thao tác.");
+        ?"Đã cập nhật kỳ chưa chốt. Hãy kiểm tra lại số liệu trước khi chốt."
+        :"Đã hủy kỳ chưa chốt; lịch sử vẫn được lưu để kiểm toán.");
       router.refresh();
     }catch(cause){
       setError(cause instanceof Error?cause.message:"Lỗi kết nối.");
@@ -138,9 +138,9 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
         Kỳ quyết toán (chế độ chuẩn bị)
       </h2>
       <p className="text-sm text-muted-foreground">
-        Kỳ thủ công còn Đang mở được sửa hoặc xóa trước khi chuyển sang
-        Chờ kiểm tra. Sau khi khóa sổ, số liệu được giữ nguyên; tạo kỳ không
-        tự chuyển tiền hoặc bù nợ.
+        Kỳ thủ công Đang mở hoặc Chờ kiểm tra có thể sửa hay xóa trước khi chốt.
+        Kỳ theo lịch chỉ được hủy, không sửa ngày riêng lẻ. Kỳ đã chốt không thể
+        thay đổi; hóa đơn và công nợ luôn được giữ nguyên.
       </p>
     </div>
     {!requestedEnabled
@@ -213,19 +213,21 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
           {" · "}{cycle.timeZone}
           {cycle.reviewedAt?` · Chuyển trạng thái ${formatDateTimeDMY(cycle.reviewedAt)}`:""}
         </p>
-        {cycle.state==="open"&&cycle.source==="manual"&&schedule.canManage&&
+        {cycle.state!=="locked"&&schedule.canManage&&
           <div className="space-y-3 rounded-xl border p-3">
             <div className="flex flex-wrap gap-2">
-              <button type="button" disabled={busy}
+              {cycle.source==="manual"&&<button type="button" disabled={busy}
                 onClick={()=>{setEditing({id:cycle.id,start:cycle.periodStart,end:cycle.periodEnd});setConfirmCancel(null);}}
-                className="min-h-11 rounded-xl border px-3 text-sm font-medium">Sửa kỳ</button>
+                className="min-h-11 rounded-xl border px-3 text-sm font-medium">Sửa kỳ</button>}
               <button type="button" disabled={busy}
                 onClick={()=>{setConfirmCancel(cycle.id);setEditing(null);}}
-                className="min-h-11 rounded-xl border border-destructive px-3 text-sm text-destructive">Xóa kỳ</button>
+                className="min-h-11 rounded-xl border border-destructive px-3 text-sm text-destructive">
+                {cycle.source==="manual"?"Xóa kỳ":"Hủy kỳ theo lịch"}
+              </button>
             </div>
             {editing?.id===cycle.id&&<div className="space-y-3">
               <p className="text-xs text-muted-foreground">
-                Chỉ được sửa kỳ chưa chuyển sang kiểm tra. Không thay đổi hóa đơn hoặc công nợ.
+                Chỉ được sửa kỳ chưa chốt số liệu. Với kỳ Chờ kiểm tra, cần xem lại bản tổng hợp trước khi chốt; hóa đơn và công nợ không thay đổi.
               </p>
               <DateDMYInput label="Bắt đầu kỳ" value={editing.start}
                 onChange={value=>setEditing(old=>old&&old.id===cycle.id?{...old,start:value}:old)}/>
@@ -241,10 +243,14 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
                   className="min-h-11 rounded-xl border px-4 text-sm">Đóng</button>
               </div>
             </div>}
-            {confirmCancel===cycle.id&&<div role="group" aria-label="Xác nhận xóa kỳ thủ công"
+            {confirmCancel===cycle.id&&<div role="group" aria-label="Xác nhận hủy kỳ chưa chốt"
               className="space-y-2">
-              <p className="text-sm">Xóa kỳ khỏi danh sách và giải phóng khoảng ngày? Không thể hoàn tác.
-                Lịch sử tạo và hủy vẫn được giữ để kiểm toán.</p>
+              <p className="text-sm">
+                {cycle.source==="scheduled"
+                  ?"Hủy kỳ theo lịch này? Kỳ sẽ không được sinh lại. Lịch định kỳ của nhóm không đổi."
+                  :"Xóa kỳ này khỏi danh sách và giải phóng khoảng ngày?"}
+                {" "}Không thể hoàn tác. Lịch sử vẫn được giữ để kiểm toán.
+              </p>
               <div className="flex flex-wrap gap-2">
                 <button type="button" disabled={busy}
                   onClick={()=>void changeDraft(cycle,"cancel")}
@@ -266,7 +272,7 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
             Chuyển sang chờ kiểm tra
           </button>}
         {(cycle.state==="review"||cycle.state==="locked")&&
-          <SettlementSnapshotPanel key={cycle.id}
+          <SettlementSnapshotPanel key={cycle.id+"-"+cycle.draftRevision}
             groupId={groupId} cycleId={cycle.id} version={cycle.version}
             canManage={requestedEnabled&&schedule.canManage}
             locked={cycle.state==="locked"}/>}
