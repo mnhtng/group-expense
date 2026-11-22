@@ -20,6 +20,8 @@ export type ManualScheduleWindow={
 export type ScheduleView={
   version:number;current:ScheduleRevision|null;pending:ScheduleRevision|null;
   manualWindows:ManualScheduleWindow[];
+  /** Cancelled recurring slots that a manager may fill manually. */
+  replacementWindows:ManualScheduleWindow[];
   canManage:boolean;effectiveEnabled:boolean;
 };
 export type ScheduleInput={
@@ -80,10 +82,18 @@ function validated(input:ScheduleInput) {
 export async function getSettlementSchedule(groupId:string,actorId:string):Promise<ScheduleView> {
   // Existing SC-001 access gate: archived/outsider groups are never disclosed.
   const permissions=await getSettlementSettings(groupId,actorId);
-  const [head,revs]=await Promise.all([
+  const [head,revs,replacements]=await Promise.all([
     pool.query<{version:number}>(
       "SELECT version FROM group_settlement_schedule_heads WHERE group_id=$1",[groupId]),
     pool.query<DbRevision>(q,[groupId]),
+    // A cancelled scheduled cycle is an intentional cron tombstone. Only its
+    // exact time interval may be filled with user-created manual periods.
+    pool.query<{startDate:string;endDateExclusive:string}>(
+      `SELECT period_start::text AS "startDate",
+         period_end::text AS "endDateExclusive"
+       FROM group_settlement_cycles
+       WHERE group_id=$1 AND source='scheduled' AND cancelled_at IS NOT NULL
+       ORDER BY period_start ASC`,[groupId]),
   ]);
   const now=Date.now();
   const periods=split(revs.rows,now);
@@ -102,6 +112,7 @@ export async function getSettlementSchedule(groupId:string,actorId:string):Promi
     current:periods.current?toView(periods.current):null,
     pending:periods.pending?toView(periods.pending):null,
     manualWindows,
+    replacementWindows:replacements.rows,
     canManage:permissions.canManage,
     effectiveEnabled:permissions.effectiveEnabled,
   };
