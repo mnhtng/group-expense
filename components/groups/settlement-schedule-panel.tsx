@@ -49,6 +49,8 @@ export function SettlementSchedulePanel({groupId,initial,requestedEnabled}:{
   const [message,setMessage]=useState("");
   const activeManual=initial.current?.frequency==="manual";
   const pendingManual=initial.pending?.frequency==="manual";
+  const historicManual=!activeManual&&initial.manualWindows.some(window=>
+    window.endDateExclusive!==null);
   const preview=(()=>{
     try {
       if(!anchorDate||frequency==="manual")return null;
@@ -123,6 +125,22 @@ export function SettlementSchedulePanel({groupId,initial,requestedEnabled}:{
             Đến cài đặt quyết toán
           </Link>
         </div>}
+    </div>}
+    {initial.canManage&&historicManual&&<div className="space-y-3 rounded-xl border p-3">
+      <p className="font-medium">Tạo kỳ thủ công từ lịch cũ</p>
+      <p className="text-sm text-muted-foreground">
+        Nhóm đã từng dùng lịch Thủ công. Bạn có thể tạo thêm kỳ trong khoảng lịch
+        sử chưa sử dụng, không thay đổi lịch định kỳ hiện tại và không chồng lấn
+        những kỳ đã lưu.
+      </p>
+      {requestedEnabled
+        ? <Link href={`/groups/${groupId}/manage?section=periods#manual-cycle-form`}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">
+            Tạo kỳ thủ công
+          </Link>
+        : <p className="text-sm text-muted-foreground">
+            Nhóm cần bật quyết toán trong Cài đặt quyết toán trước khi tạo kỳ.
+          </p>}
     </div>}
     {initial.canManage&&!activeManual&&pendingManual&&
       <p className="rounded-xl border p-3 text-sm text-muted-foreground">
