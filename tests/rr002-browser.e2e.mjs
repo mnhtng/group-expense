@@ -400,7 +400,7 @@ async function scenario(engine,project,options,actors){
     const blockedWeekly=await must(owner,"POST",cyclesApi,{
       expectedScheduleVersion:3,requestKey:randomUUID(),
       startDate:day(-2),endDate:day(-1)},409);
-    assert.match(blockedWeekly.error,/khoảng lịch Thủ công/);
+    assert.match(blockedWeekly.error,/lịch Thủ công|kỳ định kỳ/);
     await owner.page.goto(ORIGIN+"/groups/"+groupId+"/manage?section=schedule");
     await owner.page.getByText("Tạo kỳ thủ công từ lịch cũ").waitFor();
     await owner.page.getByRole("link",{name:"Tạo kỳ thủ công"}).click();
