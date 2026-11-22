@@ -22,7 +22,7 @@ export const GET=withAuthenticatedApi<Context>(async(_request,{params},user)=>{
 /** Snapshot locking does not mark payments paid or invoices complete. */
 export const POST=withAuthenticatedApi<Context>(async(request,{params},user)=>{
   try{
-    const body=await settlementBody(request,["expectedVersion","expectedDraftRevision","requestKey","expectedFingerprint"]);
+    const body=await settlementBody(request,["expectedVersion","requestKey","expectedFingerprint"],["expectedDraftRevision"]);
     const {groupId,cycleId}=await params;
     return NextResponse.json({
       snapshot:await lockCycleSnapshot(groupId,cycleId,user.id,
