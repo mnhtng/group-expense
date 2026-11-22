@@ -985,6 +985,77 @@ async function scenario(engine,project,options,actors){
         assert.equal(disabled.enabled,false);
       }
     }
+    // Production regression: invoices predate the first MANUAL revision.
+    // Two already-effective MANUAL revisions share a timezone; they must not
+    // force a period boundary. A following WEEKLY revision remains reserved.
+    const historicalGroup=(await must(owner,"POST","/api/groups",{
+      name:"Historic invoices before schedule fixture",
+    },201)).id;
+    await pool.query(
+      "INSERT INTO group_members(group_id,user_id,role) VALUES($1,$2,'member')",
+      [historicalGroup,other.id]);
+    await seedHistoricalCycleSettings(pool,historicalGroup,owner.id,day(-29)+"T00:00:00Z");
+    await must(owner,"PATCH","/api/groups/"+historicalGroup+
+      "/settlement-cycle/settings",{
+        expectedVersion:1,requestedEnabled:true,
+        requestedBilateralNetting:true});
+    await must(owner,"POST","/api/groups/"+historicalGroup+"/expenses",{
+      title:"Historic invoice before first manual schedule",
+      occurredOn:day(-24),payerId:owner.id,
+      items:[{name:"Historic item",quantity:1,
+        unitPriceMinor:"15000",participants:[other.id]}],
+    },201);
+    const eraOne=randomUUID(),eraTwo=randomUUID(),eraWeekly=randomUUID();
+    await pool.query(
+      "INSERT INTO group_settlement_schedule_heads(group_id,version,updated_by) VALUES($1,3,$2)",
+      [historicalGroup,owner.id]);
+    for(const [id,version,frequency,anchor] of [
+      [eraOne,1,"manual",day(-15)],[eraTwo,2,"manual",day(-10)],
+      [eraWeekly,3,"weekly",day(-5)],
+    ]){
+      await pool.query(
+        "INSERT INTO group_settlement_schedule_revisions "+
+        "(id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by) "+
+        "VALUES($1,$2,$3,$4,'UTC',$5,$6,$7)",
+        [id,historicalGroup,version,frequency,anchor,anchor+"T00:00:00Z",owner.id]);
+    }
+    const historicalApi=apiFor(historicalGroup);
+    const historicSchedule=await must(owner,"GET",
+      "/api/groups/"+historicalGroup+"/settlement-cycle/schedule");
+    assert.ok(historicSchedule.manualWindows.some(window=>
+      window.startDate===day(-24)&&window.endDateExclusive===day(-5)),
+      "dates must include earliest invoice and coalesce contiguous manual revisions");
+    await owner.page.goto(ORIGIN+"/groups/"+historicalGroup+"/manage?section=periods");
+    const historicForm=owner.page.getByRole("button",{name:"Tạo kỳ thủ công"});
+    await historicForm.waitFor();
+    assert.equal(await historicForm.isEnabled(),true,
+      "the first historic invoice must be selectable without touching the calendar");
+    // Crossing the WEEKLY cutover is disallowed even if the requested start is
+    // before the initial MANUAL anchor.
+    const crossingRecurring=await must(owner,"POST",historicalApi,{
+      expectedScheduleVersion:3,requestKey:randomUUID(),
+      startDate:day(-24),endDate:day(-4),
+    },409);
+    assert.match(crossingRecurring.error,/cắt qua|đổi lịch|ranh giới/);
+    const preAnchor=await must(owner,"POST",historicalApi,{
+      expectedScheduleVersion:3,requestKey:randomUUID(),
+      startDate:day(-24),endDate:day(-6),
+    },201);
+    assert.equal(preAnchor.cycle.source,"manual");
+    assert.equal(preAnchor.cycle.scheduleRevisionId,eraOne);
+    const modified=await must(owner,"PATCH",
+      historicalApi+"/"+preAnchor.cycle.id,{
+        expectedVersion:1,expectedDraftRevision:0,
+        startDate:day(-23),endDate:day(-6),
+      });
+    assert.equal(modified.cycle.draftRevision,1);
+    const noLaterCutover=await must(owner,"PATCH",
+      historicalApi+"/"+preAnchor.cycle.id,{
+        expectedVersion:1,expectedDraftRevision:1,
+        startDate:day(-23),endDate:day(-4),
+      },409);
+    assert.match(noLaterCutover.error,/đổi lịch|cắt qua/);
+    // No test may alter a real group, schedule, expense or production ledger.
     if(project.includes("phone")){
       const manifest=await owner.context.request.get(ORIGIN+"/manifest.webmanifest");
       assert.equal(manifest.status(),200);
