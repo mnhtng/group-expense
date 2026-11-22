@@ -196,8 +196,8 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
         </div>}
     {cycles.length>0&&<div className="space-y-3 border-t pt-4">
       <h3 className="text-sm font-semibold">Các kỳ đã lưu ({cycles.length} gần nhất)</h3>
-      {cycles.map(cycle=><div key={cycle.id}
-        className="space-y-2 rounded-2xl border p-3 text-sm">
+      {cycles.map(cycle=><div key={cycle.id} id={`cycle-${cycle.id}`}
+        className="scroll-mt-24 space-y-2 rounded-2xl border p-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-medium">
             {formatDateDMY(cycle.periodStart)} – trước {formatDateDMY(cycle.periodEnd)}
