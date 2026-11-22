@@ -285,11 +285,37 @@ export async function createManualSettlementCycle(groupId:string,actorId:string,
       return start>=rule.effectiveAt.getTime()&&
         (!next||start<next.effectiveAt.getTime());
     });
-    if(index<0)
-      throw error(409,"Ngày bắt đầu không thuộc khoảng lịch Thủ công đã có hiệu lực.");
-    const rule=schedule.rules[index],next=schedule.rules[index+1]??null;
+    // Outside historic MANUAL revisions, a manager may fill an interval
+    // only inside a previously cancelled SCHEDULED cycle (cron tombstone).
+    // Cancelling is a separate explicit owner action; never do it implicitly.
+    let chosen=index;
+    if(chosen<0){
+      const cancelled=await client.query<{revisionId:string}>(`
+        SELECT schedule_revision_id AS "revisionId"
+        FROM group_settlement_cycles
+        WHERE group_id=$1 AND source='scheduled' AND cancelled_at IS NOT NULL
+          AND period_start<=$2::date AND period_end>=$3::date
+        ORDER BY start_at DESC LIMIT 1`,
+        [groupId,input.startDate,input.endDate]);
+      chosen=schedule.rules.findIndex(rule=>rule.id===cancelled.rows[0]?.revisionId
+        &&rule.frequency!=="manual"&&rule.effectiveAt.getTime()<=now);
+    }
+    if(chosen<0)
+      throw error(409,
+        "Ngày đã chọn không thuộc lịch Thủ công hoặc kỳ định kỳ chưa chốt đã hủy.");
+    const rule=schedule.rules[chosen],next=schedule.rules[chosen+1]??null;
     const startAt=localMidnightInstant(input.startDate,rule.timeZone);
     const endAt=localMidnightInstant(input.endDate,rule.timeZone);
+    if(rule.frequency!=="manual"){
+      const covered=await client.query(`
+        SELECT 1 FROM group_settlement_cycles
+        WHERE group_id=$1 AND schedule_revision_id=$2
+          AND source='scheduled' AND cancelled_at IS NOT NULL
+          AND start_at<=$3::timestamptz AND end_at>=$4::timestamptz
+        LIMIT 1`,[groupId,rule.id,startAt,endAt]);
+      if(!covered.rowCount)
+        throw error(409,"Hãy hủy kỳ định kỳ chưa chốt trước khi chia thành kỳ thủ công.");
+    }
     // Explicit historic manual backfill can predate opt-in. Cron stays
     // epoch-bound; manual intervals must never cross a recurring cutover.
     if(Date.parse(startAt)>now)
@@ -376,10 +402,22 @@ export async function updateManualSettlementCycle(
        FROM group_settlement_schedule_revisions
        WHERE group_id=$1 AND id=$2`,[groupId,old.scheduleRevisionId]);
     const rule=rules.rows[0];
-    if(!rule||rule.frequency!=="manual"||input.startDate<rule.anchorDate)
+    if(!rule)
+      throw error(409,"Không tìm thấy lịch gốc của kỳ này.");
+    if(rule.frequency==="manual"&&input.startDate<rule.anchorDate)
       throw error(409,"Ngày bắt đầu nằm trước lịch thủ công đã chọn.");
     const startAt=localMidnightInstant(input.startDate,rule.timeZone);
     const endAt=localMidnightInstant(input.endDate,rule.timeZone);
+    if(rule.frequency!=="manual"){
+      const covered=await client.query(`
+        SELECT 1 FROM group_settlement_cycles
+        WHERE group_id=$1 AND schedule_revision_id=$2
+          AND source='scheduled' AND cancelled_at IS NOT NULL
+          AND start_at<=$3::timestamptz AND end_at>=$4::timestamptz
+        LIMIT 1`,[groupId,rule.id,startAt,endAt]);
+      if(!covered.rowCount)
+        throw error(409,"Không thể sửa ra ngoài khoảng kỳ định kỳ đã hủy.");
+    }
     if(Date.parse(startAt)>Date.now())
       throw error(409,"Ngày bắt đầu kỳ không được ở tương lai.");
     if(old.state==="review"&&Date.parse(endAt)>Date.now())
