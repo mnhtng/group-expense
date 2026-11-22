@@ -15,7 +15,7 @@ test("Manual schedules may start in the past, but automatic schedules and runnin
 });
 test("Manual creation can backfill past dates and cannot start in future or overlap",()=>{
   const lifecycle=read("lib/settlement-cycles/lifecycle.ts");
-  assert.match(lifecycle,/input\.startDate<active\.anchorDate/);
+  assert.match(lifecycle,/input\.startDate<rule\.anchorDate/);
   assert.match(lifecycle,/if\(Date\.parse\(startAt\)>now\)/);
   assert.match(lifecycle,/cancelled_at IS NULL[\s\S]*tstzrange/);
   assert.match(lifecycle,/period_start.*period_end/);

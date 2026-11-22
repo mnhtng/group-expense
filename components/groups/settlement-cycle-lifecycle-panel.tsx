@@ -23,8 +23,23 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
     try{return currentLocalDate(active?.timeZone??"Asia/Ho_Chi_Minh");}
     catch{return "";}
   })();
-  const [start,setStart]=useState(today);
-  const [end,setEnd]=useState(today?addCalendarDays(today,1):"");
+  const manualWindows=schedule.manualWindows;
+  // Default to the latest unfilled day in the most recent historic manual
+  // segment. A weekly schedule may still be active after this window ends.
+  const guessStart=(index:number)=>{
+    const window=manualWindows[index];
+    if(!window)return today;
+    const lastEnd=cycles
+      .filter(c=>c.periodEnd>window.startDate&&
+        (!window.endDateExclusive||c.periodEnd<=window.endDateExclusive))
+      .map(c=>c.periodEnd).sort().at(-1);
+    const earliest=lastEnd??window.startDate;
+    return !window.endDateExclusive&&today>earliest?today:earliest;
+  };
+  const [windowIndex,setWindowIndex]=useState(Math.max(0,manualWindows.length-1));
+  const [start,setStart]=useState(()=>guessStart(Math.max(0,manualWindows.length-1)));
+  const [end,setEnd]=useState(()=>addCalendarDays(
+    guessStart(Math.max(0,manualWindows.length-1)),1));
   const keyRef=useRef<string|null>(null);
   const [busy,setBusy]=useState(false);
   const [editing,setEditing]=useState<{id:string;start:string;end:string}|null>(null);
@@ -34,6 +49,20 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
 
   const root=`/api/groups/${groupId}/settlement-cycle/cycles`;
   const manualActive=active?.frequency==="manual";
+  const canCreateManual=manualWindows.length>0;
+  const selectedWindow=manualWindows[windowIndex]??null;
+  const validManualRange=Boolean(selectedWindow&&start&&end&&start<end&&
+    start>=selectedWindow.startDate&&
+    (!selectedWindow.endDateExclusive||end<=selectedWindow.endDateExclusive)&&
+    start<=today);
+  function chooseWindow(value:string){
+    const index=Number(value);
+    if(!Number.isSafeInteger(index)||!manualWindows[index])return;
+    const chosen=guessStart(index);
+    setWindowIndex(index);
+    setStart(chosen);setEnd(addCalendarDays(chosen,1));
+    keyRef.current=null;
+  }
   function editStart(value:string) {setStart(value);keyRef.current=null;}
   function editEnd(value:string) {setEnd(value);keyRef.current=null;}
   async function call(url:string,body:Record<string,unknown>){
@@ -123,15 +152,37 @@ export function SettlementCycleLifecyclePanel({groupId,requestedEnabled,
             Chưa có lịch đã tới ngày bắt đầu. Không thể tạo kỳ trước thời điểm hiệu lực.
           </p>
         : <div className="space-y-4">
-          {manualActive&&<div id="manual-cycle-form" className="scroll-mt-20 space-y-3 rounded-2xl border p-3">
+          {canCreateManual&&<div id="manual-cycle-form" className="scroll-mt-20 space-y-3 rounded-2xl border p-3">
             <p className="text-sm font-medium">Tạo kỳ thủ công</p>
+            {!manualActive&&<p className="text-xs text-muted-foreground">
+              Chỉ tạo thêm kỳ thuộc lịch Thủ công cũ. Lịch định kỳ đang hoạt động
+              vẫn được giữ nguyên, và không thể tạo kỳ lấn sang lịch định kỳ.
+            </p>}
+            {manualWindows.length>1&&<label className="block space-y-1 text-sm">
+              <span className="font-medium">Khoảng lịch Thủ công</span>
+              <select value={windowIndex} onChange={e=>chooseWindow(e.target.value)}
+                disabled={busy} className="min-h-12 w-full rounded-xl border bg-background p-3">
+                {manualWindows.map((window,index)=><option key={index} value={index}>
+                  {formatDateDMY(window.startDate)}
+                  {window.endDateExclusive
+                    ?` – trước ${formatDateDMY(window.endDateExclusive)}`
+                    :" – hiện tại"}
+                </option>)}
+              </select>
+            </label>}
+            {selectedWindow&&<p className="text-xs text-muted-foreground">
+              Khoảng hợp lệ: từ {formatDateDMY(selectedWindow.startDate)}
+              {selectedWindow.endDateExclusive
+                ?` đến trước ${formatDateDMY(selectedWindow.endDateExclusive)}`
+                :" đến hiện tại (ngày bắt đầu không ở tương lai)"}.
+            </p>}
             <DateDMYInput value={start} onChange={editStart} label="Bắt đầu kỳ"/>
             <DateDMYInput value={end} onChange={editEnd} label="Kết thúc kỳ (không bao gồm ngày này)"/>
             <p className="text-xs text-muted-foreground">
-              Không chồng lấn kỳ cũ. Chỉ chọn kỳ bắt đầu khi lịch đã hiệu lực.
-              Nút tạo kỳ không phát sinh khoản chi hoặc thanh toán.
+              Không chồng lấn các kỳ đã lưu. Tạo kỳ không phát sinh khoản chi,
+              bù nợ hoặc thanh toán.
             </p>
-            <button type="button" disabled={busy||!start||!end}
+            <button type="button" disabled={busy||!validManualRange}
               onClick={createManual}
               className="min-h-11 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
               {busy?"Đang xử lý...":"Tạo kỳ thủ công"}

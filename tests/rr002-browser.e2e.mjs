@@ -373,6 +373,35 @@ async function scenario(engine,project,options,actors){
       startDate:day(-10),endDate:day(-6)},201);
     const cycleId=created.cycle.id;
     const detail=pathFor(groupId,cycleId);
+
+    // Historic manual windows remain writable when the group has moved to a
+    // currently effective WEEKLY schedule. Never allow a manual period inside
+    // the WEEKLY segment (cron still owns that range).
+    const weeklyRevision=randomUUID();
+    await pool.query(
+      "UPDATE group_settlement_schedule_heads SET version=2 WHERE group_id=$1",
+      [groupId]);
+    await pool.query(
+      "INSERT INTO group_settlement_schedule_revisions "+
+      "(id,group_id,version,frequency,time_zone,anchor_date,effective_at,created_by) "+
+      "VALUES($1,$2,2,'weekly','UTC',$3,$4,$5)",
+      [weeklyRevision,groupId,day(-3),day(-3)+"T00:00:00Z",owner.id]);
+    const historicCreated=await must(owner,"POST",cyclesApi,{
+      expectedScheduleVersion:2,requestKey:randomUUID(),
+      startDate:day(-5),endDate:day(-4)},201);
+    assert.equal(historicCreated.cycle.source,"manual");
+    assert.equal(historicCreated.cycle.scheduleRevisionId,revision,
+      "backfill must remain attributed to the historical manual revision");
+    const blockedWeekly=await must(owner,"POST",cyclesApi,{
+      expectedScheduleVersion:2,requestKey:randomUUID(),
+      startDate:day(-2),endDate:day(-1)},409);
+    assert.match(blockedWeekly.error,/khoảng lịch Thủ công/);
+    await owner.page.goto(ORIGIN+"/groups/"+groupId+"/manage?section=schedule");
+    await owner.page.getByText("Tạo kỳ thủ công từ lịch cũ").waitFor();
+    await owner.page.getByRole("link",{name:"Tạo kỳ thủ công"}).click();
+    await owner.page.getByRole("button",{name:"Tạo kỳ thủ công"}).waitFor();
+    await owner.page.getByText(/Khoảng hợp lệ:/).waitFor();
+
     await must(owner,"POST",cyclesApi+"/"+cycleId+"/review",
       {expectedVersion:1});
     const draft=(title,payerId,debtorId,amount)=>({
